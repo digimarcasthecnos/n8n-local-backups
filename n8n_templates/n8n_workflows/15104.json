@@ -1,0 +1,979 @@
+{
+  "workflow": {
+    "id": 15104,
+    "name": "Triage HVAC issues and AI diagnosis with Gemini Vision, GoHighLevel and WhatsApp",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-16T19:43:29.927Z",
+    "description": "#### Workflow explanation: [Watch on YouTube](https://www.youtube.com/watch?v=nSJzOB9JZlY)\n\n\n## Automated HVAC triage & AI diagnosis with Gemini Vision, GoHighLevel & WhatsApp\n\n### **Prerequisites & Setup**\n\nBefore running or deploying this workflow, you need to configure the following services and credentials:\n\n* **GoHighLevel Custom Fields:** You must create the corresponding custom fields in your GoHighLevel account to capture the AI's output (e.g., Property Address, Issue, Brand, Model Number, Serial Number, Manufactured Date, Refrigerant Type, Probable Issue, Repair Action, Estimated Cost Level, Repair Score, and AI Recommendation).\n* **GoHighLevel Developer App (OAuth2):** * Create a free GoHighLevel Developer App.\n    * Add the following scopes: `contacts.readonly`, `contacts.write`, `locations.readonly`, `locations/customFields.readonly`, and `locations/customFields.write` *(Note: these custom field scopes replace the standard opportunities scopes).*\n    * Generate your Client ID and Secret within the Developer App.\n    * Enter these details into your n8n GoHighLevel OAuth2 credentials.\n    * Copy the OAuth Redirect URL from n8n, paste it into the App's OAuth redirection settings, and complete the authentication process.\n* **WhatsApp API Credentials:** You will need your WhatsApp Access Token and WhatsApp Business Account ID.\n* **Gemini API Key:** A valid Google Gemini API key to power the AI vision and diagnostic analysis.\n\n---\n\n### **Node-by-Node Explanation**\n\n**1. When Form Submitted (Trigger)**\nThis is the starting point of the workflow. It uses n8n's native form trigger to collect a service request. It captures the customer's Name, Email, Phone Number, Property Address, a text description of the issue, and crucially, a file upload of the HVAC unit's nameplate or data sticker. \n\n**2. Extract File Content**\nThis node takes the image uploaded in the previous form step and converts/extracts the file content. By assigning the binary data to the `image` property, it makes the picture readable and ready to be sent to external APIs for analysis.\n\n**3. Post to Gemini API**\nThis HTTP Request node acts as the brain of the operation. It sends the reported issue and the extracted image to the `gemini-3.1-flash-lite` model. The prompt instructs the AI to act as an expert HVAC diagnostic assistant to:\n* Read the nameplate to extract the Brand, Model, Serial Number, Date, and Refrigerant Type.\n* Analyze the text issue against the equipment data to generate a probable issue, repair action, and an estimated cost level.\n* Calculate a \"Repair Score\" (0 to 100) to recommend whether the unit is worth repairing or replacing.\n* Format the entire response strictly as a JSON object.\n\n**4. Parse API Response**\nBecause AI models can sometimes wrap JSON in markdown blocks or conversational text, this custom JavaScript Code node uses regex to locate the exact JSON block inside the Gemini output. It safely parses it and outputs clean, structured JSON data for the rest of the workflow to use.\n\n**5. Create Lead in GoHighLevel**\nThis node connects to your CRM. It maps the original client contact details (Name, Email, Phone) alongside all of the deeply detailed AI insights (Property Address, HVAC Brand, Model, Serial, AI Repair Score, Recommended Action) directly into the GoHighLevel custom fields you set up in the prerequisites.\n\n**6. Prepare Binary Image**\nSince the workflow's primary data stream has been replaced by the parsed JSON text, this Code node \"teleports\" the original binary image data from the *Extract File Content* node and stitches it together with the current JSON data. This ensures the WhatsApp node has access to both the text details and the photo.\n\n**7. Send WhatsApp to Technician**\nThe final step dispatches a WhatsApp message directly to the lead technician. It sends the original photo of the HVAC nameplate accompanied by a neatly formatted caption. The caption includes the client's name, property address, the reported issue, the AI's probable diagnosis and cost estimation, and instructions on next steps.",
+    "workflow": {
+      "meta": {
+        "instanceId": "93f396852104089b8670e7494b0f3668b420464668ae4a8c1d6b4b5799f8e3ef",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "3e3ea39f-f61d-4508-a0de-aee87fbbfbc7",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            576,
+            96
+          ],
+          "parameters": {
+            "width": 480,
+            "height": 448,
+            "content": "## HVAC Lead Collect & Diagnosis\n\n### How it works\n\n1. The workflow triggers upon a new form submission containing file data. 2. It extracts the file contents and sends them to an external API to calculate a repair score. 3. The workflow parses the AI score and saves the lead details into GoHighLevel. 4. Finally, it retrieves the original image and sends a summary notification to the lead technician via WhatsApp.\n\n### Setup steps\n\n- Configure the Form Trigger to receive appropriate file fields.\n- Ensure the AI API credentials are set for the repair score calculation.\n- Connect your GoHighLevel account to save lead information.\n- Authenticate your WhatsApp Business account for notifications.\n\n### Customization\n\nYou can modify the notification message template to include additional CRM fields or change the communication channel from WhatsApp to Email."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "dfaa406d-19a8-4cf2-931f-da526416d57a",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1136,
+            96
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 464,
+            "height": 272,
+            "content": "## Trigger and extract input data\n\nReceives input and extracts file data."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f3264a8b-2d29-4435-ba26-7a4fd432db61",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1680,
+            96
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 384,
+            "height": 272,
+            "content": "## Calculate automated repair score\n\nPerforms AI analysis on extracted data."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "bfd1321a-c7ab-4d1d-b1ab-71a680a18d16",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2112,
+            96
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 704,
+            "height": 288,
+            "content": "## Update CRM and notify technician\n\nSaves result to CRM and notifies technician."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "cd263103-ba33-46cd-9af5-7ae34d1a4b18",
+          "name": "When Form Submitted",
+          "type": "n8n-nodes-base.formTrigger",
+          "position": [
+            1184,
+            208
+          ],
+          "webhookId": "078fd781-0d89-4630-9bff-2623429325bd",
+          "parameters": {
+            "options": {
+              "customCss": ":root {\n\t/* Fonts */\n\t--font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;\n\t--font-weight-normal: 400;\n\t--font-weight-bold: 600;\n\t--font-size-body: 12px;\n\t--font-size-label: 14px;\n\t--font-size-test-notice: 12px;\n\t--font-size-input: 14px;\n\t--font-size-header: 22px; \n\t--font-size-paragraph: 14px;\n\t--font-size-link: 12px;\n\t--font-size-error: 12px;\n\t--font-size-html-h1: 28px;\n\t--font-size-html-h2: 20px;\n\t--font-size-html-h3: 16px;\n\t--font-size-html-h4: 14px;\n\t--font-size-html-h5: 12px;\n\t--font-size-html-h6: 10px;\n\t--font-size-subheader: 14px;\n\n\t/* Colors - Adjusted for seamless immersion */\n\t--color-background: #ffffff; /* Pure white page background */\n\t--color-test-notice-text: #000000;\n\t--color-test-notice-bg: #f0f0f0;\n\t--color-test-notice-border: transparent;\n\t--color-card-bg: transparent; /* Removes the white box background */\n\t--color-card-border: transparent; /* Removes the box outline */\n\t--color-card-shadow: transparent; /* Removes the box shadow color */\n\t--color-link: #000000;\n\t--color-header: #000000;\n\t--color-label: #111111; \n\t--color-input-border: #cccccc;\n\t--color-input-text: #000000;\n\t--color-focus-border: #000000; \n\t--color-submit-btn-bg: #000000;\n\t--color-submit-btn-text: #ffffff;\n\t--color-error: #000000; \n\t--color-required: #000000;\n\t--color-clear-button-bg: #aaaaaa;\n\t--color-html-text: #333333;\n\t--color-html-link: #000000;\n\t--color-header-subtext: #666666;\n\n\t/* Border Radii */\n\t--border-radius-card: 0px;\n\t--border-radius-input: 0px; \n\t--border-radius-clear-btn: 50%;\n\t--card-border-radius: 0px;\n\n\t/* Spacing - Card padding removed so it doesn't act like an invisible box */\n\t--padding-container-top: 40px;\n\t--padding-card: 0px; /* Stripped to remove the invisible box constraints */\n\t--padding-test-notice-vertical: 12px;\n\t--padding-test-notice-horizontal: 24px;\n\t--margin-bottom-card: 24px;\n\t--padding-form-input: 14px;\n\t--card-padding: 0px; /* Stripped */\n\t--card-margin-bottom: 24px;\n\n\t/* Dimensions */\n\t--container-width: 480px; \n\t--submit-btn-height: 48px;\n\t--checkbox-size: 16px;\n\n\t/* Others */\n\t--box-shadow-card: none; /* Fully turns off the shadow effect */\n\t--opacity-placeholder: 0.4;\n}",
+              "appendAttribution": false
+            },
+            "formTitle": "HVAC Repairs And Maintainence | Service Request Form",
+            "formFields": {
+              "values": [
+                {
+                  "fieldName": "Your Name",
+                  "fieldLabel": "Your Name",
+                  "requiredField": true
+                },
+                {
+                  "fieldName": "Email Address",
+                  "fieldType": "email",
+                  "fieldLabel": "Email Address",
+                  "requiredField": true
+                },
+                {
+                  "fieldName": "Phone Number",
+                  "fieldLabel": "Phone Number",
+                  "requiredField": true
+                },
+                {
+                  "fieldName": "Property Address",
+                  "fieldType": "textarea",
+                  "fieldLabel": "What is your Property Address?",
+                  "requiredField": true
+                },
+                {
+                  "fieldName": "image",
+                  "fieldType": "file",
+                  "fieldLabel": "Upload the image of HVAC unit's nameplate | AC's data sticker photo",
+                  "requiredField": true
+                },
+                {
+                  "fieldName": "issue",
+                  "fieldType": "textarea",
+                  "fieldLabel": "what was the issue",
+                  "requiredField": true
+                }
+              ]
+            },
+            "formDescription": "This is a service request form for HVAC Maintainence & Repairs"
+          },
+          "typeVersion": 2.5
+        },
+        {
+          "id": "d9184684-c54e-469d-8b76-282a35e32cdd",
+          "name": "Extract File Content",
+          "type": "n8n-nodes-base.extractFromFile",
+          "position": [
+            1456,
+            208
+          ],
+          "parameters": {
+            "options": {
+              "keepSource": "binary"
+            },
+            "operation": "binaryToPropery",
+            "binaryPropertyName": "image"
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "411f5d1f-7cee-4746-bef4-3496678a21fe",
+          "name": "Parse API Response",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1920,
+            208
+          ],
+          "parameters": {
+            "jsCode": "const raw = $input.first().json.candidates[0].content.parts[0].text;\n\n// Extract JSON block\nconst jsonMatch = raw.match(/\\{[\\s\\S]*\\}/);\n\nif (!jsonMatch) {\n  throw new Error(\"No JSON found in model output\");\n}\n\n// Parse JSON safely\nconst parsed = JSON.parse(jsonMatch[0]);\n\nreturn [{ json: parsed }];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "44ead0e1-100f-4262-89a2-9dab2ee45838",
+          "name": "Prepare Binary Image",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2368,
+            208
+          ],
+          "parameters": {
+            "jsCode": "// 1. Keep the current JSON data from your HighLevel node\nconst currentJson = $input.first().json;\n\n// 2. Teleport the binary image directly from your early node\nconst originalImage = $('Extract File Content').first().binary.image;\n\n// 3. Staple them together and send them to WhatsApp\nreturn [{\n  json: currentJson,\n  binary: {\n    image: originalImage\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "0bc87566-d782-4708-b653-6a6eca51b243",
+          "name": "Create Lead in GoHighLevel",
+          "type": "n8n-nodes-base.highLevel",
+          "position": [
+            2160,
+            208
+          ],
+          "parameters": {
+            "email": "={{ $('When Form Submitted').item.json['Email Address'] }}",
+            "phone": "={{ $('When Form Submitted').item.json['Phone Number'] }}",
+            "requestOptions": {},
+            "additionalFields": {
+              "name": "={{ $('When Form Submitted').item.json['Your Name'] }}",
+              "customFields": {
+                "values": [
+                  {
+                    "fieldId": {
+                      "__rl": true,
+                      "mode": "list",
+                      "value": "8nC9gJn1mP5L4SPqN4OU",
+                      "cachedResultName": "Property Address"
+                    },
+                    "fieldValue": "={{ $('When Form Submitted').item.json['Property Address'] }}"
+                  },
+                  {
+                    "fieldId": {
+                      "__rl": true,
+                      "mode": "list",
+                      "value": "MGU3zM7TjUX5d33hNzfF",
+                      "cachedResultName": "issue"
+                    },
+                    "fieldValue": "={{ $('When Form Submitted').item.json.issue }}"
+                  },
+                  {
+                    "fieldId": {
+                      "__rl": true,
+                      "mode": "list",
+                      "value": "uLfMm6uf0fvQTDtFmQ2n",
+                      "cachedResultName": "brand"
+                    },
+                    "fieldValue": "={{ $json.brand }}"
+                  },
+                  {
+                    "fieldId": {
+                      "__rl": true,
+                      "mode": "list",
+                      "value": "6YwyqhDJbuJPvk8G5Cz5",
+                      "cachedResultName": "Model Number"
+                    },
+                    "fieldValue": "={{ $json.model_number }}"
+                  },
+                  {
+                    "fieldId": {
+                      "__rl": true,
+                      "mode": "list",
+                      "value": "krKIgZSiDw3r3wBDKeFO",
+                      "cachedResultName": "Serial Number"
+                    },
+                    "fieldValue": "={{ $json.serial_number }}"
+                  },
+                  {
+                    "fieldId": {
+                      "__rl": true,
+                      "mode": "list",
+                      "value": "1nO0a7HDLA8dPJVgpR6F",
+                      "cachedResultName": "Manufactured Date"
+                    },
+                    "fieldValue": "={{ $json.manufacture_date }}"
+                  },
+                  {
+                    "fieldId": {
+                      "__rl": true,
+                      "mode": "list",
+                      "value": "98rwR45lBaxPicsuOH1w",
+                      "cachedResultName": "Refrigerant type"
+                    },
+                    "fieldValue": "={{ $json.refrigerant_type }}"
+                  },
+                  {
+                    "fieldId": {
+                      "__rl": true,
+                      "mode": "list",
+                      "value": "URAPehNpcWqYXbMJUa1n",
+                      "cachedResultName": "Probable Issue[ai generated]"
+                    },
+                    "fieldValue": "={{ $json.probable_issue }}"
+                  },
+                  {
+                    "fieldId": {
+                      "__rl": true,
+                      "mode": "list",
+                      "value": "kNNNjRuEp94gCVBgHwNX",
+                      "cachedResultName": "Repair Action"
+                    },
+                    "fieldValue": "={{ $json.repair_action }}"
+                  },
+                  {
+                    "fieldId": {
+                      "__rl": true,
+                      "mode": "list",
+                      "value": "UPaP4A1oy4GsaQbmUVdO",
+                      "cachedResultName": "Estimated cost level"
+                    },
+                    "fieldValue": "={{ $json.estimated_cost_level }}"
+                  },
+                  {
+                    "fieldId": {
+                      "__rl": true,
+                      "mode": "list",
+                      "value": "gPizCz3eyj7iSdqhNCsJ",
+                      "cachedResultName": "repair score"
+                    },
+                    "fieldValue": "={{ $json.repair_score }}"
+                  },
+                  {
+                    "fieldId": {
+                      "__rl": true,
+                      "mode": "list",
+                      "value": "8zXXeWQ2cCGXoZ0BLRT6",
+                      "cachedResultName": "AI Recommendation"
+                    },
+                    "fieldValue": "={{ $json.recommendation }}"
+                  }
+                ]
+              }
+            }
+          },
+          "credentials": {
+            "highLevelOAuth2Api": {
+              "id": "j07jOQoIY1vL4lAY",
+              "name": "HighLevel account"
+            }
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "ca2103cd-0133-42a7-92c3-d147c9662466",
+          "name": "Post to Gemini API",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            1728,
+            208
+          ],
+          "parameters": {
+            "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"You are an expert HVAC diagnostic assistant.\\n\\nYou will receive:\\n1. An equipment image (nameplate or unit photo)\\n2. A reported issue from the user\\n\\nYour tasks:\\n\\nSTEP 1: Extract equipment details from the image.\\nReturn the following fields:\\n- brand\\n- model_number\\n- serial_number\\n- manufacture_date (Month/Year)\\n- refrigerant_type\\n\\nIf any value is unreadable, return null.\\n\\nSTEP 2: Analyze the reported issue and equipment condition.\\n\\nUser reported issue:\\n\\\"{{ $('When Form Submitted').item.json.issue }}\\\"\\n\\nBased on:\\n- Extracted refrigerant type, especially if R-22 or not\\n- Typical failure patterns such as gas leak, compressor, airflow issues\\n- Age of unit if manufacture date is available\\n\\nGenerate:\\n- probable_issue\\n- repair_action\\n- estimated_cost_level (low / medium / high)\\n- repair_score (0 to 100)\\n\\nRepair Score Meaning:\\n0 to 30 = Not worth repairing, replace recommended\\n31 to 60 = Risky repair, temporary fix\\n61 to 100 = Good candidate for repair\\n\\nSTEP 3: Provide recommendation:\\n- recommendation: repair or replace\\n\\nOutput STRICT JSON ONLY in this format:\\n{\\n  \\\"brand\\\": null,\\n  \\\"model_number\\\": null,\\n  \\\"serial_number\\\": null,\\n  \\\"manufacture_date\\\": null,\\n  \\\"refrigerant_type\\\": null,\\n  \\\"probable_issue\\\": \\\"\\\",\\n  \\\"repair_action\\\": \\\"\\\",\\n  \\\"estimated_cost_level\\\": \\\"\\\",\\n  \\\"repair_score\\\": 0,\\n  \\\"recommendation\\\": \\\"\\\"\\n}\"\n        },\n        {\n          \"inlineData\": {\n            \"mimeType\": \"image/jpeg\",\n            \"data\": \"{{ $json.data }}\"\n          }\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"response_mime_type\": \"application/json\"\n  }\n}",
+            "sendBody": true,
+            "specifyBody": "json",
+            "authentication": "predefinedCredentialType",
+            "nodeCredentialType": "googlePalmApi"
+          },
+          "credentials": {
+            "googlePalmApi": {
+              "id": "TZtQePDMJ3j6PZ3M",
+              "name": "abhiram.bvb"
+            }
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "afb43b6f-2e9f-4bdb-9015-023a66161381",
+          "name": "Send WhatsApp to Technician",
+          "type": "n8n-nodes-base.whatsApp",
+          "position": [
+            2640,
+            208
+          ],
+          "webhookId": "9bb50d54-77cf-4507-9eaa-78ef1a37af02",
+          "parameters": {
+            "mediaPath": "useMedian8n",
+            "operation": "send",
+            "messageType": "image",
+            "phoneNumberId": "1083481144853090",
+            "additionalFields": {
+              "mediaCaption": "=*Client Details:*\nName: {{ $('When Form Submitted').item.json['Your Name'] }}\n\n*Reported Issue:*\n{{ $('When Form Submitted').item.json.issue }}\n\n*Property Address*\n{{ $('When Form Submitted').item.json['Property Address'] }}\n\n*AI Diagnosis Summary:*\nPossible Issue: {{ $('Parse API Response').item.json.probable_issue }}\nEstimated Cost Level: {{ $('Parse API Response').item.json.estimated_cost_level }}\n\n*Next Steps:*\nReview the issue and diagnosis, then proceed with further inspection or contact the client for confirmation if needed. Check your gohighlevel CRM for the customer contact details"
+            },
+            "mediaPropertyName": "image",
+            "recipientPhoneNumber": "={{ $('When Form Submitted').item.json['Phone Number'] }}"
+          },
+          "credentials": {
+            "whatsAppApi": {
+              "id": "KsIEVWr4quKHUlO7",
+              "name": "WhatsApp account"
+            }
+          },
+          "typeVersion": 1.1
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "Parse API Response": {
+          "main": [
+            [
+              {
+                "node": "Create Lead in GoHighLevel",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Post to Gemini API": {
+          "main": [
+            [
+              {
+                "node": "Parse API Response",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "When Form Submitted": {
+          "main": [
+            [
+              {
+                "node": "Extract File Content",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Extract File Content": {
+          "main": [
+            [
+              {
+                "node": "Post to Gemini API",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Prepare Binary Image": {
+          "main": [
+            [
+              {
+                "node": "Send WhatsApp to Technician",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Create Lead in GoHighLevel": {
+          "main": [
+            [
+              {
+                "node": "Prepare Binary Image",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 29,
+    "workflowInfo": {
+      "nodeCount": 11,
+      "nodeTypes": {
+        "n8n-nodes-base.code": {
+          "count": 2
+        },
+        "n8n-nodes-base.whatsApp": {
+          "count": 1
+        },
+        "n8n-nodes-base.highLevel": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 4
+        },
+        "n8n-nodes-base.formTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 1
+        },
+        "n8n-nodes-base.extractFromFile": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "iamvaar",
+      "username": "iamvaar",
+      "bio": "I’m a Full Stack Developer, skilled at planning system architecture and currently building automation systems to save time. I clearly know what I’m doing and exactly which problem I’m solving.\n\nWanna work with me? https://cal.com/abhi.vaar/n8n\n",
+      "verified": true,
+      "links": [
+        "https://linktr.ee/iamvaar"
+      ],
+      "avatar": "https://gravatar.com/avatar/e1fb0dc258d8f0b3950f191987367ea325b3f05ba737b671375e592af3fe7aaf?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 825,
+        "icon": "file:highLevel.svg",
+        "name": "n8n-nodes-base.highLevel",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.highlevel/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/highlevel/"
+                }
+              ]
+            },
+            "categories": [
+              "Marketing",
+              "Sales"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "HighLevel"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3QgeD0iNS43NzczNCIgeT0iNi44MDQyIiB3aWR0aD0iNS4yOTIxNiIgaGVpZ2h0PSIzMi44ODciIGZpbGw9IiNGREM0MDAiLz4KPHJlY3QgeD0iMjguODM1OSIgeT0iNi44MDQyIiB3aWR0aD0iNS4yOTIxNiIgaGVpZ2h0PSIzMi44ODciIGZpbGw9IiM0QUNGMjciLz4KPHJlY3QgeD0iMTYuOTI4NyIgeT0iMTguOTk1MSIgd2lkdGg9IjYuMDQ4MTkiIGhlaWdodD0iMjAuNjk2MSIgZmlsbD0iIzI4OTZGQiIvPgo8cGF0aCBkPSJNOC40NzA2NCAwTDE2Ljk0MTMgOC45MzA1M0gwTDguNDcwNjQgMFoiIGZpbGw9IiNGREM0MDAiLz4KPHBhdGggZD0iTTMxLjUyOTIgMEwzOS45OTk5IDguOTMwNTNIMjMuMDU4NkwzMS41MjkyIDBaIiBmaWxsPSIjNEFDRjI3Ii8+CjxwYXRoIGQ9Ik0xOS45OTk5IDEyLjY2MzNMMjguNDcwNiAyMS41OTM5SDExLjUyOTNMMTkuOTk5OSAxMi42NjMzWiIgZmlsbD0iIzI4OTZGQiIvPgo8cGF0aCBkPSJNNS43NzczNCA4LjkzMDQySDExLjA2OTVWMTQuMjIyNkw1Ljc3NzM0IDguOTMwNDJaIiBmaWxsPSIjREFBOTAwIi8+CjxwYXRoIGQ9Ik0yOC44MzU5IDguOTMwNDJIMzQuMTI4MVYxNC4yMjI2TDI4LjgzNTkgOC45MzA0MloiIGZpbGw9IiM1MUIzNDYiLz4KPHBhdGggZD0iTTE2LjkyODcgMjEuNTk0SDIyLjk3NjlWMjcuNjQyMkwxNi45Mjg3IDIxLjU5NFoiIGZpbGw9IiMxRjgxREIiLz4KPC9zdmc+Cg=="
+        },
+        "displayName": "HighLevel",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 2,
+            "name": "Sales"
+          },
+          {
+            "id": 27,
+            "name": "Marketing"
+          }
+        ]
+      },
+      {
+        "id": 827,
+        "icon": "file:whatsapp.svg",
+        "name": "n8n-nodes-base.whatsApp",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.whatsapp/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/whatsapp/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "WhatsApp Business Cloud"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIHZpZXdCb3g9IjAgMCA0OCA0OCI+PHBhdGggZmlsbD0iI2ZmZiIgZD0ibTQuODY4IDQzLjMwMyAyLjY5NC05LjgzNWExOC45NCAxOC45NCAwIDAgMS0yLjUzNS05LjQ4OUM1LjAzMiAxMy41MTQgMTMuNTQ4IDUgMjQuMDE0IDVhMTguODcgMTguODcgMCAwIDEgMTMuNDMgNS41NjZBMTguODcgMTguODcgMCAwIDEgNDMgMjMuOTk0Yy0uMDA0IDEwLjQ2NS04LjUyMiAxOC45OC0xOC45ODYgMTguOThoLS4wMDhhMTkgMTkgMCAwIDEtOS4wNzMtMi4zMTF6Ii8+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTQuODY4IDQzLjgwM2EuNS41IDAgMCAxLS40ODItLjYzMWwyLjYzOS05LjYzNmExOS41IDE5LjUgMCAwIDEtMi40OTctOS41NTZDNC41MzIgMTMuMjM4IDEzLjI3MyA0LjUgMjQuMDE0IDQuNWExOS4zNyAxOS4zNyAwIDAgMSAxMy43ODQgNS43MTNBMTkuMzYgMTkuMzYgMCAwIDEgNDMuNSAyMy45OTRjLS4wMDQgMTAuNzQxLTguNzQ2IDE5LjQ4LTE5LjQ4NiAxOS40OGExOS41NCAxOS41NCAwIDAgMS05LjE0NC0yLjI3N2wtOS44NzUgMi41ODlhLjUuNSAwIDAgMS0uMTI3LjAxNyIvPjxwYXRoIGZpbGw9IiNjZmQ4ZGMiIGQ9Ik0yNC4wMTQgNWExOC44NyAxOC44NyAwIDAgMSAxMy40MyA1LjU2NkExOC44NyAxOC44NyAwIDAgMSA0MyAyMy45OTRjLS4wMDQgMTAuNDY1LTguNTIyIDE4Ljk4LTE4Ljk4NiAxOC45OGgtLjAwOGExOSAxOSAwIDAgMS05LjA3My0yLjMxMWwtMTAuMDY1IDIuNjQgMi42OTQtOS44MzVhMTguOTQgMTguOTQgMCAwIDEtMi41MzUtOS40ODlDNS4wMzIgMTMuNTE0IDEzLjU0OCA1IDI0LjAxNCA1bTAtMUMxMi45OTggNCA0LjAzMiAxMi45NjIgNC4wMjcgMjMuOTc5YTIwIDIwIDAgMCAwIDIuNDYxIDkuNjIyTDMuOTAzIDQzLjA0YS45OTguOTk4IDAgMCAwIDEuMjE5IDEuMjMxbDkuNjg3LTIuNTRhMjAgMjAgMCAwIDAgOS4xOTcgMi4yNDRjMTEuMDI0IDAgMTkuOTktOC45NjMgMTkuOTk1LTE5Ljk4QTE5Ljg2IDE5Ljg2IDAgMCAwIDM4LjE1MyA5Ljg2IDE5Ljg3IDE5Ljg3IDAgMCAwIDI0LjAxNCA0Ii8+PHBhdGggZmlsbD0iIzQwYzM1MSIgZD0iTTM1LjE3NiAxMi44MzJhMTUuNjcgMTUuNjcgMCAwIDAtMTEuMTU3LTQuNjI2Yy04LjcwNCAwLTE1Ljc4MyA3LjA3Ni0xNS43ODcgMTUuNzc0YTE1Ljc0IDE1Ljc0IDAgMCAwIDIuNDEzIDguMzk2bC4zNzYuNTk3LTEuNTk1IDUuODIxIDUuOTczLTEuNTY2LjU3Ny4zNDJhMTUuNzUgMTUuNzUgMCAwIDAgOC4wMzIgMi4xOTloLjAwNmM4LjY5OCAwIDE1Ljc3Ny03LjA3NyAxNS43OC0xNS43NzZhMTUuNjggMTUuNjggMCAwIDAtNC42MTgtMTEuMTYxIi8+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTE5LjI2OCAxNi4wNDVjLS4zNTUtLjc5LS43MjktLjgwNi0xLjA2OC0uODItLjI3Ny0uMDEyLS41OTMtLjAxMS0uOTA5LS4wMTFzLS44My4xMTktMS4yNjUuNTk0LTEuNjYxIDEuNjIyLTEuNjYxIDMuOTU2IDEuNyA0LjU5IDEuOTM3IDQuOTA2IDMuMjgyIDUuMjU5IDguMTA0IDcuMTYxYzQuMDA3IDEuNTggNC44MjMgMS4yNjYgNS42OTMgMS4xODdzMi44MDctMS4xNDcgMy4yMDItMi4yNTUuMzk1LTIuMDU3LjI3Ny0yLjI1NWMtLjExOS0uMTk4LS40MzUtLjMxNi0uOTA5LS41NTRzLTIuODA3LTEuMzg1LTMuMjQyLTEuNTQzLS43NTEtLjIzNy0xLjA2OC4yMzhjLS4zMTYuNDc0LTEuMjI1IDEuNTQzLTEuNTAyIDEuODU5cy0uNTU0LjM1Ny0xLjAyOC4xMTktMi4wMDItLjczOC0zLjgxNS0yLjM1NGMtMS40MS0xLjI1Ny0yLjM2Mi0yLjgxLTIuNjM5LTMuMjg1LS4yNzctLjQ3NC0uMDMtLjczMS4yMDgtLjk2OC4yMTMtLjIxMy40NzQtLjU1NC43MTItLjgzMS4yMzctLjI3Ny4zMTYtLjQ3NS40NzQtLjc5MXMuMDc5LS41OTQtLjA0LS44MzFjLS4xMTctLjIzOC0xLjAzOS0yLjU4NC0xLjQ2MS0zLjUyMiIvPjwvc3ZnPg=="
+        },
+        "displayName": "WhatsApp Business Cloud",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1225,
+        "icon": "file:form.svg",
+        "name": "n8n-nodes-base.formTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "table",
+              "submit",
+              "post"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.formtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Other Trigger Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "On form submission"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NiIgaGVpZ2h0PSI0MCIgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iIzAwQjdCQyIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMzQuOTc4IDM3LjczMmExLjU2IDEuNTYgMCAwIDEtMS41NjIgMS41NjNINi4yNmExLjU2IDEuNTYgMCAwIDEtMS41NjMtMS41NjNWOS42MDdjMC0uNDA1LjE1Ny0uNzk0LjQzOC0xLjA4Nmw2LjMwNC02LjUzMXY1LjM0NEg4LjIxM2ExLjE3MiAxLjE3MiAwIDEgMCAwIDIuMzQzaDQuNDNhMS4xNyAxLjE3IDAgMCAwIDEuMTcxLTEuMTcxVi4yMzJoMTkuNjAyYTEuNTYgMS41NiAwIDAgMSAxLjU2MiAxLjU2M3YxMC4zMjdsLTIuODYgMi44Ni04LjI1MiA4LjI3NmE0MTMuMDA2IDQxMy4wMDYgMCAwIDEtMS42NTQgMS42NjJsLS4zMzcuMzM3YTIgMiAwIDAgMC0uNTU3IDEuMDhMMjAuMyAzMS45MjJjLS4xMDguNjM4LS4yMTUgMS4wNzkuMjExIDEuNDE4LjQwMy4zMi45LjE3NCAxLjU0LjA2Nmw1LjQwOC0uOTI4YTIgMiAwIDAgMCAxLjA4LS41NTZsNi40NC02LjQyOXptLTI0LjAzLTIxLjI2NWExLjE4IDEuMTggMCAwIDAgMS4xNzEgMS4xNzJoMTMuMTYzYTEuMTcyIDEuMTcyIDAgMSAwIDAtMi4zNDRIMTIuMTE5YTEuMTcgMS4xNyAwIDAgMC0xLjE3MiAxLjE3Mm03LjI5NCAxNC43NjZhMS4xNyAxLjE3IDAgMCAwLTEuMTcyLTEuMTcySDEyLjEyYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNC45NTFhMS4xNyAxLjE3IDAgMCAwIDEuMTcyLTEuMTcybS44Ni03LjM5MWExLjE3IDEuMTcgMCAwIDAtMS4xNzItMS4xNzJoLTUuODExYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNS44MWExLjE2NCAxLjE2NCAwIDAgMCAxLjE3My0xLjE3MSIgY2xpcC1ydWxlPSJldmVub2RkIi8+PHBhdGggZmlsbD0iIzAwQjdCQyIgZD0ibTMzLjUzMiAxNi4zOTcgNC4yODktNC4yODkgMy43NTggMy43MSAxLjYxNy0xLjYxNiAyLjI1OCAyLjI1N2MuMjE4LjIxOC4zNC41MTMuMzQzLjgyLS4wMDIuMzExLS4xMjUuNjA4LS4zNDQuODNsLTYuODA0IDYuNzk2YTEuMTMgMS4xMyAwIDAgMS0uODI4LjM0MyAxLjE1IDEuMTUgMCAwIDEtLjgyOC0uMzQzIDEuMTggMS4xOCAwIDAgMSAwLTEuNjU3bDUuOTc2LTUuOTY4LTEuMzEyLTEuMzEzLTEuMzgzIDEuNDE0LTEzLjE0OSAxMy4xMjUtNC42MTcuNzgyLjc4Mi00LjYxNy4zMzYtLjMzNyAyLjU2MiAyLjU1NWExLjEgMS4xIDAgMCAwIC44MjguMzQ0Yy4zMTIuMDA1LjYxMi0uMTIuODI4LS4zNDRhMS4xOCAxLjE4IDAgMCAwIDAtMS42NTZsLTIuNTYyLTIuNTYyek00NC43MzYgMTIuMjRjMCAuNDE0LS4xNjMuODEtLjQ1NCAxLjEwMmwtLjkyMi45MTQtMy44NTItMy44MjguOTMtLjkzYTEuNTYzIDEuNTYzIDAgMCAxIDIuMjAzIDBsMS42NCAxLjY0MWMuMjkxLjI5My40NTUuNjkuNDU1IDEuMTAyIi8+PC9zdmc+"
+        },
+        "displayName": "n8n Form Trigger",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1235,
+        "icon": "file:extractFromFile.svg",
+        "name": "n8n-nodes-base.extractFromFile",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Spreadsheet",
+              "Excel",
+              "xls",
+              "xlsx",
+              "ods",
+              "tabular",
+              "decode",
+              "decoding",
+              "Move Binary Data",
+              "Binary",
+              "File",
+              "PDF",
+              "JSON",
+              "HTML",
+              "ICS",
+              "iCal",
+              "txt",
+              "Text",
+              "RTF",
+              "XML",
+              "64",
+              "Base64",
+              "Convert"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.extractfromfile/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Files",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Extract from File"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTAuOTM3NSAyQzAuNDE5NzMzIDIgMCAyLjQxOTczIDAgMi45Mzc1VjM3LjMyMjFDMCAzNy44Mzk5IDAuNDE5NzMzIDM4LjI1OTYgMC45Mzc1IDM4LjI1OTZIMjYuMjE1NEMyNi43MzMyIDM4LjI1OTYgMjcuMTUyOSAzNy44Mzk5IDI3LjE1MjkgMzcuMzIyMUwyNy4xNTI5IDMwLjY3MTlMMTYuNzk2OSAzMC42NzE5QzE0Ljg5ODQgMzAuNjcxOSAxMy4zNTk0IDI5LjEzMjkgMTMuMzU5NCAyNy4yMzQ0VjI1LjM1OTRDMTMuMzU5NCAyMy40NjA5IDE0Ljg5ODQgMjEuOTIxOSAxNi43OTY5IDIxLjkyMTlIMjcuMTUyOUwyNy4xNTI5IDE1Ljc4MjFIMTQuMzA4M0MxMy43OTA2IDE1Ljc4MjEgMTMuMzcwOCAxNS4zNjI0IDEzLjM3MDggMTQuODQ0NlYySDAuOTM3NVoiIGZpbGw9IiMzNTNGNkUiLz4KPHBhdGggZD0iTTE2LjAyNzEgMkMxNS45NDA4IDIgMTUuODcwOCAyLjA2OTk2IDE1Ljg3MDggMi4xNTYyNVYxMi44MTM0QzE1Ljg3MDggMTMuMDcyMyAxNi4wODA3IDEzLjI4MjEgMTYuMzM5NiAxMy4yODIxSDI2Ljk5NjdDMjcuMDgzIDEzLjI4MjEgMjcuMTUyOSAxMy4yMTIyIDI3LjE1MjkgMTMuMTI1OUwyNy4xNTI5IDEyLjYxNzFDMjcuMTUyOSAxMi4zNjg4IDI3LjA1NDUgMTIuMTMwNyAyNi44NzkxIDExLjk1NUwxNy4yMjI1IDIuMjc1MzhDMTcuMDQ2NiAyLjA5OTA4IDE2LjgwNzkgMiAxNi41NTg4IDJIMTYuMDI3MVoiIGZpbGw9IiMzNTNGNkUiLz4KPHBhdGggZD0iTTI5Ljc2NDIgMzQuNjUwM0MyOS4wMzQgMzMuOTE2IDI5LjAzNzQgMzIuNzI4OCAyOS43NzE2IDMxLjk5ODZMMzMuNjE5NyAyOC4xNzE5TDE2Ljc5NjkgMjguMTcxOUMxNi4yNzkxIDI4LjE3MTkgMTUuODU5NCAyNy43NTIxIDE1Ljg1OTQgMjcuMjM0NFYyNS4zNTk0QzE1Ljg1OTQgMjQuODQxNiAxNi4yNzkxIDI0LjQyMTkgMTYuNzk2OSAyNC40MjE5TDMzLjU0MTIgMjQuNDIxOUwyOS43NzE2IDIwLjY3MzNDMjkuMDM3NCAxOS45NDMxIDI5LjAzNCAxOC43NTU5IDI5Ljc2NDIgMTguMDIxNkMzMC40OTQ0IDE3LjI4NzQgMzEuNjgxNiAxNy4yODQgMzIuNDE1OSAxOC4wMTQyTDM5LjQ0NzEgMjUuMDA2NEMzOS44MDEgMjUuMzU4MyA0MCAyNS44MzY4IDQwIDI2LjMzNTlDNDAgMjYuODM1IDM5LjgwMSAyNy4zMTM1IDM5LjQ0NzEgMjcuNjY1NUwzMi40MTU5IDM0LjY1NzZDMzEuNjgxNiAzNS4zODc4IDMwLjQ5NDQgMzUuMzg0NSAyOS43NjQyIDM0LjY1MDNaIiBmaWxsPSIjMzUzRjZFIi8+Cjwvc3ZnPgo="
+        },
+        "displayName": "Extract from File",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 41,
+        "name": "Ticket Management"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

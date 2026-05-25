@@ -1,0 +1,1354 @@
+{
+  "workflow": {
+    "id": 14656,
+    "name": "Create event recap Instagram carousels from photo dumps using Upload to URL",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-02T12:12:27.446Z",
+    "description": "\nAutomate your post-event Instagram carousel using a fan-out and merge pattern. One Code node splits the photos array into individual n8n items. Every photo then flows through HTTP Fetch, Upload to URL, and a child container Code node independently. A Merge node collects all completed items, a final Code node sorts them and builds the children parameter, then the carousel is assembled and published. Upload to URL is a real visible node on the canvas, running once per photo.\n\n\n---\n\n## What This Workflow Does\n\n### Intake and Fan-Out\n- **Webhook - Receive Event Payload** -- accepts a POST to /ig-event-recap. Responds after the full workflow completes. Typically triggered by a photographer tool, event CMS, or manual call immediately after event photos are ready.\n- **Code - Validate Caption and Split Photos** -- validates the photos array (2-10 items, HTTPS URLs, deduplicated), builds a multi-block storytelling caption from all event metadata, then returns one item per photo. Each item carries the photo URL, slideIndex, fullCaption, eventName, and IG credentials. This fans the downstream nodes out to process all photos in parallel.\n\n### Per-Photo Pipeline (runs once per item)\n- **HTTP - Fetch Photo Binary** -- downloads each photoUrl as a binary file. Runs once per item. Works with any public HTTPS image source.\n- **Upload to URL** -- real node on the canvas, runs once per photo item. Uploads the binary and returns a stable public CDN URL. This step is mandatory because Instagram child container endpoints require a direct public HTTPS image URL and reject binary payloads.\n- **Code - Create Child Container** -- calls the Instagram Graph API per item with is_carousel_item set to true. Returns childContainerId and cdnUrl alongside the slideIndex for sort ordering downstream.\n\n### Fan-In and Carousel Assembly\n- **Merge All Child Items** -- waits for all per-photo items to complete and collects them into a single execution. This is the fan-in point. Mode: Merge by Position.\n- **Code - Build Children Param** -- receives all merged items, sorts by slideIndex to guarantee photo order is preserved, joins child container IDs as a comma-separated string, and re-attaches the caption and event metadata from the first item.\n- **HTTP - Create Carousel Container** -- POSTs to the Instagram Graph API /media endpoint with media_type CAROUSEL, the sorted children ID string, and the caption. Caption is set only on the parent container.\n- **Wait 8s** -- buffer before the publish call to allow Instagram to validate all child assets.\n- **HTTP - Publish Carousel** -- calls /media_publish. Returns the live Post ID.\n- **HTTP - Fetch Post Metadata** -- retrieves permalink and timestamp.\n\n### Logging and Notification\n- **Airtable - Log Published Post** -- creates a record with event name, Post ID, permalink, slide count, and publish timestamp. For client reporting and campaign tracking.\n- **Slack - Notify Team** -- sends event name, slide count, permalink, and publish timestamp.\n- **Respond to Webhook** -- returns a structured JSON payload with mediaId, permalink, slideCount, eventName, and publishedAt.\n\n---\n\n## Key Features\n\n- **Fan-out and merge pattern** -- no Split In Batches loop. Photos are processed in parallel via item splitting, not serial iteration.\n- **Upload to URL is a real canvas node** -- runs once per photo item between HTTP Fetch and Code Create Child. Fully visible and configurable in the workflow editor.\n- **SlideIndex sorting** -- the final Code node sorts merged items by slideIndex before joining IDs, preserving the exact photo order from the original payload regardless of completion order.\n- **Conditional caption blocks** -- every metadata field is optional. Missing fields are skipped without errors. Caption auto-truncated to 2200 characters.\n- **Airtable logging** -- every published carousel is recorded for reporting without writing back to a source system.\n\n---\n\n## What You Will Need\n\n### Credentials\n- **Upload to URL** -- configured in n8n\n- **Instagram Graph API** -- Business or Creator account access token\n- **Airtable Personal Access Token** -- for the event posts log base\n- **Slack OAuth2** -- for team notifications\n\n---\n\n## Perfect For\n\n- **Nightlife venues and clubs** -- post the recap carousel automatically after the photographer delivers the final selects\n- **Music festivals and brand activations** -- trigger from any webhook-capable CMS or content tool the moment photos are approved\n- **Event photographers and agencies** -- deliver the published carousel as part of the photo handoff, not as a separate manual step\n- **Corporate events teams** -- keep an Airtable log of every carousel post with full metadata for quarterly reporting",
+    "workflow": {
+      "meta": {
+        "instanceId": "277842713620d9f5554de3b1518b865a152c8c4db680008bd8aec536fc18b4a8",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "b154d5fd-2503-48fe-8058-e8bd80d8102c",
+          "name": "Template Overview1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -384,
+            2400
+          ],
+          "parameters": {
+            "width": 460,
+            "height": 504,
+            "content": "Event Recap Photo Dump – Instagram Carousel\n\nAutomatically creates and publishes an Instagram carousel from event photos. Receives event data via webhook, splits photos into items, uploads each via UploadToURL to get public CDN links, creates IG child containers, merges them into a carousel, publishes the post, logs it in Airtable, and notifies the team on Slack.\n\nFlow:\nWebhook → Split photos → Fetch images → Upload → Create IG containers → Merge → Publish → Log → Notify\n\nRequired:\nIG_USER_ID, IG_ACCESS_TOKEN, SLACK_CHANNEL_ID, AIRTABLE_BASE_ID\n\nPayload:\neventName, eventDate, location, attendees,\ncaption, highlights[], nextEventDate, hashtags[],\nphotos[]: { url, label }"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f3ff8f1c-ca71-4243-bc1c-9764485c448a",
+          "name": "Sticky Nodes 1-",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            128,
+            2896
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 520,
+            "height": 532,
+            "content": "Webhook – Receive Event Payload: Accepts POST requests at /ig-event-recap and returns a final status once completed.\n\nCode – Validate & Caption: Verifies 2–10 HTTPS photo URLs and generates a full storytelling caption from event metadata.\n\nFan-Out Execution: Converts the photo array into individual items to automatically trigger downstream processing for each image."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "b29ada57-7653-4700-b93d-c08d1d51a071",
+          "name": "Sticky Nodes 3-",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            688,
+            2912
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 808,
+            "height": 500,
+            "content": "HTTP – Fetch Photo Binary: Downloads each photoUrl as a binary file; executes once for every image in the set.\n\nUpload to URL: Uploads each binary to a CDN to generate the mandatory public HTTPS URL required by Instagram.\n\nCode – Create Child Container: Generates an Instagram child media container for each photo, returning a childContainerId and preserving the slide order.\n\nMerge: Acts as the \"fan-in\" point, waiting for all individual photo processes to finish before collecting all container IDs into a single execution."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f5af5d14-a51d-4e48-bea1-d1889cdde497",
+          "name": "Sticky Nodes 7-",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1520,
+            2912
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 1732,
+            "height": 500,
+            "content": "Code – Build Children Param: Sorts all merged items by slideIndex and joins the container IDs into a comma-separated string to preserve photo order for the parent API call.\n\nHTTP – Create Carousel Container: Submits a POST request to Instagram with the CAROUSEL media type, the sorted children string, and the full storytelling caption.\n\nWait 8s & Publish: Provides a processing buffer before calling /media_publish to finalize the post and retrieve the official Post ID.\n\nLog & Notify: Fetches post metadata, records the event details in Airtable, alerts the team via Slack, and returns a final JSON success payload to the webhook caller."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f04692ad-4470-497d-921b-7091baae6f60",
+          "name": "Webhook Receive Event1",
+          "type": "n8n-nodes-base.webhook",
+          "position": [
+            256,
+            3200
+          ],
+          "webhookId": "ig-event-recap-webhook",
+          "parameters": {
+            "path": "ig-event-recap",
+            "options": {},
+            "httpMethod": "POST",
+            "responseMode": "responseNode"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "b581b157-1175-4d61-b9b8-00516dbe59b9",
+          "name": "Code Validate Caption and Split Photos1",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            480,
+            3200
+          ],
+          "parameters": {
+            "jsCode": "const item = $input.item.json;\n\nif (!item.eventName) throw new Error('eventName is required');\nif (!item.photos || !Array.isArray(item.photos) || item.photos.length < 2) {\n  throw new Error('photos array with at least 2 items is required');\n}\n\nvar seen = {};\nvar photos = item.photos\n  .map(function(p) { return { url: (p.url || p).trim(), label: p.label || '' }; })\n  .filter(function(p) {\n    if (!p.url.startsWith('https://') || seen[p.url]) return false;\n    seen[p.url] = true;\n    return true;\n  })\n  .slice(0, 10);\n\nif (photos.length < 2) throw new Error('Need at least 2 valid unique HTTPS photo URLs');\n\nvar rawTags = item.hashtags || ['eventrecap', 'photodump', 'nightout', 'memories'];\nvar hashtagBlock = (Array.isArray(rawTags) ? rawTags : [rawTags])\n  .join(' ').split(/[,\\s]+/).filter(Boolean)\n  .map(function(h) { return h.startsWith('#') ? h : '#' + h; }).join(' ');\n\nvar parts = [item.eventName + ' - swipe to relive the night ->\\n'];\nif (item.location && item.eventDate) parts.push(item.location + '  -  ' + item.eventDate + '\\n');\nelse if (item.location)  parts.push(item.location + '\\n');\nelse if (item.eventDate) parts.push(item.eventDate + '\\n');\nif (item.attendees) parts.push(Number(item.attendees).toLocaleString() + ' people in the building\\n');\nif (item.caption)   parts.push(item.caption.trim() + '\\n');\nif (item.highlights && item.highlights.length) {\n  var hl = Array.isArray(item.highlights) ? item.highlights : [item.highlights];\n  parts.push('Highlights:\\n' + hl.slice(0,5).map(function(h,i){return (i+1)+'. '+h;}).join('\\n') + '\\n');\n}\nif (item.nextEventDate) parts.push('Next one: ' + item.nextEventDate + ' - stay locked.\\n');\nparts.push(hashtagBlock);\n\nvar fullCaption = parts.join('\\n').trim();\nif (fullCaption.length > 2200) fullCaption = fullCaption.substring(0, 2196) + '...';\n\nreturn photos.map(function(photo, idx) {\n  return {\n    json: {\n      photoUrl:    photo.url,\n      photoLabel:  photo.label,\n      slideIndex:  idx + 1,\n      slideCount:  photos.length,\n      fullCaption: fullCaption,\n      eventName:   item.eventName,\n      igUserId:    $env.IG_USER_ID,\n      accessToken: $env.IG_ACCESS_TOKEN\n    }\n  };\n});\n"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "70ef02a0-6a10-4742-bc96-dd11cdbe256f",
+          "name": "HTTP Fetch Photo Binary1",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            752,
+            3200
+          ],
+          "parameters": {
+            "url": "={{ $json.photoUrl }}",
+            "options": {
+              "response": {
+                "response": {
+                  "responseFormat": "file"
+                }
+              }
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "d9fb2aeb-b38e-4494-8e06-f5398b8d030a",
+          "name": "Upload to URL1",
+          "type": "n8n-nodes-uploadtourl.uploadToUrl",
+          "position": [
+            928,
+            3200
+          ],
+          "parameters": {},
+          "credentials": {
+            "uploadToUrlApi": {
+              "id": "NZ1TNlb5Vjt2d9dg",
+              "name": "uploadtourl - Deepanshi"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "472ef619-01a0-42ac-a995-f58af354fba0",
+          "name": "Code Create Child Container1",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1136,
+            3200
+          ],
+          "parameters": {
+            "jsCode": "const item = $input.item.json;\n\nconst publicUrl = item.public_url || item.url || item.file_url || item.cdn_url || '';\nif (!publicUrl) {\n  throw new Error('Upload to URL returned no public URL for slide ' + item.slideIndex + '. Keys: ' + JSON.stringify(Object.keys(item)));\n}\n\nconst igUserId    = $env.IG_USER_ID;\nconst accessToken = $env.IG_ACCESS_TOKEN;\n\nconst res = await fetch('https://graph.facebook.com/v19.0/' + igUserId + '/media', {\n  method: 'POST',\n  headers: { 'Content-Type': 'application/json' },\n  body: JSON.stringify({\n    image_url:        publicUrl,\n    media_type:       'IMAGE',\n    is_carousel_item: true,\n    access_token:     accessToken\n  })\n});\n\nconst data = await res.json();\nif (data.error) {\n  throw new Error('IG child container error (slide ' + item.slideIndex + '): ' + data.error.message);\n}\n\nreturn {\n  ...item,\n  childContainerId: data.id,\n  cdnUrl: publicUrl\n};\n"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "dd40c79d-d564-4e7b-8976-033b45571c44",
+          "name": "Merge All Child Items1",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            1328,
+            3200
+          ],
+          "parameters": {},
+          "typeVersion": 3
+        },
+        {
+          "id": "621378aa-2da7-4291-a730-5a8810bc9ad2",
+          "name": "Code Build Children Param1",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1584,
+            3200
+          ],
+          "parameters": {
+            "jsCode": "const allItems = $input.all();\n\nvar sorted = allItems\n  .map(function(i) { return i.json; })\n  .filter(function(d) { return d.childContainerId; })\n  .sort(function(a, b) { return a.slideIndex - b.slideIndex; });\n\nif (sorted.length < 2) {\n  throw new Error('Need at least 2 child containers. Got: ' + sorted.length);\n}\n\nvar first = sorted[0];\n\nreturn {\n  childrenParam: sorted.map(function(d) { return d.childContainerId; }).join(','),\n  slideLog:      sorted.map(function(d) { return { slide: d.slideIndex, id: d.childContainerId, url: d.cdnUrl }; }),\n  slideCount:    sorted.length,\n  fullCaption:   first.fullCaption,\n  eventName:     first.eventName,\n  igUserId:      first.igUserId,\n  accessToken:   first.accessToken\n};\n"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "4d381eaf-9796-40c3-974a-472593737801",
+          "name": "IG Create Carousel Container1",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            1808,
+            3200
+          ],
+          "parameters": {
+            "url": "=https://graph.facebook.com/v19.0/{{ $json.igUserId }}/media",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={{ JSON.stringify({ media_type: 'CAROUSEL', children: $json.childrenParam, caption: $json.fullCaption, access_token: $json.accessToken }) }}",
+            "sendBody": true,
+            "specifyBody": "json"
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "e3c529b1-aa49-4819-87d6-191e8663b843",
+          "name": "Wait IG Buffer1",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            2016,
+            3200
+          ],
+          "webhookId": "f7255670-228f-4d82-b3b6-f1484d63ab8b",
+          "parameters": {
+            "unit": "seconds",
+            "amount": 8
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "c9a1e018-f70a-4e4c-9168-77bb0f54c104",
+          "name": "IG Publish Carousel1",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            2240,
+            3200
+          ],
+          "parameters": {
+            "url": "=https://graph.facebook.com/v19.0/{{ $('Code Build Children Param1').item.json.igUserId }}/media_publish",
+            "method": "POST",
+            "options": {},
+            "sendQuery": true,
+            "queryParameters": {
+              "parameters": [
+                {
+                  "name": "creation_id",
+                  "value": "={{ $('IG Create Carousel Container1').item.json.id }}"
+                },
+                {
+                  "name": "access_token",
+                  "value": "={{ $env.IG_ACCESS_TOKEN }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "cfa69ba2-8966-4aef-945f-7d6d34f3c878",
+          "name": "HTTP Fetch Post Metadata1",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            2464,
+            3200
+          ],
+          "parameters": {
+            "url": "=https://graph.facebook.com/v19.0/{{ $('IG Publish Carousel1').item.json.id }}",
+            "options": {},
+            "sendQuery": true,
+            "queryParameters": {
+              "parameters": [
+                {
+                  "name": "fields",
+                  "value": "id,permalink,timestamp,media_type"
+                },
+                {
+                  "name": "access_token",
+                  "value": "={{ $env.IG_ACCESS_TOKEN }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "df8b215c-6d74-4e53-83de-f4e44cfa9cb7",
+          "name": "Airtable Log Published Post1",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            2688,
+            3200
+          ],
+          "parameters": {
+            "base": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $env.AIRTABLE_BASE_ID }}"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Event Posts Log"
+            },
+            "columns": {
+              "value": {
+                "Status": "Published",
+                "Post ID": "={{ $('IG Publish Carousel1').item.json.id }}",
+                "Permalink": "={{ $('HTTP Fetch Post Metadata1').item.json.permalink }}",
+                "Event Name": "={{ $('Code Build Children Param1').item.json.eventName }}",
+                "Slide Count": "={{ $('Code Build Children Param1').item.json.slideCount }}",
+                "Published At": "={{ $('HTTP Fetch Post Metadata1').item.json.timestamp }}"
+              },
+              "schema": [],
+              "mappingMode": "defineBelow",
+              "matchingColumns": []
+            },
+            "options": {},
+            "operation": "create"
+          },
+          "credentials": {
+            "airtableTokenApi": {
+              "id": "3t89Q5x8gm0hM0Tx",
+              "name": "Airtable Personal Access Token account"
+            }
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "98d979fb-e6c0-44fa-8e84-b188b4094363",
+          "name": "Slack Notify Team1",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            2896,
+            3200
+          ],
+          "webhookId": "cccb1efe-2a2b-4f66-ba1e-694bd6a1db37",
+          "parameters": {
+            "text": "Event Recap Carousel Published!\n\nEvent: {{ $('Code Build Children Param').item.json.eventName }}\nSlides: {{ $('Code Build Children Param').item.json.slideCount }}\nPost ID: {{ $('IG Publish Carousel').item.json.id }}\nLink: {{ $('HTTP Fetch Post Metadata').item.json.permalink }}\nPublished: {{ new Date().toLocaleString() }}",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $env.SLACK_CHANNEL_ID }}"
+            },
+            "otherOptions": {},
+            "authentication": "oAuth2"
+          },
+          "credentials": {
+            "slackOAuth2Api": {
+              "id": "RYkcspsGW073XNK0",
+              "name": "Mediajade Slack"
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "4bcdc955-b9d3-42d5-a662-262aedd9c31e",
+          "name": "Respond to Webhook1",
+          "type": "n8n-nodes-base.respondToWebhook",
+          "position": [
+            3120,
+            3200
+          ],
+          "parameters": {
+            "options": {
+              "responseCode": 200
+            },
+            "respondWith": "json",
+            "responseBody": "={{ JSON.stringify({ success: true, mediaId: $('IG Publish Carousel1').item.json.id, permalink: $('HTTP Fetch Post Metadata1').item.json.permalink, slideCount: $('Code Build Children Param1').item.json.slideCount, eventName: $('Code Build Children Param1').item.json.eventName, publishedAt: $('HTTP Fetch Post Metadata1').item.json.timestamp }) }}"
+          },
+          "typeVersion": 1
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "Upload to URL1": {
+          "main": [
+            [
+              {
+                "node": "Code Create Child Container1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Wait IG Buffer1": {
+          "main": [
+            [
+              {
+                "node": "IG Publish Carousel1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Slack Notify Team1": {
+          "main": [
+            [
+              {
+                "node": "Respond to Webhook1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "IG Publish Carousel1": {
+          "main": [
+            [
+              {
+                "node": "HTTP Fetch Post Metadata1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Merge All Child Items1": {
+          "main": [
+            [
+              {
+                "node": "Code Build Children Param1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Webhook Receive Event1": {
+          "main": [
+            [
+              {
+                "node": "Code Validate Caption and Split Photos1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "HTTP Fetch Photo Binary1": {
+          "main": [
+            [
+              {
+                "node": "Upload to URL1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "HTTP Fetch Post Metadata1": {
+          "main": [
+            [
+              {
+                "node": "Airtable Log Published Post1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Code Build Children Param1": {
+          "main": [
+            [
+              {
+                "node": "IG Create Carousel Container1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Airtable Log Published Post1": {
+          "main": [
+            [
+              {
+                "node": "Slack Notify Team1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Code Create Child Container1": {
+          "main": [
+            [
+              {
+                "node": "Merge All Child Items1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "IG Create Carousel Container1": {
+          "main": [
+            [
+              {
+                "node": "Wait IG Buffer1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Code Validate Caption and Split Photos1": {
+          "main": [
+            [
+              {
+                "node": "HTTP Fetch Photo Binary1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 18,
+      "nodeTypes": {
+        "n8n-nodes-base.code": {
+          "count": 3
+        },
+        "n8n-nodes-base.wait": {
+          "count": 1
+        },
+        "n8n-nodes-base.merge": {
+          "count": 1
+        },
+        "n8n-nodes-base.slack": {
+          "count": 1
+        },
+        "n8n-nodes-base.webhook": {
+          "count": 1
+        },
+        "n8n-nodes-base.airtable": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 4
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 4
+        },
+        "n8n-nodes-base.respondToWebhook": {
+          "count": 1
+        },
+        "n8n-nodes-uploadtourl.uploadToUrl": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Jitesh Dugar",
+      "username": "jiteshdugar",
+      "bio": "AI Automation Specialist - OpenAI, CRM & Automation Expert with a solid understanding of various tools that include Zapier, Make, Zoho CRM, Hubspot, Google Sheets, Airtable, Pipedrive, Google Analytics, and more.",
+      "verified": true,
+      "links": [
+        "https://www.linkedin.com/in/jiteshdugar"
+      ],
+      "avatar": "https://gravatar.com/avatar/edaa3abb99806b0586dced559d0a5417f24a507e7c4464a63960f0638a4b1b90?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 2,
+        "icon": "file:airtable.svg",
+        "name": "n8n-nodes-base.airtable",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-goals-level-up-your-vocabulary-with-vonage-and-n8n/",
+                  "icon": "🎯",
+                  "label": "2021 Goals: Level Up Your Vocabulary With Vonage and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-sms-the-low-code-way-with-airtable-twilio-programmable-sms-and-n8n/",
+                  "icon": "📱",
+                  "label": "Sending SMS the Low-Code Way with Airtable, Twilio Programmable SMS, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automating-conference-organization-processes-with-n8n/",
+                  "icon": "🙋‍♀️",
+                  "label": "Automating Conference Organization Processes with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.airtable/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/airtable/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Airtable"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMDAgMTcwIj48cGF0aCBmaWxsPSIjZmNiNDAwIiBkPSJNODkgNC44IDE2LjIgMzQuOWMtNC4xIDEuNy00IDcuNC4xIDkuMWw3My4yIDI5YzYuNCAyLjYgMTMuNiAyLjYgMjAgMGw3My4yLTI5YzQuMS0xLjYgNC4xLTcuNC4xLTkuMWwtNzMtMzAuMUMxMDMuMiAyIDk1LjcgMiA4OSA0LjgiLz48cGF0aCBmaWxsPSIjMThiZmZmIiBkPSJNMTA1LjkgODguOXY3Mi41YzAgMy40IDMuNSA1LjggNi43IDQuNWw4MS42LTMxLjdjMS45LS43IDMuMS0yLjUgMy4xLTQuNVY1Ny4yYzAtMy40LTMuNS01LjgtNi43LTQuNUwxMDkgODQuM2MtMS45LjgtMy4xIDIuNi0zLjEgNC42Ii8+PHBhdGggZmlsbD0iI2Y4MmI2MCIgZD0ibTg2LjkgOTIuNi0yNC4yIDExLjctMi41IDEuMkw5LjEgMTMwYy0zLjIgMS42LTcuNC0uOC03LjQtNC40VjU3LjVjMC0xLjMuNy0yLjQgMS42LTMuM3EuNi0uNiAxLjItLjljMS4yLS43IDMtLjkgNC40LS4zbDc3LjUgMzAuN2M0IDEuNSA0LjMgNy4xLjUgOC45Ii8+PHBhdGggZmlsbD0iI2JhMWU0NSIgZD0ibTg2LjkgOTIuNi0yNC4yIDExLjctNTkuNC01MHEuNi0uNiAxLjItLjljMS4yLS43IDMtLjkgNC40LS4zbDc3LjUgMzAuN2M0IDEuNCA0LjMgNyAuNSA4LjgiLz48L3N2Zz4="
+        },
+        "displayName": "Airtable",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 24,
+        "icon": "file:merge.svg",
+        "name": "n8n-nodes-base.merge",
+        "codex": {
+          "data": {
+            "alias": [
+              "Join",
+              "Concatenate",
+              "Wait"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-sync-data-between-two-systems/",
+                  "icon": "🏬",
+                  "label": "How to synchronize data between two systems (one-way vs. two-way sync"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.merge/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Merge"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTc3XzUxOCkiPgo8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTAgNDhDMCAyMS40OTAzIDIxLjQ5MDMgMCA0OCAwSDExMkMxMzguNTEgMCAxNjAgMjEuNDkwMyAxNjAgNDhWNTZIMTk2LjI1MkMyNDAuNDM1IDU2IDI3Ni4yNTIgOTEuODE3MiAyNzYuMjUyIDEzNlYxOTJDMjc2LjI1MiAyMTQuMDkxIDI5NC4xNjEgMjMyIDMxNi4yNTIgMjMySDM1MlYyMjRDMzUyIDE5Ny40OSAzNzMuNDkgMTc2IDQwMCAxNzZINDY0QzQ5MC41MSAxNzYgNTEyIDE5Ny40OSA1MTIgMjI0VjI4OEM1MTIgMzE0LjUxIDQ5MC41MSAzMzYgNDY0IDMzNkg0MDBDMzczLjQ5IDMzNiAzNTIgMzE0LjUxIDM1MiAyODhWMjgwSDMxNi4yNTJDMjk0LjE2MSAyODAgMjc2LjI1MiAyOTcuOTA5IDI3Ni4yNTIgMzIwVjM3NkMyNzYuMjUyIDQyMC4xODMgMjQwLjQzNSA0NTYgMTk2LjI1MiA0NTZIMTYwVjQ2NEMxNjAgNDkwLjUxIDEzOC41MSA1MTIgMTEyIDUxMkg0OEMyMS40OTAzIDUxMiAwIDQ5MC41MSAwIDQ2NFY0MDBDMCAzNzMuNDkgMjEuNDkwMyAzNTIgNDggMzUySDExMkMxMzguNTEgMzUyIDE2MCAzNzMuNDkgMTYwIDQwMFY0MDhIMTk2LjI1MkMyMTMuOTI1IDQwOCAyMjguMjUyIDM5My42NzMgMjI4LjI1MiAzNzZWMzIwQzIyOC4yNTIgMjk0Ljc4NCAyMzguODU5IDI3Mi4wNDQgMjU1Ljg1MyAyNTZDMjM4Ljg1OSAyMzkuOTU2IDIyOC4yNTIgMjE3LjIxNiAyMjguMjUyIDE5MlYxMzZDMjI4LjI1MiAxMTguMzI3IDIxMy45MjUgMTA0IDE5Ni4yNTIgMTA0SDE2MFYxMTJDMTYwIDEzOC41MSAxMzguNTEgMTYwIDExMiAxNjBINDhDMjEuNDkwMyAxNjAgMCAxMzguNTEgMCAxMTJWNDhaTTEwNCA0OEMxMDguNDE4IDQ4IDExMiA1MS41ODE3IDExMiA1NlYxMDRDMTEyIDEwOC40MTggMTA4LjQxOCAxMTIgMTA0IDExMkg1NkM1MS41ODE3IDExMiA0OCAxMDguNDE4IDQ4IDEwNFY1NkM0OCA1MS41ODE3IDUxLjU4MTcgNDggNTYgNDhIMTA0Wk00NTYgMjI0QzQ2MC40MTggMjI0IDQ2NCAyMjcuNTgyIDQ2NCAyMzJWMjgwQzQ2NCAyODQuNDE4IDQ2MC40MTggMjg4IDQ1NiAyODhINDA4QzQwMy41ODIgMjg4IDQwMCAyODQuNDE4IDQwMCAyODBWMjMyQzQwMCAyMjcuNTgyIDQwMy41ODIgMjI0IDQwOCAyMjRINDU2Wk0xMTIgNDA4QzExMiA0MDMuNTgyIDEwOC40MTggNDAwIDEwNCA0MDBINTZDNTEuNTgxNyA0MDAgNDggNDAzLjU4MiA0OCA0MDhWNDU2QzQ4IDQ2MC40MTggNTEuNTgxNyA0NjQgNTYgNDY0SDEwNEMxMDguNDE4IDQ2NCAxMTIgNDYwLjQxOCAxMTIgNDU2VjQwOFoiIGZpbGw9IiM1NEI4QzkiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTc3XzUxOCI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Merge",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 47,
+        "icon": "file:webhook.svg",
+        "name": "n8n-nodes-base.webhook",
+        "codex": {
+          "data": {
+            "alias": [
+              "HTTP",
+              "API",
+              "Build",
+              "WH"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-custom-incident-response-workflows-with-n8n/",
+                  "label": "How to automate every step of an incident response workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Webhook"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTM1IDM3Yy0yLjIgMC00LTEuOC00LTRzMS44LTQgNC00IDQgMS44IDQgNC0xLjggNC00IDQiLz48cGF0aCBmaWxsPSIjMzc0NzRmIiBkPSJNMzUgNDNjLTMgMC01LjktMS40LTcuOC0zLjdsMy4xLTIuNWMxLjEgMS40IDIuOSAyLjMgNC43IDIuMyAzLjMgMCA2LTIuNyA2LTZzLTIuNy02LTYtNmMtMSAwLTIgLjMtMi45LjdsLTEuNyAxTDIzLjMgMTZsMy41LTEuOSA1LjMgOS40YzEtLjMgMi0uNSAzLS41IDUuNSAwIDEwIDQuNSAxMCAxMFM0MC41IDQzIDM1IDQzIi8+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTE0IDQzQzguNSA0MyA0IDM4LjUgNCAzM2MwLTQuNiAzLjEtOC41IDcuNS05LjdsMSAzLjlDOS45IDI3LjkgOCAzMC4zIDggMzNjMCAzLjMgMi43IDYgNiA2czYtMi43IDYtNnYtMmgxNXY0SDIzLjhjLS45IDQuNi01IDgtOS44IDgiLz48cGF0aCBmaWxsPSIjZTkxZTYzIiBkPSJNMTQgMzdjLTIuMiAwLTQtMS44LTQtNHMxLjgtNCA0LTQgNCAxLjggNCA0LTEuOCA0LTQgNCIvPjxwYXRoIGZpbGw9IiMzNzQ3NGYiIGQ9Ik0yNSAxOWMtMi4yIDAtNC0xLjgtNC00czEuOC00IDQtNCA0IDEuOCA0IDQtMS44IDQtNCA0Ii8+PHBhdGggZmlsbD0iI2U5MWU2MyIgZD0ibTE1LjcgMzQtMy40LTIgNS45LTkuN2MtMi0xLjktMy4yLTQuNS0zLjItNy4zIDAtNS41IDQuNS0xMCAxMC0xMHMxMCA0LjUgMTAgMTBjMCAuOS0uMSAxLjctLjMgMi41bC0zLjktMWMuMS0uNS4yLTEgLjItMS41IDAtMy4zLTIuNy02LTYtNnMtNiAyLjctNiA2YzAgMi4xIDEuMSA0IDIuOSA1LjFsMS43IDF6Ii8+PC9zdmc+"
+        },
+        "displayName": "Webhook",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 535,
+        "icon": "file:webhook.svg",
+        "name": "n8n-nodes-base.respondToWebhook",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.respondtowebhook/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes",
+              "Utility"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Respond to Webhook"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTM1IDM3Yy0yLjIgMC00LTEuOC00LTRzMS44LTQgNC00IDQgMS44IDQgNC0xLjggNC00IDQiLz48cGF0aCBmaWxsPSIjMzc0NzRmIiBkPSJNMzUgNDNjLTMgMC01LjktMS40LTcuOC0zLjdsMy4xLTIuNWMxLjEgMS40IDIuOSAyLjMgNC43IDIuMyAzLjMgMCA2LTIuNyA2LTZzLTIuNy02LTYtNmMtMSAwLTIgLjMtMi45LjdsLTEuNyAxTDIzLjMgMTZsMy41LTEuOSA1LjMgOS40YzEtLjMgMi0uNSAzLS41IDUuNSAwIDEwIDQuNSAxMCAxMFM0MC41IDQzIDM1IDQzIi8+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTE0IDQzQzguNSA0MyA0IDM4LjUgNCAzM2MwLTQuNiAzLjEtOC41IDcuNS05LjdsMSAzLjlDOS45IDI3LjkgOCAzMC4zIDggMzNjMCAzLjMgMi43IDYgNiA2czYtMi43IDYtNnYtMmgxNXY0SDIzLjhjLS45IDQuNi01IDgtOS44IDgiLz48cGF0aCBmaWxsPSIjZTkxZTYzIiBkPSJNMTQgMzdjLTIuMiAwLTQtMS44LTQtNHMxLjgtNCA0LTQgNCAxLjggNCA0LTEuOCA0LTQgNCIvPjxwYXRoIGZpbGw9IiMzNzQ3NGYiIGQ9Ik0yNSAxOWMtMi4yIDAtNC0xLjgtNC00czEuOC00IDQtNCA0IDEuOCA0IDQtMS44IDQtNCA0Ii8+PHBhdGggZmlsbD0iI2U5MWU2MyIgZD0ibTE1LjcgMzQtMy40LTIgNS45LTkuN2MtMi0xLjktMy4yLTQuNS0zLjItNy4zIDAtNS41IDQuNS0xMCAxMC0xMHMxMCA0LjUgMTAgMTBjMCAuOS0uMSAxLjctLjMgMi41bC0zLjktMWMuMS0uNS4yLTEgLjItMS41IDAtMy4zLTIuNy02LTYtNnMtNiAyLjctNiA2YzAgMi4xIDEuMSA0IDIuOSA1LjFsMS43IDF6Ii8+PC9zdmc+"
+        },
+        "displayName": "Respond to Webhook",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 7,
+            "name": "Utility"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 33,
+        "name": "Social Media"
+      },
+      {
+        "id": 51,
+        "name": "Multimodal AI"
+      }
+    ],
+    "image": []
+  }
+}

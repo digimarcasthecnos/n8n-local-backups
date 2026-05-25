@@ -1,0 +1,1748 @@
+{
+  "workflow": {
+    "id": 15070,
+    "name": "Monitor client meeting health with Fireflies, GPT-4o-mini, Google Sheets and Slack alerts",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-15T10:44:08.879Z",
+    "description": "### Description\n\nActivate this workflow once and every Monday morning it automatically scans all your client meetings from the past week. It pulls Fireflies sentiment scores per meeting, then sends each transcript to GPT-4o-mini which explains why the sentiment was positive or negative, scores the churn risk, extracts a key quote, and recommends one concrete action. Every meeting is logged to Google Sheets and any negative or high-risk meeting triggers an immediate Slack alert to your dedicated urgent channel. Built for account managers, customer success teams, and agency leads who need early warning on at-risk clients before small problems become lost accounts.\n\n---\n\n## What This Workflow Does\n\n- **Pulls last 7 days of client meetings automatically** — Fetches up to 50 recent Fireflies transcripts and filters to only those recorded this week\n- **Extracts Fireflies NLP sentiment scores** — Uses the built-in positive, neutral, and negative percentages already computed by Fireflies per meeting\n- **Computes a composite sentiment score** — Converts raw percentages into a single 0–100 score and assigns a label: Positive, Mostly Positive, Neutral, Mostly Negative, or Negative\n- **Adds AI context with GPT-4o-mini** — Explains WHY sentiment was what it was, scores churn risk from Low to Critical, and identifies the most important quote from the meeting\n- **Logs every meeting to Google Sheets** — Appends a 15-column row per meeting with emoji labels, scores, analysis, and a direct Fireflies link\n- **Fires instant Slack alerts for at-risk meetings** — Any meeting with Negative sentiment or High/Critical churn risk triggers an immediate alert to your `#urgent-alerts` channel\n- **Exits cleanly with no meetings** — If no meetings were recorded this week, the workflow stops silently without errors\n\n---\n\n## Setup Requirements\n\n### Tools Needed\n- n8n instance (self-hosted or cloud)\n- Fireflies.ai account with API access\n- OpenAI account with GPT-4o-mini API access\n- Google Sheets (one sheet with a tab named **Client Sentiment Log**)\n- Slack workspace with OAuth2 app configured and two channels ready\n\n### Credentials Required\n- Fireflies API key (pasted into **2. Set — Config Values**)\n- OpenAI API key\n- Google Sheets OAuth2\n- Slack OAuth2\n\n**Estimated Setup Time: 15–20 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Import the workflow** — Open n8n → Workflows → Import from JSON → paste the workflow JSON → click Import\n\n2. **Get your Fireflies API key** — Log in to fireflies.ai → Settings → Integrations → copy your API key\n\n3. **Fill in Config Values** — Open node **2. Set — Config Values** → replace all placeholders:\n\n| Field | What to enter |\n|---|---|\n| `YOUR_FIREFLIES_API_KEY` | Your Fireflies API key from step 2 |\n| `YOUR_GOOGLE_SHEET_ID` | The ID from your Google Sheet URL (the string between `/d/` and `/edit`) |\n| `Client Sentiment Log` | Leave as-is, or match your sheet tab name exactly |\n| `#client-health` | Your Slack channel for general weekly health monitoring |\n| `#urgent-alerts` | Your Slack channel for immediate at-risk client alerts |\n| `YOUR COMPANY NAME` | Your company name (used in the AI prompt) |\n\n4. **Connect OpenAI** — Open node **10. OpenAI — GPT-4o-mini Model** → click the credential dropdown → add your OpenAI API key → test the connection\n\n5. **Create your Google Sheet** — Open Google Sheets → add a tab named exactly **Client Sentiment Log** → add these 15 column headers in row 1: `Week`, `Meeting Date`, `Meeting Title`, `Client Name`, `Duration`, `Participants`, `Sentiment Score`, `Sentiment Label`, `Positive %`, `Negative %`, `GPT Analysis`, `Churn Risk`, `Recommended Action`, `Fireflies URL`, `Logged At`\n\n6. **Connect Google Sheets** — Open node **13. Google Sheets — Log Client Sentiment** → click the credential dropdown → add Google Sheets OAuth2 → sign in with your Google account → authorize access\n\n7. **Connect Slack** — Open node **15. Slack — Send Urgent Alert** → click the credential dropdown → connect your Slack workspace via OAuth2 → invite the n8n bot to both channels in Slack (`/invite @n8n` in each)\n\n8. **Activate the workflow** — Toggle the workflow to Active — it will run automatically every Monday at 9AM\n\n&gt; ⚠️ **To test immediately** — Click on node **1. Schedule — Every Monday 9AM** and use the manual Execute option to trigger a test run without waiting for Monday.\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Schedule: Every Monday 9AM**\nThis step fires the workflow automatically every Monday morning at 9AM. No manual trigger needed. Once the workflow is active, it runs on its own every week.\n\n**Step 2 — Set: Config Values**\nYour Fireflies API key, Google Sheet ID, sheet tab name, both Slack channel names, company name, and the 7-day date window are stored here. Week start and end dates are calculated automatically from today's date so you never need to update them.\n\n**Step 3 — HTTP: Fetch Last 50 Transcripts**\nA request is sent to the Fireflies API using your API key. It retrieves the 50 most recent transcripts from your account — title, date, duration, participants, and transcript URL for each. This is a lightweight list fetch; full content comes in a later step per meeting.\n\n**Step 4 — Code: Filter Last 7 Days**\nThe 50 transcripts are filtered to only those recorded in the past 7 days. Each one that passes becomes its own separate entry so subsequent steps process each meeting individually. If no transcripts exist at all, or none fall within the window, a fallback result is passed forward.\n\n**Step 5 — IF: Meetings Found?**\nThis is the gate check. If meetings were found (YES path), each one moves forward to full analysis. If no meetings were found this week (NO path), the workflow routes to **6. Set — No Meetings This Week** and stops cleanly.\n\n**Step 6 — Set: No Meetings This Week**\nThis step handles the empty-week case. It sets a brief message confirming nothing was recorded and the workflow ends here for that run.\n\n**Step 7 — HTTP: Fetch Full Transcript**\nFor each meeting that passed the filter, a second Fireflies API request retrieves the complete transcript: all sentences with speaker labels, the meeting summary, keywords, action items, and the Fireflies NLP sentiment analytics (positive, neutral, and negative percentages).\n\n**Step 8 — Code: Extract Sentiment Data**\nThe full transcript is processed here. Sentences are assembled into readable text limited to 4,000 characters for GPT efficiency. The three Fireflies sentiment percentages are combined into a single composite score (0–100) using a weighted formula. A sentiment label is assigned: Positive (60%+ positive), Negative (35%+ negative), Mostly Positive, Mostly Negative, or Neutral. The client name is extracted automatically from the meeting title using common patterns like \"Call with [Name]\" or \"Client | [Name]\". Meeting overview, keywords, and action items are also pulled for the AI step.\n\n**Step 9 — AI Agent: Sentiment Analysis**\nGPT-4o-mini receives the full meeting context including the Fireflies sentiment scores, overview, keywords, action items, and transcript excerpt. It returns exactly four fields: a 2–3 sentence explanation of why the sentiment was what it was (referencing actual meeting content), a churn risk score (Low, Medium, High, or Critical), one concrete action the account manager should take within 48 hours, and the single most important quote from the meeting.\n\n**Step 10 — OpenAI: GPT-4o-mini Model**\nThis is the language model powering the analysis step. It runs at temperature 0.3 for consistent, grounded responses and is capped at 500 tokens to keep each analysis concise and costs predictable.\n\n**Step 11 — Parser: Structured Analysis Output**\nThis step enforces the exact four-field schema GPT-4o-mini must return. It validates that all required fields are present and correctly typed before results move forward, preventing malformed AI output from reaching your sheet.\n\n**Step 12 — Code: Combine Analysis Results**\nThe AI output is merged with all meeting metadata. Emoji flags are added automatically based on sentiment label (🟢 Positive, 🟡 Mostly Positive, ⚪ Neutral, 🟠 Mostly Negative, 🔴 Negative) and churn risk (✅ Low, ⚠️ Medium, 🚨 High, 🆘 Critical). A `needsAlert` flag is set to true if the sentiment is Negative or Mostly Negative, or if churn risk is High or Critical.\n\n**Step 13 — Google Sheets: Log Client Sentiment**\nA new row is appended to your Client Sentiment Log tab for every meeting. All 15 columns are populated including the week date range, meeting details, sentiment score and label with emojis, positive and negative percentages, GPT analysis, churn risk with emoji, recommended action, and a direct Fireflies transcript link.\n\n**Step 14 — IF: Needs Urgent Alert?**\nThis check reads the `needsAlert` flag set in step 12. If the meeting is negative or high-risk (YES path), an immediate Slack alert fires to your `#urgent-alerts` channel. If the meeting is healthy (NO path), the workflow routes to **16. Set — No Alert Needed** and ends silently for that meeting.\n\n**Step 15 — Slack: Send Urgent Alert**\nA formatted Slack alert is posted to your `#urgent-alerts` channel. It includes the client name, meeting title, date, duration, sentiment label with emoji, churn risk level, the GPT explanation of what happened, the key quote in italics, the recommended action, and a direct link to the Fireflies transcript.\n\n**Step 16 — Set: No Alert Needed**\nThis step handles healthy meetings. It logs a brief confirmation that sentiment and churn risk are within acceptable levels. No Slack message is sent for these meetings.\n\n---\n\n## Key Features\n\n✅ **Fully automated weekly cadence** — Runs every Monday at 9AM with zero input after setup — your team starts the week already knowing which clients need attention\n✅ **Dual-layer sentiment analysis** — Combines Fireflies built-in NLP scores with GPT-4o-mini contextual interpretation for deeper insight than numbers alone\n✅ **Automatic client name extraction** — Pulls the client name from the meeting title using common naming patterns so your sheet is organized by client, not by meeting ID\n✅ **Emoji-coded at a glance** — Every row in Google Sheets and every Slack alert uses emoji flags for instant visual scanning — no need to read every cell\n✅ **Churn risk scoring per meeting** — Every meeting gets a Low / Medium / High / Critical rating so you can prioritize which clients need calls this week\n✅ **Key quote extracted per meeting** — The single most revealing sentence from the meeting is surfaced in every alert so the account manager has context instantly\n✅ **Alert only when needed** — Healthy meetings log silently. Only negative or high-risk meetings fire a Slack alert, keeping your `#urgent-alerts` channel signal-only\n✅ **Clean empty-week exit** — No meetings this week means a clean stop — no errors, no blank rows, no empty Slack messages\n\n---\n\n## Customisation Options\n\n**Change the alert trigger threshold** — In node **12. Code — Combine Analysis Results**, the `needsAlert` flag currently fires for Negative and Mostly Negative sentiment. Remove `Mostly Negative` from the check if you only want alerts for clearly Negative meetings to reduce noise.\n\n**Extend the date window to 14 days** — In node **2. Set — Config Values**, change `{days: 7}` in both the `weekStart` and `sevenDaysAgoMs` fields to `{days: 14}` to analyze a bi-weekly window instead of the past 7 days.\n\n**Add a weekly digest to the general Slack channel** — After node **13. Google Sheets — Log Client Sentiment**, add a second Code step that aggregates all meetings into a weekly summary (total meetings, positive count, at-risk count) and post it to `#client-health` as a Monday morning digest alongside the per-meeting urgent alerts.\n\n**Filter to specific client meetings only** — In node **4. Code — Filter Last 7 Days**, add a keyword filter after the date filter: only include transcripts whose title contains words like \"client\", \"customer\", or specific client names — excluding internal team meetings from the sentiment log.\n\n**Send a follow-up email for Critical risk meetings** — After node **15. Slack — Send Urgent Alert**, add an IF check for `churnRisk === 'Critical'` and connect a Gmail node to automatically email the account manager with the full analysis, recommended action, and Fireflies link for the most severe cases.\n\n---\n\n## Troubleshooting\n\n**Workflow not triggering on Monday:**\n- Confirm the workflow is toggled to Active — it will not run on a schedule if inactive\n- Check that the cron expression in node **1. Schedule — Every Monday 9AM** is `0 9 * * 1` exactly — any accidental edit breaks the schedule\n- To test immediately, click on node 1 and use the manual Execute option\n\n**Fireflies returning no transcripts or auth error:**\n- Confirm `YOUR_FIREFLIES_API_KEY` in node **2. Set — Config Values** is replaced with your actual key — not the placeholder text\n- Get your key from fireflies.ai → Settings → Integrations → API Key\n- Check that your Fireflies plan includes API access — some plans restrict this feature\n\n**Google Sheets not logging rows:**\n- Confirm the Google Sheets OAuth2 credential in node **13. Google Sheets — Log Client Sentiment** is connected and not expired — re-authorize if needed\n- Check that `YOUR_GOOGLE_SHEET_ID` in node **2. Set — Config Values** matches the ID in your sheet URL exactly\n- Confirm the tab is named **Client Sentiment Log** exactly — capitalization must match `sheetName` in Config Values\n- Verify all 15 column headers in row 1 of your sheet match exactly the column names listed in setup step 5\n\n**Slack alerts not arriving:**\n- Confirm the Slack OAuth2 credential in node **15. Slack — Send Urgent Alert** is connected and authorized\n- Check that `#urgent-alerts` in node **2. Set — Config Values** includes the `#` prefix and matches your channel name exactly\n- Type `/invite @n8n` in your `#urgent-alerts` channel to confirm the bot has posting permission\n- Check the `needsAlert` flag in the execution log of node **12. Code — Combine Analysis Results** — if it is false, the meeting was classified as healthy and no alert fires\n\n**AI returning incomplete output or wrong churn risk values:**\n- The schema parser in node **11. Parser — Structured Analysis Output** validates all four fields — check the execution log of node **9. AI Agent — Sentiment Analysis** for the raw GPT response if fields are missing\n- Confirm the OpenAI credential in node **10. OpenAI — GPT-4o-mini Model** is connected and your account has available credits\n- If `churnRisk` returns a value other than Low, Medium, High, or Critical, the prompt in node 9 explicitly restricts to those four options — re-check the prompt text is intact\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email:[info@isawow.com](info@isawow.com)\n🌐 Website:[https://isawow.com](https://isawow.com)",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "bb12023f-1d7b-49d2-aa19-45de5090ccff",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -5008,
+            -384
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 588,
+            "height": 1264,
+            "content": "## Client Sentiment Monitor — Fireflies + GPT-4o-mini + Sheets + Slack\n\nFor account managers, customer success teams, and agency leads who want automatic weekly client health monitoring based on real meeting conversations. Every Monday the workflow pulls the last 7 days of Fireflies transcripts, extracts the built-in Fireflies NLP sentiment scores per meeting, then sends each transcript to GPT-4o-mini for deeper contextual analysis — explaining WHY the sentiment was positive or negative, scoring churn risk, extracting a key quote, and recommending one concrete action. Every meeting is logged to Google Sheets. Negative or high-risk meetings trigger an immediate Slack alert to a dedicated urgent channel.\n\n## How it works\n- **1. Schedule — Every Monday 9AM** triggers the workflow each week\n- **2. Set — Config Values** stores Fireflies API key, Sheet ID, both Slack channels, and company name\n- **3. HTTP — Fetch Last 50 Transcripts** pulls the 50 most recent transcripts from Fireflies\n- **4. Code — Filter Last 7 Days** filters to the past 7 days and outputs one item per transcript\n- **5. IF — Meetings Found?** stops cleanly if no meetings were recorded this week\n- **7. HTTP — Fetch Full Transcript** fetches complete transcript data per meeting including sentiment analytics\n- **8. Code — Extract Sentiment Data** extracts Fireflies NLP scores, computes a 0–100 score, assigns a label, and extracts client name from the meeting title\n- **9. AI Agent — Sentiment Analysis** uses GPT-4o-mini to add gptAnalysis, churnRisk, recommendedAction, and keyQuote\n- **12. Code — Combine Analysis Results** adds emoji flags and determines if an alert is needed\n- **13. Google Sheets — Log Client Sentiment** appends one row per meeting to the tracker\n- **14. IF — Needs Urgent Alert?** checks if sentiment is Negative or churn risk is High or Critical\n- **15. Slack — Send Urgent Alert** fires immediately for each at-risk meeting to the alert channel\n\n## Set up steps\n1. In **2. Set — Config Values** — replace YOUR_FIREFLIES_API_KEY, YOUR_GOOGLE_SHEET_ID, sheet tab name, both Slack channel names, and your company name\n2. In **10. OpenAI — GPT-4o-mini Model** — connect your OpenAI credential\n3. In **13. Google Sheets — Log Client Sentiment** — connect your Google Sheets OAuth2 credential\n4. In **15. Slack — Send Urgent Alert** — connect your Slack OAuth2 credential and invite the bot to both channels\n5. Create a Google Sheet tab named Client Sentiment Log with columns: Week, Meeting Date, Meeting Title, Client Name, Duration, Participants, Sentiment Score, Sentiment Label, Positive %, Negative %, GPT Analysis, Churn Risk, Recommended Action, Fireflies URL, Logged At\n6. Activate the workflow — it runs every Monday at 9AM automatically"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "27065b92-7b96-4613-a9fb-fa56a5b4952b",
+          "name": "Section — Schedule, Config, and Transcript Fetch",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -4384,
+            -80
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 660,
+            "height": 516,
+            "content": "## Schedule, Config, and Transcript List Fetch\nWorkflow triggers every Monday at 9AM. Config stores all credentials and channels. HTTP fetches the 50 most recent Fireflies transcripts for filtering."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "fbfbaeb2-e591-4548-a590-892bbe097625",
+          "name": "Section — 7-Day Filter and Gate",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -3696,
+            -192
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 484,
+            "height": 788,
+            "content": "## 7-Day Filter and Gate\nFilters the 50 transcripts to the past 7 days only. Outputs one item per transcript. If no meetings found this week, exits cleanly via the Set node below."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "6d4d556f-c42c-4848-8137-26f4c2708da5",
+          "name": "Section — Full Transcript Fetch and Processing",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -3168,
+            -96
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 420,
+            "height": 516,
+            "content": "## Full Transcript Fetch and Processing\nFetches complete transcript details per meeting including sentences, summary, and Fireflies NLP sentiment scores. Extracts a weighted sentiment score, label, client name, and 4000-char transcript excerpt."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "6b78580f-bf25-4b9c-b30a-0f0703ce4575",
+          "name": "Section — AI Sentiment Analysis",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2704,
+            -320
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 324,
+            "height": 996,
+            "content": "## AI Sentiment Analysis\nGPT-4o-mini adds four contextual intelligence fields: a 2–3 sentence explanation of WHY the sentiment was positive or negative, a churn risk score (Low/Medium/High/Critical), a concrete recommended action, and the most important quote from the meeting."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "6c72be71-f035-44bc-bfb2-45f02d9dec6b",
+          "name": "Section — Results Assembly, Logging, and Alert Routing",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2320,
+            -240
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 1044,
+            "height": 740,
+            "content": "## Results Assembly, Logging, and Alert Routing\nMerges AI output with meeting data and adds emoji flags. Google Sheets logs every meeting. The IF node checks if sentiment is Negative or churn risk is High or Critical — if so, fires an immediate Slack alert to the urgent channel."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "3c29e0e4-b444-48d3-b924-1d2c78184d2a",
+          "name": "1. Schedule — Every Monday 9AM",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            -4336,
+            96
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "field": "cronExpression",
+                  "expression": "0 9 * * 1"
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "3b84778f-c8d1-4a58-835a-38c6d76f3023",
+          "name": "2. Set — Config Values",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -4112,
+            96
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "cfg-001",
+                  "name": "firefliesApiKey",
+                  "type": "string",
+                  "value": "YOUR_FIREFLIES_API_KEY"
+                },
+                {
+                  "id": "cfg-002",
+                  "name": "sheetId",
+                  "type": "string",
+                  "value": "YOUR_GOOGLE_SHEET_ID"
+                },
+                {
+                  "id": "cfg-003",
+                  "name": "sheetName",
+                  "type": "string",
+                  "value": "Client Sentiment Log"
+                },
+                {
+                  "id": "cfg-004",
+                  "name": "slackChannel",
+                  "type": "string",
+                  "value": "#client-health"
+                },
+                {
+                  "id": "cfg-005",
+                  "name": "slackAlertChannel",
+                  "type": "string",
+                  "value": "#urgent-alerts"
+                },
+                {
+                  "id": "cfg-006",
+                  "name": "companyName",
+                  "type": "string",
+                  "value": "YOUR COMPANY NAME"
+                },
+                {
+                  "id": "cfg-007",
+                  "name": "weekStart",
+                  "type": "string",
+                  "value": "={{ $now.minus({days: 7}).toFormat('dd MMM yyyy') }}"
+                },
+                {
+                  "id": "cfg-008",
+                  "name": "weekEnd",
+                  "type": "string",
+                  "value": "={{ $now.toFormat('dd MMM yyyy') }}"
+                },
+                {
+                  "id": "cfg-009",
+                  "name": "sevenDaysAgoMs",
+                  "type": "number",
+                  "value": "={{ $now.minus({days: 7}).toMillis() }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "f01db6a3-3538-45e0-9446-ea8f9a78812c",
+          "name": "3. HTTP — Fetch Last 50 Transcripts",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -3888,
+            96
+          ],
+          "parameters": {
+            "url": "https://api.fireflies.ai/graphql",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"query\": \"query GetRecentTranscripts { transcripts(limit: 50) { id title date duration participants host_email transcript_url } }\"\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $json.firefliesApiKey }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "3ba46225-f9b1-4b64-b815-1d4e90c56dc7",
+          "name": "4. Code — Filter Last 7 Days",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -3664,
+            96
+          ],
+          "parameters": {
+            "jsCode": "const response = $input.first().json;\nconst config = $('2. Set — Config Values').item.json;\n\nconst allTranscripts = response?.data?.transcripts || [];\n\nif (allTranscripts.length === 0) {\n  return [{\n    json: {\n      hasTranscripts: false,\n      message: 'No transcripts in Fireflies account',\n      weekStart: config.weekStart,\n      weekEnd: config.weekEnd,\n      slackChannel: config.slackChannel,\n      companyName: config.companyName\n    }\n  }];\n}\n\n// Filter last 7 days\nconst sevenDaysAgo = config.sevenDaysAgoMs;\nconst recent = allTranscripts.filter(t => (t.date || 0) >= sevenDaysAgo);\n\nif (recent.length === 0) {\n  return [{\n    json: {\n      hasTranscripts: false,\n      message: 'No meetings in last 7 days',\n      weekStart: config.weekStart,\n      weekEnd: config.weekEnd,\n      slackChannel: config.slackChannel,\n      companyName: config.companyName\n    }\n  }];\n}\n\n// Return one item per transcript for loop processing\nreturn recent.map(t => ({\n  json: {\n    hasTranscripts: true,\n    transcriptId: t.id,\n    transcriptTitle: t.title || 'Untitled Meeting',\n    transcriptDate: t.date\n      ? new Date(t.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })\n      : 'Unknown',\n    durationMin: Math.round((t.duration || 0) / 60),\n    participants: (t.participants || []).join(', ') || 'Unknown',\n    transcriptUrl: t.transcript_url || 'Not available',\n    totalMeetings: recent.length,\n    firefliesApiKey: config.firefliesApiKey,\n    sheetId: config.sheetId,\n    sheetName: config.sheetName,\n    slackChannel: config.slackChannel,\n    slackAlertChannel: config.slackAlertChannel,\n    companyName: config.companyName,\n    weekStart: config.weekStart,\n    weekEnd: config.weekEnd\n  }\n}));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "f5e8a749-e8aa-4bf2-b113-748cfdc5a391",
+          "name": "5. IF — Meetings Found?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -3408,
+            96
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-001",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $json.hasTranscripts }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "8a56848a-4eca-4ebb-9922-9944fe662790",
+          "name": "6. Set — No Meetings This Week",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -3408,
+            336
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "no-mtg-001",
+                  "name": "result",
+                  "type": "string",
+                  "value": "=No meetings found this week. Nothing to analyze."
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "0ccdbe30-faa5-4028-abf0-5d9fcdb7e0a7",
+          "name": "7. HTTP — Fetch Full Transcript",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -3104,
+            80
+          ],
+          "parameters": {
+            "url": "https://api.fireflies.ai/graphql",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"query\": \"query GetTranscript($id: String!) { transcript(id: $id) { id title date duration participants transcript_url sentences { speaker_name text } summary { overview keywords action_items } analytics { sentiments { positive_pct neutral_pct negative_pct } } } }\",\n  \"variables\": {\n    \"id\": \"{{ $json.transcriptId }}\"\n  }\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $json.firefliesApiKey }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "3276f97d-58f7-4927-b0f1-44ccddc42235",
+          "name": "8. Code — Extract Sentiment Data",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -2880,
+            80
+          ],
+          "parameters": {
+            "jsCode": "const response = $input.first().json;\nconst prev = $('4. Code — Filter Last 7 Days').item.json;\n\nconst transcript = response?.data?.transcript;\nif (!transcript || !transcript.id) {\n  return [{\n    json: {\n      hasData: false,\n      transcriptId: prev.transcriptId,\n      transcriptTitle: prev.transcriptTitle,\n      sheetId: prev.sheetId,\n      sheetName: prev.sheetName,\n      slackChannel: prev.slackChannel,\n      slackAlertChannel: prev.slackAlertChannel,\n      companyName: prev.companyName,\n      weekStart: prev.weekStart,\n      weekEnd: prev.weekEnd,\n      totalMeetings: prev.totalMeetings\n    }\n  }];\n}\n\n// Build readable transcript excerpt (max 4000 chars)\nconst sentences = transcript.sentences || [];\nlet transcriptText = '';\nsentences.forEach(s => {\n  const speaker = s.speaker_name || 'Speaker';\n  const text = (s.text || '').trim();\n  if (text) transcriptText += speaker + ': ' + text + '\\n';\n});\nconst transcriptExcerpt = transcriptText.substring(0, 4000);\n\n// Fireflies built-in sentiment scores\nconst sentiments = transcript.analytics?.sentiments || {};\nconst positivePct = Math.round(sentiments.positive_pct || 0);\nconst neutralPct = Math.round(sentiments.neutral_pct || 0);\nconst negativePct = Math.round(sentiments.negative_pct || 0);\n\n// Compute composite sentiment score (0-100)\nconst sentimentScore = Math.round((positivePct * 1) + (neutralPct * 0.5) - (negativePct * 0.5));\n\n// Determine label from Fireflies scores\nlet sentimentLabel = 'Neutral';\nif (positivePct >= 60) sentimentLabel = 'Positive';\nelse if (negativePct >= 35) sentimentLabel = 'Negative';\nelse if (positivePct >= 45) sentimentLabel = 'Mostly Positive';\nelse if (negativePct >= 25) sentimentLabel = 'Mostly Negative';\n\n// Extract client name from meeting title\nconst title = transcript.title || 'Untitled Meeting';\nlet clientName = 'Unknown Client';\nconst patterns = [\n  /call with (.+?)(?:\\s*[-–|]|$)/i,\n  /(.+?)\\s*(?:call|meeting|review|sync|check.?in|catchup|catch.?up)/i,\n  /(.+?)\\s*[-–|]/i\n];\nfor (const pattern of patterns) {\n  const match = title.match(pattern);\n  if (match && match[1] && match[1].trim().length > 1) {\n    clientName = match[1].trim();\n    break;\n  }\n}\nif (clientName === 'Unknown Client' && title.length < 40) {\n  clientName = title;\n}\n\nconst summary = transcript.summary || {};\nconst overview = (summary.overview || '').substring(0, 600);\nconst keywords = (summary.keywords || []).slice(0, 8).join(', ');\nconst actionItems = (summary.action_items || []).slice(0, 5).join(' | ');\n\nconst meetingDate = transcript.date\n  ? new Date(transcript.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })\n  : prev.transcriptDate;\n\nreturn [{\n  json: {\n    hasData: true,\n    transcriptId: transcript.id,\n    transcriptTitle: title,\n    clientName,\n    meetingDate,\n    durationMin: Math.round((transcript.duration || 0) / 60) || prev.durationMin,\n    participants: (transcript.participants || []).join(', ') || prev.participants,\n    transcriptUrl: transcript.transcript_url || prev.transcriptUrl,\n    transcriptExcerpt,\n    overview,\n    keywords,\n    actionItems,\n    positivePct,\n    neutralPct,\n    negativePct,\n    sentimentScore,\n    sentimentLabel,\n    sheetId: prev.sheetId,\n    sheetName: prev.sheetName,\n    slackChannel: prev.slackChannel,\n    slackAlertChannel: prev.slackAlertChannel,\n    companyName: prev.companyName,\n    weekStart: prev.weekStart,\n    weekEnd: prev.weekEnd,\n    totalMeetings: prev.totalMeetings\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "707f0678-8672-4bd5-b811-61f714b45f6e",
+          "name": "9. AI Agent — Sentiment Analysis",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            -2656,
+            80
+          ],
+          "parameters": {
+            "text": "=You are a client relationship analyst at {{ $json.companyName }}.\n\nAnalyze this client meeting and provide intelligence about client health and relationship status.\n\nMEETING DETAILS:\nClient: {{ $json.clientName }}\nMeeting Title: {{ $json.transcriptTitle }}\nDate: {{ $json.meetingDate }}\nDuration: {{ $json.durationMin }} minutes\nParticipants: {{ $json.participants }}\n\nFIREFLIES SENTIMENT SCORES:\nPositive: {{ $json.positivePct }}%\nNeutral: {{ $json.neutralPct }}%\nNegative: {{ $json.negativePct }}%\nOverall Label: {{ $json.sentimentLabel }}\n\nMEETING OVERVIEW:\n{{ $json.overview }}\n\nKEYWORDS: {{ $json.keywords }}\n\nACTION ITEMS: {{ $json.actionItems }}\n\nTRANSCRIPT EXCERPT:\n{{ $json.transcriptExcerpt }}\n\nReturn ONLY a valid JSON object with exactly these 4 fields. No extra text. No markdown. No backticks.\n\ngptAnalysis — 2 to 3 plain text sentences explaining WHY this meeting had this sentiment. What specifically was discussed that was positive, neutral, or negative? Reference actual content from the transcript. Under 80 words.\n\nchurnRisk — One of exactly these values: Low OR Medium OR High OR Critical\nLow = client is happy, engaged, expanding\nMedium = some concerns raised but relationship is stable\nHigh = clear frustration, unresolved issues, or signs of disengagement\nCritical = client threatened to leave, expressed serious anger, or is clearly about to churn\n\nrecommendedAction — One specific action the account manager should take within 48 hours. Be concrete. Start with a verb. Under 20 words. Plain text only.\n\nkeyQuote — The single most important sentence from this meeting — positive or negative — that best captures the client mood. Under 25 words. Plain text. If no clear quote found write: No standout quote identified.",
+            "options": {},
+            "promptType": "define",
+            "hasOutputParser": true
+          },
+          "typeVersion": 1.7
+        },
+        {
+          "id": "6ada0272-3981-4bfc-8857-d2cafce94e81",
+          "name": "10. OpenAI — GPT-4o-mini Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            -2656,
+            272
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini"
+            },
+            "options": {
+              "maxTokens": 500,
+              "temperature": 0.3
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "8ecb4683-6647-4d99-a3ae-45e1fe826cd0",
+          "name": "11. Parser — Structured Analysis Output",
+          "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+          "position": [
+            -2512,
+            448
+          ],
+          "parameters": {
+            "schemaType": "manual",
+            "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"gptAnalysis\": {\n      \"type\": \"string\",\n      \"description\": \"2-3 sentences explaining WHY this meeting had this sentiment. Under 80 words.\"\n    },\n    \"churnRisk\": {\n      \"type\": \"string\",\n      \"description\": \"Exactly one of: Low, Medium, High, Critical\"\n    },\n    \"recommendedAction\": {\n      \"type\": \"string\",\n      \"description\": \"One specific action starting with a verb. Under 20 words.\"\n    },\n    \"keyQuote\": {\n      \"type\": \"string\",\n      \"description\": \"Most important sentence from the meeting under 25 words.\"\n    }\n  },\n  \"required\": [\"gptAnalysis\", \"churnRisk\", \"recommendedAction\", \"keyQuote\"]\n}"
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "28a3f64c-0241-4b77-a143-d1e3e01a89f3",
+          "name": "12. Code — Combine Analysis Results",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -2272,
+            80
+          ],
+          "parameters": {
+            "jsCode": "// Combine AI output with meeting data for Sheets + Slack\nconst aiOutput = $input.first().json.output;\nconst meetingData = $('8. Code — Extract Sentiment Data').item.json;\n\nconst gptAnalysis = aiOutput?.gptAnalysis || 'Analysis not available';\nconst churnRisk = aiOutput?.churnRisk || 'Unknown';\nconst recommendedAction = aiOutput?.recommendedAction || 'Review meeting manually';\nconst keyQuote = aiOutput?.keyQuote || 'No standout quote identified';\n\n// Determine if this needs an urgent Slack alert\nconst isNegative = ['Negative', 'Mostly Negative'].includes(meetingData.sentimentLabel);\nconst isHighRisk = ['High', 'Critical'].includes(churnRisk);\nconst needsAlert = isNegative || isHighRisk;\n\n// Emoji for sentiment label\nconst sentimentEmoji = {\n  'Positive': '🟢',\n  'Mostly Positive': '🟡',\n  'Neutral': '⚪',\n  'Mostly Negative': '🟠',\n  'Negative': '🔴'\n}[meetingData.sentimentLabel] || '⚪';\n\n// Emoji for churn risk\nconst riskEmoji = {\n  'Low': '✅',\n  'Medium': '⚠️',\n  'High': '🚨',\n  'Critical': '🆘'\n}[churnRisk] || '⚠️';\n\nconst loggedAt = new Date().toISOString().replace('T', ' ').substring(0, 16);\n\nreturn [{\n  json: {\n    weekLabel: meetingData.weekStart + ' to ' + meetingData.weekEnd,\n    meetingDate: meetingData.meetingDate,\n    meetingTitle: meetingData.transcriptTitle,\n    clientName: meetingData.clientName,\n    durationMin: meetingData.durationMin,\n    participants: meetingData.participants,\n    sentimentScore: meetingData.sentimentScore,\n    sentimentLabel: meetingData.sentimentLabel,\n    positivePct: meetingData.positivePct,\n    negativePct: meetingData.negativePct,\n    gptAnalysis,\n    churnRisk,\n    recommendedAction,\n    transcriptUrl: meetingData.transcriptUrl,\n    loggedAt,\n    needsAlert,\n    sentimentEmoji,\n    riskEmoji,\n    keyQuote,\n    sheetId: meetingData.sheetId,\n    sheetName: meetingData.sheetName,\n    slackChannel: meetingData.slackChannel,\n    slackAlertChannel: meetingData.slackAlertChannel,\n    companyName: meetingData.companyName,\n    weekStart: meetingData.weekStart,\n    weekEnd: meetingData.weekEnd,\n    totalMeetings: meetingData.totalMeetings\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "e416b4b8-de52-4ea2-a6a4-665a6a79ffc2",
+          "name": "13. Google Sheets — Log Client Sentiment",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            -1904,
+            -128
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "Week": "={{ $json.weekLabel }}",
+                "Duration": "={{ $json.durationMin }} min",
+                "Logged At": "={{ $json.loggedAt }}",
+                "Churn Risk": "={{ $json.riskEmoji }} {{ $json.churnRisk }}",
+                "Negative %": "={{ $json.negativePct }}%",
+                "Positive %": "={{ $json.positivePct }}%",
+                "Client Name": "={{ $json.clientName }}",
+                "GPT Analysis": "={{ $json.gptAnalysis }}",
+                "Meeting Date": "={{ $json.meetingDate }}",
+                "Participants": "={{ $json.participants }}",
+                "Fireflies URL": "={{ $json.transcriptUrl }}",
+                "Meeting Title": "={{ $json.meetingTitle }}",
+                "Sentiment Label": "={{ $json.sentimentEmoji }} {{ $json.sentimentLabel }}",
+                "Sentiment Score": "={{ $json.sentimentScore }}",
+                "Recommended Action": "={{ $json.recommendedAction }}"
+              },
+              "mappingMode": "defineBelow"
+            },
+            "options": {
+              "cellFormat": "USER_ENTERED"
+            },
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "={{ $json.sheetName }}"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $json.sheetId }}"
+            }
+          },
+          "typeVersion": 4.5
+        },
+        {
+          "id": "5618ef96-17a0-4956-9cba-9feb8e79e267",
+          "name": "14. IF — Needs Urgent Alert?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -1904,
+            80
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-alert",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $json.needsAlert }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "73add6af-887a-4bd0-bbf9-0846d2c35428",
+          "name": "15. Slack — Send Urgent Alert",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            -1536,
+            -128
+          ],
+          "webhookId": "d7b0b815-52a1-499e-b56a-e9ed37af8860",
+          "parameters": {
+            "text": "=*CLIENT HEALTH ALERT* {{ $json.riskEmoji }}\n\n*Client:* {{ $json.clientName }}\n*Meeting:* {{ $json.meetingTitle }}\n*Date:* {{ $json.meetingDate }} | *Duration:* {{ $json.durationMin }} min\n\n*Sentiment:* {{ $json.sentimentEmoji }} {{ $json.sentimentLabel }} (Positive: {{ $json.positivePct }}% | Negative: {{ $json.negativePct }}%)\n*Churn Risk:* {{ $json.riskEmoji }} {{ $json.churnRisk }}\n\n*What Happened:*\n{{ $json.gptAnalysis }}\n\n*Key Quote:*\n_{{ $json.keyQuote }}_\n\n*Recommended Action:*\n{{ $json.recommendedAction }}\n\n_Fireflies: {{ $json.transcriptUrl }}_",
+            "otherOptions": {
+              "mrkdwn": true
+            },
+            "authentication": "oAuth2"
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "f3f7085b-1cdd-4d3b-81a6-5000ec06bbf7",
+          "name": "16. Set — No Alert Needed",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -1536,
+            272
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "no-alert-001",
+                  "name": "result",
+                  "type": "string",
+                  "value": "=Meeting healthy — {{ $json.sentimentLabel }} sentiment, {{ $json.churnRisk }} churn risk. No alert needed."
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "2. Set — Config Values": {
+          "main": [
+            [
+              {
+                "node": "3. HTTP — Fetch Last 50 Transcripts",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. IF — Meetings Found?": {
+          "main": [
+            [
+              {
+                "node": "7. HTTP — Fetch Full Transcript",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "6. Set — No Meetings This Week",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "14. IF — Needs Urgent Alert?": {
+          "main": [
+            [
+              {
+                "node": "15. Slack — Send Urgent Alert",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "16. Set — No Alert Needed",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "4. Code — Filter Last 7 Days": {
+          "main": [
+            [
+              {
+                "node": "5. IF — Meetings Found?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Schedule — Every Monday 9AM": {
+          "main": [
+            [
+              {
+                "node": "2. Set — Config Values",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "10. OpenAI — GPT-4o-mini Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "9. AI Agent — Sentiment Analysis",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. HTTP — Fetch Full Transcript": {
+          "main": [
+            [
+              {
+                "node": "8. Code — Extract Sentiment Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. Code — Extract Sentiment Data": {
+          "main": [
+            [
+              {
+                "node": "9. AI Agent — Sentiment Analysis",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "9. AI Agent — Sentiment Analysis": {
+          "main": [
+            [
+              {
+                "node": "12. Code — Combine Analysis Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "12. Code — Combine Analysis Results": {
+          "main": [
+            [
+              {
+                "node": "13. Google Sheets — Log Client Sentiment",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "14. IF — Needs Urgent Alert?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "3. HTTP — Fetch Last 50 Transcripts": {
+          "main": [
+            [
+              {
+                "node": "4. Code — Filter Last 7 Days",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "11. Parser — Structured Analysis Output": {
+          "ai_outputParser": [
+            [
+              {
+                "node": "9. AI Agent — Sentiment Analysis",
+                "type": "ai_outputParser",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 22,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 2
+        },
+        "n8n-nodes-base.set": {
+          "count": 3
+        },
+        "n8n-nodes-base.code": {
+          "count": 3
+        },
+        "n8n-nodes-base.slack": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 2
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.outputParserStructured": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "isaWOW",
+      "username": "isawow",
+      "bio": "",
+      "verified": true,
+      "links": [
+        ""
+      ],
+      "avatar": "https://gravatar.com/avatar/8e8c1f17a2be80c0d1b0248585660dff3062cefeda523bbafeafcdb813f52ffa?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1179,
+        "icon": "fa:code",
+        "name": "@n8n/n8n-nodes-langchain.outputParserStructured",
+        "codex": {
+          "data": {
+            "alias": [
+              "json",
+              "zod"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.outputparserstructured/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Output Parsers"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Structured Output Parser"
+        },
+        "iconData": {
+          "icon": "code",
+          "type": "icon"
+        },
+        "displayName": "Structured Output Parser",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 39,
+        "name": "CRM"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

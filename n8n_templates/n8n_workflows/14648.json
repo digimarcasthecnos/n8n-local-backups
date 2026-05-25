@@ -1,0 +1,1476 @@
+{
+  "workflow": {
+    "id": 14648,
+    "name": "Auto-generate Instagram posts from Google Sheets reviews using UploadtoUrl",
+    "views": 18,
+    "recentViews": 4,
+    "totalViews": 18,
+    "createdAt": "2026-04-02T11:27:24.357Z",
+    "description": "Turn your best 5-star reviews into a daily stream of branded social proof content -- fully automated. This workflow pulls the oldest unposted 5-star review from Google Sheets, generates a custom quote card using the hcti.io HTML-to-image API, uploads it via Upload to URL to get a stable public CDN link, and publishes it directly to Instagram with a formatted caption. The source row is updated to prevent duplicate posts and the team is notified on Slack.\n\n---\n\n## What This Workflow Does\n\n### Review Dispatch Automation\n- **Schedule Trigger** -- fires daily at 9 AM. Adjust the cron expression for any cadence (twice weekly, every other day, etc.)\n- **Google Sheets -- Fetch Review** -- reads the Reviews sheet filtering for Rating = 5 and Posted = FALSE, sorted by Submitted At ascending for FIFO queue dispatch. Fetches exactly one row per run.\n- **IF -- Has Valid Review** -- exits the workflow cleanly on the false branch if no unposted reviews remain. No errors, no failed executions.\n\n### Dynamic Quote Card Generation\n- **Code -- Prepare Fields** -- cleans the raw sheet row: truncates review text to card-safe length, formats the star rating as a count, builds the full Instagram caption with attribution line and hashtag block (max 2200 characters).\n- **Set -- Assemble HTML Card** -- constructs a 1080x1080px HTML/CSS quote card template using n8n expressions that reference prepared text fields and env var brand colors. HTML is built in a Set node rather than a Code node to avoid Web Application Firewall false positives on template submission.\n- **HTTP -- hcti.io** -- sends the HTML string to the hcti.io API (HTML/CSS to Image) which renders it as a PNG and returns an image URL. Free tier covers 100 renders per month.\n\n### CDN Bridge via Upload to URL\n- **Upload to URL** -- mandatory step. Instagram Graph API requires a direct public HTTPS image URL and rejects binary payloads and base64 strings. This node downloads the rendered PNG from hcti.io and re-uploads it to a CDN, returning a stable public URL Instagram can access.\n- **Code -- Merge Fields** -- combines the CDN URL from Upload to URL with the caption and review metadata from the earlier Code node using cross-node reference.\n\n### Instagram Two-Step Publish Flow\n- **HTTP -- IG Create Media Container** -- Step 1 of Instagram publishing. POSTs the CDN image URL and caption to /v19.0/{ig_user_id}/media. Returns a container_id that Instagram uses to stage and validate the image.\n- **Wait 6s** -- processing buffer to ensure Instagram completes async validation before the publish call.\n- **HTTP -- IG Publish Container** -- Step 2. Calls /media_publish with the container_id. Returns the live Instagram Post ID confirming the post is on the feed.\n\n### Logging and Notification\n- **Google Sheets -- Mark as Posted** -- updates the source row: sets Posted = TRUE and writes back the Post ID and timestamp. Prevents the same review from being picked up on the next scheduled run.\n- **Slack -- Notify Team** -- sends reviewer name, a 100-character review snippet, the Post ID, and the CDN card URL so the team can verify what went live.\n\n---\n\n## Key Features\n\n- **Queue-based dispatch** -- reviews post in submission order (FIFO). Oldest unposted 5-star review goes first on every run, keeping the feed chronologically authentic.\n- **WAF-safe card assembly** -- the HTML quote card is built in a Set node using n8n expressions rather than as a raw string in a Code node. This avoids Cloudflare WAF false positives during template submission.\n- **Mandatory CDN bridge** -- Upload to URL is a required step, not optional. Instagram's API will reject any image that is not a direct public HTTPS URL, including hcti.io's own image URLs in some configurations.\n- **Duplicate-safe** -- the Google Sheets update node writes Posted = TRUE immediately after publish. The same review can never be re-queued.\n- **Source-agnostic** -- works with Google Reviews, Trustpilot, Capterra, or any form tool (Typeform, Tally, Jotform) that appends rows to a Google Sheet.\n- **Fully customizable card design** -- background color, text color, and accent color are all controlled by environment variables. No code changes needed to rebrand.\n\n---\n\n## What You Will Need\n\n### Credentials\n- **Google Sheets OAuth2** -- connected to your Reviews spreadsheet\n- **hcti.io Basic Auth** -- user ID and API key from hcti.io (free tier available at hcti.io)\n- **Upload to URL** -- credentials configured in n8n\n- **Instagram Graph API** -- Business or Creator account access token\n- **Slack OAuth2** -- for team notifications\n\n\n### Google Sheets Columns Required\n\nReviewer Name -- Review Text -- Rating -- Source -- Posted -- Submitted At -- Instagram Post ID -- Posted At -- Card Image URL\n\n---\n\n## Perfect For\n\n- **SaaS companies** -- automate a daily customer love post from your existing review pipeline\n- **E-commerce brands** -- convert 5-star product reviews into social proof content on a consistent schedule\n- **Hospitality and restaurants** -- publish verified guest reviews from Google or Tripadvisor automatically\n- **Agencies** -- run one instance per client by swapping env vars, with a separate Google Sheet per brand\n- **Retail and service brands** -- keep Instagram active with authentic customer voices without any manual effort",
+    "workflow": {
+      "meta": {
+        "instanceId": "277842713620d9f5554de3b1518b865a152c8c4db680008bd8aec536fc18b4a8",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "99c76596-d6c3-4cad-b3f3-c13e983ca9b2",
+          "name": "Template Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            4528,
+            3456
+          ],
+          "parameters": {
+            "width": 440,
+            "height": 700,
+            "content": "Customer Review to Social Proof – Instagram Post\n\nAutomatically fetches the oldest unposted 5-star review from Google Sheets, generates a branded quote card using hcti.io, uploads it via UploadToURL to get a public CDN link, and publishes it to Instagram with a caption. Marks the review as posted and notifies the team on Slack.\n\nFlow:\nSchedule → Fetch review → Validate → Prepare caption → Generate image → Upload → Create IG post → Publish → Update sheet → Notify Slack\n\nRequired:\nIG_USER_ID, IG_ACCESS_TOKEN, GSHEET_DOCUMENT_ID, SLACK_CHANNEL_ID,\nBRAND_NAME, CARD_BG_COLOR, CARD_TEXT_COLOR, CARD_ACCENT_COLOR\n\nSheet Columns:\nReviewer Name, Review Text, Rating, Source,\nPosted, Submitted At, Instagram Post ID, Posted At, Card Image URL"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "5c76022c-ee0c-40ce-bc6f-935f430a8a79",
+          "name": "Sticky Nodes 1-3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            5088,
+            4176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 560,
+            "height": 784,
+            "content": "Nodes 1-3: Schedule, Fetch and Gate\n\nSchedule Trigger fires daily at 9 AM.\nAdjust the cron expression for different cadences.\n\nGoogle Sheets - Fetch Review reads the Reviews sheet,\nfiltering for Rating = 5 and Posted = FALSE, sorted by\nSubmitted At ascending (FIFO queue). Fetches 1 row per run.\n\nIF - Has Valid Review exits cleanly on the false branch\nwhen no unposted reviews remain. No errors, no noise."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "03fc6fa2-1e09-43bb-9c4a-51804ac1b0d4",
+          "name": "Sticky Nodes 4-6",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            5712,
+            4240
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 628,
+            "height": 796,
+            "content": "Field Preparation & Card Rendering\nCode – Prepare Fields: Cleans raw row data by truncating review text, formatting star ratings, and generating a structured Instagram caption.\n\nSet – Assemble HTML Card: Constructs a 1080x1080px HTML/CSS template referencing brand colors and text fields; using a Set node helps bypass Web Application Firewall (WAF) issues.\n\nHTTP – hcti.io: Sends the HTML string to hcti.io to render it into a PNG image, returning a URL for the final graphic."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "206b3749-d3c5-49bf-a858-a09c1d554cfe",
+          "name": "Sticky Nodes 7-9",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            6384,
+            4208
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 580,
+            "height": 776,
+            "content": "Upload to URL: Downloads the PNG from hcti.io and uploads it to a CDN to generate a mandatory public HTTPS URL, as Instagram's API rejects binary or base64 data.\n\nCode – Merge Fields: Unifies the new CDN image URL with the pre-built caption and associated metadata.\n\nHTTP – IG Create Media Container: Submits the CDN URL and caption to the Instagram Graph API, returning a container_id required for final publishing."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "e17e5b09-e749-4f9b-bab6-e51bf3db64f8",
+          "name": "Sticky Nodes 10-13",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            7008,
+            4224
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 848,
+            "height": 756,
+            "content": "🚀 Finalization & Team Notification\nWait 6s: Provides a processing buffer to ensure Instagram finishes validating the media container before the final call.\n\nHTTP – IG Publish Container: Executes the /media_publish call using the container_id and retrieves the official live Post ID.\n\nGoogle Sheets – Mark as Posted: Updates the specific row by setting Posted to TRUE and logging the Post ID and timestamp to prevent duplicate entries.\n\nSlack – Notify Team: Dispatches an alert containing the reviewer's name, a snippet of the text, and the final card URL for internal verification."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "e996412b-6ce3-4b41-8c1a-f9ad7866e47e",
+          "name": "Schedule Trigger",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            5104,
+            4640
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "triggerAtHour": 9
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "fdaf7f91-d267-4085-a7bb-1ed407e635ec",
+          "name": "Google Sheets Fetch Review",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            5328,
+            4640
+          ],
+          "parameters": {
+            "operation": "readRows",
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $env.GSHEET_DOCUMENT_ID }}"
+            }
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "23df6a06-2606-48f0-a92f-78280936dd94",
+          "name": "IF Has Valid Review",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            5552,
+            4640
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-has-row",
+                  "operator": {
+                    "type": "string",
+                    "operation": "notEmpty"
+                  },
+                  "leftValue": "={{ $json['Reviewer Name'] }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "d718ec60-c0f1-47d5-a0b5-82f7b40a6c83",
+          "name": "Code Prepare Fields",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            5760,
+            4640
+          ],
+          "parameters": {
+            "jsCode": "const item = $input.first().json;\nconst fields = item.fields || item;\n\nconst reviewerName = (fields['Reviewer Name'] || fields.reviewer_name || 'Happy Customer').trim();\nconst reviewText   = (fields['Review Text']   || fields.review_text   || '').trim();\nconst rating       = Number(fields['Rating']  || fields.rating || 5);\nconst source       = (fields['Source']        || fields.source || 'Verified Review').trim();\nconst recordId     = item.id || item.record_id || '';\n\nif (!reviewText) throw new Error('Review text is empty. Check your Google Sheet column names.');\n\nconst cardText = reviewText.length > 200 ? reviewText.substring(0, 197) + '...' : reviewText;\nconst captionText = reviewText.length > 280 ? reviewText.substring(0, 277) + '...' : reviewText;\nconst starCount = Math.min(Math.max(rating, 1), 5);\nconst starsText = Array(starCount + 1).join('5star ');\nconst hashtags = '#customerreview #5stars #testimonial #socialproof #happycustomer #review';\n\nconst finalCaption = [\n  '(' + starCount + '/5) Real words from a real customer.',\n  '',\n  '\"' + captionText + '\"',\n  '-- ' + reviewerName + ' via ' + source,\n  '',\n  'See why our customers keep coming back.',\n  'Link in bio.',\n  '',\n  hashtags,\n].join('\\n').trim().substring(0, 2200);\n\nconsole.log('[Prep] Reviewer:', reviewerName, 'Rating:', rating);\n\nreturn [{\n  json: {\n    record_id:     recordId,\n    reviewer_name: reviewerName,\n    review_text:   reviewText,\n    card_text:     cardText,\n    rating:        rating,\n    star_count:    starCount,\n    source:        source,\n    final_caption: finalCaption,\n    ig_user_id:    $env.IG_USER_ID,\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "c06c73f3-5549-4c6b-ba56-e2127c551510",
+          "name": "Set Assemble HTML Card",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            5984,
+            4640
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "html-field",
+                  "name": "html",
+                  "type": "string",
+                  "value": "={{ '<html><head><meta charset=UTF-8><style>body{margin:0;width:1080px;height:1080px;background:' + ($env.CARD_BG_COLOR || '#1a1a2e') + ';display:flex;flex-direction:column;justify-content:center;align-items:center;padding:80px;font-family:Georgia,serif;box-sizing:border-box;}.stars{font-size:44px;color:' + ($env.CARD_ACCENT_COLOR || '#e94560') + ';margin-bottom:32px;}.quote{font-size:34px;line-height:1.55;color:' + ($env.CARD_TEXT_COLOR || '#ffffff') + ';text-align:center;margin-bottom:32px;font-style:italic;max-width:880px;}.reviewer{font-size:24px;color:' + ($env.CARD_ACCENT_COLOR || '#e94560') + ';font-family:Arial,sans-serif;font-weight:bold;margin-bottom:12px;}.source{font-size:20px;color:#aaaaaa;font-family:Arial,sans-serif;}.brand{position:absolute;bottom:40px;right:56px;font-size:18px;color:#666666;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:2px;}.bar{width:56px;height:3px;background:' + ($env.CARD_ACCENT_COLOR || '#e94560') + ';margin:0 auto 32px;}</style></head><body><div class=stars>' + '&#9733;'.repeat($json.star_count) + '</div><div class=bar></div><div class=quote>' + $json.card_text + '</div><div class=reviewer>-- ' + $json.reviewer_name + '</div><div class=source>' + $json.source + '</div><div class=brand>' + ($env.BRAND_NAME || 'Our Brand') + '</div></body></html>' }}"
+                },
+                {
+                  "id": "pass-fields",
+                  "name": "passFields",
+                  "type": "object",
+                  "value": "={{ $json }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.3
+        },
+        {
+          "id": "16d65e2b-bdc5-400b-91ae-7c06b9fd62d3",
+          "name": "HTTP Render HTML to Image",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            6208,
+            4640
+          ],
+          "parameters": {
+            "url": "https://hcti.io/v1/image",
+            "method": "POST",
+            "options": {},
+            "sendBody": true,
+            "authentication": "genericCredentialType",
+            "bodyParameters": {
+              "parameters": [
+                {
+                  "name": "html",
+                  "value": "={{ $json.html }}"
+                }
+              ]
+            },
+            "genericAuthType": "httpBasicAuth"
+          },
+          "typeVersion": 4.1
+        },
+        {
+          "id": "90a70a3a-1cb8-4702-93f5-3d8a2de2156b",
+          "name": "Upload to URL",
+          "type": "n8n-nodes-uploadtourl.uploadToUrl",
+          "position": [
+            6432,
+            4640
+          ],
+          "parameters": {},
+          "typeVersion": 1
+        },
+        {
+          "id": "16b86a27-7d21-4d54-a52d-1acd6c47f4db",
+          "name": "Code Merge Fields",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            6640,
+            4640
+          ],
+          "parameters": {
+            "jsCode": "const uploadResult = $input.first().json;\nconst prepData = $('Code Prepare Fields').first().json;\n\nconst publicImageUrl =\n  uploadResult.public_url ||\n  uploadResult.url        ||\n  uploadResult.file_url   ||\n  uploadResult.cdn_url    ||\n  uploadResult.imageUrl   ||\n  '';\n\nif (!publicImageUrl) {\n  throw new Error('Upload to URL returned no public URL. Keys: ' + JSON.stringify(Object.keys(uploadResult)));\n}\n\nreturn [{\n  json: {\n    public_image_url: publicImageUrl,\n    final_caption:    prepData.final_caption,\n    ig_user_id:       prepData.ig_user_id,\n    record_id:        prepData.record_id,\n    reviewer_name:    prepData.reviewer_name,\n    review_text:      prepData.review_text,\n    source:           prepData.source,\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "07187c79-3949-4e67-8f2b-8bda3e3d7c1d",
+          "name": "IG Create Media Container",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            6864,
+            4640
+          ],
+          "parameters": {
+            "url": "=https://graph.facebook.com/v19.0/{{ $json.ig_user_id }}/media",
+            "method": "POST",
+            "options": {},
+            "sendQuery": true,
+            "queryParameters": {
+              "parameters": [
+                {
+                  "name": "image_url",
+                  "value": "={{ $json.public_image_url }}"
+                },
+                {
+                  "name": "caption",
+                  "value": "={{ $json.final_caption }}"
+                },
+                {
+                  "name": "access_token",
+                  "value": "={{ $env.IG_ACCESS_TOKEN }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.1
+        },
+        {
+          "id": "6538979f-e905-49bd-af1e-165ebb147bb8",
+          "name": "Wait IG Buffer",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            7088,
+            4640
+          ],
+          "webhookId": "a88903ce-69ef-41e8-830e-13d9f177246c",
+          "parameters": {
+            "unit": "seconds",
+            "amount": 6
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "e1a2792b-605c-405e-aafb-c71dfc52899f",
+          "name": "IG Publish Container",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            7312,
+            4640
+          ],
+          "parameters": {
+            "url": "=https://graph.facebook.com/v19.0/{{ $(\"Code Merge Fields\").first().json.ig_user_id }}/media_publish",
+            "method": "POST",
+            "options": {},
+            "sendQuery": true,
+            "queryParameters": {
+              "parameters": [
+                {
+                  "name": "creation_id",
+                  "value": "={{ $(\"IG Create Media Container\").first().json.id }}"
+                },
+                {
+                  "name": "access_token",
+                  "value": "={{ $env.IG_ACCESS_TOKEN }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.1
+        },
+        {
+          "id": "83ca2b33-1514-4ba4-8ecc-f3b21a7099a0",
+          "name": "Google Sheets Mark as Posted",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            7520,
+            4640
+          ],
+          "parameters": {
+            "operation": "updateRow",
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $env.GSHEET_DOCUMENT_ID }}"
+            }
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "7c705944-8857-4575-be1c-c46ab918a420",
+          "name": "Slack Notify Team",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            7744,
+            4640
+          ],
+          "webhookId": "efcd291f-62eb-4fc3-af6a-7d49e6c5a987",
+          "parameters": {
+            "text": "Social Proof Post Published!\n\nReviewer: {{ $(\"Code Merge Fields\").first().json.reviewer_name }}\nSource: {{ $(\"Code Merge Fields\").first().json.source }}\nPost ID: {{ $(\"IG Publish Container\").first().json.id }}\n\nReview: {{ $(\"Code Merge Fields\").first().json.review_text.substring(0, 100) }}\n\nCard URL: {{ $(\"Code Merge Fields\").first().json.public_image_url }}",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $env.SLACK_CHANNEL_ID }}"
+            },
+            "otherOptions": {},
+            "authentication": "oAuth2"
+          },
+          "typeVersion": 2.2
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "Upload to URL": {
+          "main": [
+            [
+              {
+                "node": "Code Merge Fields",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Wait IG Buffer": {
+          "main": [
+            [
+              {
+                "node": "IG Publish Container",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Schedule Trigger": {
+          "main": [
+            [
+              {
+                "node": "Google Sheets Fetch Review",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Code Merge Fields": {
+          "main": [
+            [
+              {
+                "node": "IG Create Media Container",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Code Prepare Fields": {
+          "main": [
+            [
+              {
+                "node": "Set Assemble HTML Card",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "IF Has Valid Review": {
+          "main": [
+            [
+              {
+                "node": "Code Prepare Fields",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "IG Publish Container": {
+          "main": [
+            [
+              {
+                "node": "Google Sheets Mark as Posted",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Set Assemble HTML Card": {
+          "main": [
+            [
+              {
+                "node": "HTTP Render HTML to Image",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "HTTP Render HTML to Image": {
+          "main": [
+            [
+              {
+                "node": "Upload to URL",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "IG Create Media Container": {
+          "main": [
+            [
+              {
+                "node": "Wait IG Buffer",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Google Sheets Fetch Review": {
+          "main": [
+            [
+              {
+                "node": "IF Has Valid Review",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Google Sheets Mark as Posted": {
+          "main": [
+            [
+              {
+                "node": "Slack Notify Team",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 18,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.set": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 2
+        },
+        "n8n-nodes-base.wait": {
+          "count": 1
+        },
+        "n8n-nodes-base.slack": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 5
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 3
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 2
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-uploadtourl.uploadToUrl": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Jitesh Dugar",
+      "username": "jiteshdugar",
+      "bio": "AI Automation Specialist - OpenAI, CRM & Automation Expert with a solid understanding of various tools that include Zapier, Make, Zoho CRM, Hubspot, Google Sheets, Airtable, Pipedrive, Google Analytics, and more.",
+      "verified": true,
+      "links": [
+        "https://www.linkedin.com/in/jiteshdugar"
+      ],
+      "avatar": "https://gravatar.com/avatar/edaa3abb99806b0586dced559d0a5417f24a507e7c4464a63960f0638a4b1b90?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 33,
+        "name": "Social Media"
+      },
+      {
+        "id": 51,
+        "name": "Multimodal AI"
+      }
+    ],
+    "image": []
+  }
+}

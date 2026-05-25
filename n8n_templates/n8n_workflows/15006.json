@@ -1,0 +1,904 @@
+{
+  "workflow": {
+    "id": 15006,
+    "name": "Generate weekly Reddit startup opportunity reports with Groq AI",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-13T06:23:25.070Z",
+    "description": "\n### This n8n template automatically scans 10 subreddits every Monday, filters ~1000 posts for genuine frustration signals, and delivers a structured startup opportunity report to your inbox — powered by Groq AI.\n\nPerfect for indie hackers, product builders, and founders who want to stay on top of what people are actually begging someone to build — without spending hours manually browsing Reddit.\n\n**Good to know**\n\n- Uses Reddit's public JSON API — no Reddit account or API key required\n- Groq's free tier is generous enough to run this weekly at zero cost\n- Each run analyzes up to 1000 posts and completes in under 60 seconds\n\n## How it works\n\n- A Schedule Trigger fires every Monday at 8AM to kick off the workflow\n- A Code node defines 10 target subreddits (entrepreneur, SaaS, freelance, startups, and more)\n- An HTTP Request node fetches the 100 newest posts from each subreddit using Reddit's public JSON endpoint\n- A Code node filters all posts against 27 frustration-signal keywords like \"why doesn't X exist\", \"sick of manually\", \"wish there was a tool for this\"\n- An Aggregate node merges all matched posts from all 10 subreddits into a single dataset\n- A Code node builds a structured AI prompt embedding all posts with specific instructions for analysis\n- An HTTP Request node sends the dataset to Groq's API (llama-3.3-70b-versatile) for deep analysis\n- A Code node wraps the AI output in a clean HTML email template\n- A Gmail node delivers the weekly report directly to your inbox\n\n## How to use\n\n- Import the workflow and connect your Groq API key as an HTTP Header Auth credential\n- Connect your Gmail account via OAuth2\n- Change the recipient email in the Gmail node to your own address\n- Run manually first to verify the full flow end to end, then activate the schedule\n\n## Requirements\n\n- Groq account for AI analysis (free at console.groq.com) \n- Gmail account for delivery via OAuth2\n\n## Customising this workflow\n\n- Edit the subreddit list in the Define Subreddits node to focus on your specific niche or industry\n- Add or remove keywords in the Filter Posts node to tune how sensitive the pain detection is\n- Swap the Gmail node for Slack, Telegram, or Outlook if you prefer a different delivery channel\n- Change the schedule from weekly to daily for higher-frequency monitoring\n- Replace Groq with OpenAI GPT-4o by swapping the HTTP Request URL and auth header — the prompt format is identical",
+    "workflow": {
+      "meta": {
+        "instanceId": ""
+      },
+      "nodes": [
+        {
+          "id": "688ca90b-8d7c-4baf-9a85-3647c8be1cd5",
+          "name": "Every Monday 8AM",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            960,
+            480
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "field": "weeks",
+                  "triggerAtDay": [
+                    1
+                  ],
+                  "triggerAtHour": 8
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "85d0dee7-7180-4ef4-a6ae-7b9f9c33e866",
+          "name": "When clicking ‘Execute workflow’",
+          "type": "n8n-nodes-base.manualTrigger",
+          "position": [
+            960,
+            640
+          ],
+          "parameters": {},
+          "typeVersion": 1
+        },
+        {
+          "id": "aeea1ae9-28f7-4e07-b4a3-eeab52888e96",
+          "name": "1. Define Subreddits",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1200,
+            480
+          ],
+          "parameters": {
+            "jsCode": "return [\n  \"entrepreneur\",\n  \"smallbusiness\",\n  \"freelance\",\n  \"SaaS\",\n  \"startups\",\n  \"productivity\",\n  \"webdev\",\n  \"marketing\",\n  \"consulting\",\n  \"Accounting\"\n].map(s => ({ json: { subreddit: s } }));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "59158f78-222c-4c3c-9d32-90ad90be2ac7",
+          "name": "2. Fetch Reddit Posts",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            1424,
+            480
+          ],
+          "parameters": {
+            "url": "=https://www.reddit.com/r/{{ $json.subreddit }}/new.json",
+            "options": {},
+            "sendQuery": true,
+            "sendHeaders": true,
+            "queryParameters": {
+              "parameters": [
+                {
+                  "name": "limit",
+                  "value": "100"
+                }
+              ]
+            },
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "User-Agent",
+                  "value": "n8n-pain-miner/1.0 (automated research tool)"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "8a3f8345-f5a3-44bd-b5f7-400c8bf046f3",
+          "name": "3. Filter Pain Points",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1648,
+            480
+          ],
+          "parameters": {
+            "jsCode": "const posts = ($json.data?.children || []).map(p => p.data);\n\nconst keywords = [\n  \"i hate\",\n  \"why doesn't\",\n  \"why isn't\",\n  \"there's no tool\",\n  \"there is no tool\",\n  \"wish there was\",\n  \"no app for\",\n  \"why is there no\",\n  \"someone should build\",\n  \"why can't\",\n  \"so frustrated\",\n  \"sick of manually\",\n  \"tired of doing\",\n  \"doesn't exist\",\n  \"pain point\",\n  \"annoying that\",\n  \"is it just me\",\n  \"can't find anything\",\n  \"i need a way to\",\n  \"such a waste of time\",\n  \"why do i have to\",\n  \"manual process\",\n  \"no solution\",\n  \"nobody has built\",\n  \"looking for a tool\",\n  \"does anyone know of a\",\n  \"is there a way to automate\",\n  \"still no way to\"\n];\n\nconst filtered = posts.filter(p => {\n  const text = `${p.title} ${p.selftext || ''}`.toLowerCase();\n  return keywords.some(kw => text.includes(kw));\n});\n\nif (filtered.length === 0) return [];\n\nreturn filtered.map(p => ({\n  json: {\n    subreddit: `r/${p.subreddit}`,\n    title: p.title,\n    text: (p.selftext || '').slice(0, 400),\n    url: `https://reddit.com${p.permalink}`,\n    score: p.score,\n    comments: p.num_comments\n  }\n}));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "2d4e662b-f03e-406d-b337-8a33ab80aa1a",
+          "name": "4. Aggregate All Posts",
+          "type": "n8n-nodes-base.aggregate",
+          "position": [
+            1856,
+            480
+          ],
+          "parameters": {
+            "options": {},
+            "aggregate": "aggregateAllItemData",
+            "destinationFieldName": "posts"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "b8ee7fdb-5084-4014-906a-d1f5e24cb3e0",
+          "name": "5. Build AI Prompt",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2080,
+            480
+          ],
+          "parameters": {
+            "jsCode": "const posts = $json.posts || [];\n\nif (posts.length === 0) {\n  return [{ json: { requestBody: { model: 'gpt-4o', max_tokens: 500, messages: [{ role: 'user', content: 'Say: No pain points were found this week across the monitored subreddits.' }] }, postCount: 0 } }];\n}\n\nconst postsText = posts\n  .map((p, i) => `${i + 1}. [${p.subreddit}] \"${p.title}\"\\n${p.text}\\nScore: ${p.score} | Comments: ${p.comments} | ${p.url}`)\n  .join('\\n\\n---\\n\\n');\n\nconst systemPrompt = `You are a sharp, no-fluff startup opportunity analyst. \nYou analyze Reddit posts to find genuine unmet needs and viable business opportunities. \nBe specific. Avoid generic advice. Think like a product builder, not a consultant.`;\n\nconst userPrompt = `Analyze these ${posts.length} Reddit posts collected this week. People are expressing real frustration, wishing tools existed, or describing manual processes they hate.\n\nProduce a clean, structured report with exactly these sections:\n\n🔥 TOP PAIN POINT CLUSTERS\nGroup similar complaints together. For each cluster:\n- Cluster name\n- The core unmet need in one sentence\n- Number of posts mentioning it\n- Which subreddits it appears in\n\n💡 BEST OPPORTUNITIES\nFor each top cluster, describe:\n- What product/tool/service solves it\n- Who exactly would pay for this\n- How to validate it in 1 week (be specific)\n\n🎯 UNDERSERVED NICHES\nCall out 2-3 very specific pain points that seem overlooked — small but real markets with little competition\n\n⚡ QUICK WINS\n2-3 ideas that could be built as an MVP or validated in under 2 weeks. Be concrete.\n\nHere are the posts (${posts.length} total):\n\n${postsText}`;\n\nreturn [{\n  json: {\n    requestBody: {\n      model: \"gpt-4o\",\n      max_tokens: 2500,\n      messages: [\n        { role: \"system\", content: systemPrompt },\n        { role: \"user\", content: userPrompt }\n      ]\n    },\n    postCount: posts.length\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "60d086ed-d2d1-4789-9727-8ccc3984550c",
+          "name": "6. HTTP Request @Groq",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            2272,
+            480
+          ],
+          "parameters": {
+            "url": "https://api.groq.com/openai/v1/chat/completions",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"max_tokens\": 2500,\n  \"messages\": {{ JSON.stringify($('5. Build AI Prompt').first().json.requestBody.messages) }}\n}",
+            "sendBody": true,
+            "specifyBody": "json",
+            "authentication": "predefinedCredentialType"
+          },
+          "credentials": {
+            "groqApi": {
+              "id": "",
+              "name": "Groq account"
+            }
+          },
+          "typeVersion": 4.3
+        },
+        {
+          "id": "854eb94c-dfb8-4619-9751-c7f107157606",
+          "name": "7. Format Email",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2464,
+            480
+          ],
+          "parameters": {
+            "jsCode": "//const aiContent = $json.text || $json.output || $input.first().json.text || 'AI analysis failed.';\nconst aiContent = $json.choices?.[0]?.message?.content || 'AI analysis failed.';\nconst postCount = $('5. Build AI Prompt').first().json.postCount;\nconst today = new Date().toLocaleDateString('en-US', {\n  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'\n});\n\nconst htmlBody = `\n<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 700px; margin: 0 auto; color: #1a1a1a;\">\n  <div style=\"background: #0f0f0f; color: white; padding: 24px 32px; border-radius: 12px 12px 0 0;\">\n    <h1 style=\"margin:0; font-size: 22px;\">🔍 Reddit Pain Mining Report</h1>\n    <p style=\"margin: 8px 0 0; color: #aaa; font-size: 14px;\">${today}</p>\n  </div>\n  <div style=\"background: #f9f9f9; padding: 16px 32px; border-left: 4px solid #ff4500; margin: 0;\">\n    <p style=\"margin:0; font-size: 14px; color: #555;\"><strong>${postCount}</strong> pain-point posts analyzed across 10 subreddits this week.</p>\n  </div>\n  <div style=\"padding: 32px; background: white; border: 1px solid #eee; border-radius: 0 0 12px 12px;\">\n    <pre style=\"font-family: inherit; white-space: pre-wrap; font-size: 15px; line-height: 1.7; margin: 0;\">${aiContent}</pre>\n  </div>\n  <p style=\"text-align:center; color: #bbb; font-size: 12px; margin-top: 16px;\">\n    Generated by n8n Pain Mining Workflow &nbsp;·&nbsp; Subreddits: entrepreneur, smallbusiness, freelance, SaaS, startups, productivity, webdev, marketing, consulting, Accounting\n  </p>\n</div>\n`;\n\nreturn [{\n  json: {\n    subject: `🔍 Reddit Pain Mining — ${postCount} Opportunities Found (${today})`,\n    htmlBody\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "289a652b-ba27-4d5e-963d-a1bca7fb4380",
+          "name": "8. Gmail. Send Email Report",
+          "type": "n8n-nodes-base.gmail",
+          "position": [
+            2672,
+            480
+          ],
+          "webhookId": "c182fe95-c5eb-4c5f-8928-eb5d91acb799",
+          "parameters": {
+            "sendTo": "your@email.com",
+            "message": "={{ $json.htmlBody }}",
+            "options": {},
+            "subject": "={{ $json.subject }}"
+          },
+          "credentials": {
+            "gmailOAuth2": {
+              "id": "",
+              "name": "Gmail account"
+            }
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "222f6927-4b9f-4000-8cc0-9bba94a62994",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            0,
+            0
+          ],
+          "parameters": {
+            "width": 880,
+            "height": 1040,
+            "content": "# Reddit Pain Mining — Weekly Opportunity Report\n\n### Automatically scans 10 subreddits every Monday, filters ~1000 posts for genuine frustration signals, runs AI analysis, and delivers a structured startup opportunity report to your inbox — all in under 60 seconds.\n\n---\n\n## What this workflow does\n\n1. Runs automatically every Monday at 8AM via Schedule Trigger\n2. Loops through 10 target subreddits (entrepreneur, smallbusiness, freelance, SaaS, startups, productivity, webdev, marketing, consulting, Accounting)\n3. Fetches the 100 newest posts from each subreddit using Reddit's public JSON API (no auth required)\n4. Filters posts using 27 frustration-signal keywords (\"I hate\", \"why doesn't X exist\", \"wish there was a tool\", \"sick of manually\", etc.)\n5. Aggregates all matched posts across all subreddits into a single dataset\n6. Builds a structured AI prompt embedding all posts with instructions to cluster pain points, identify opportunities, and surface underserved niches\n7. Sends the full dataset to Groq (llama-3.3-70b-versatile) for analysis\n8. Formats the AI response into a clean HTML email report\n9. Delivers the weekly report to your inbox via Gmail\n10. Each run analyzes ~1000 posts and produces actionable startup/product opportunities in under 60 seconds\n\n---\n\n\n## Setup requirements\n\n- **Groq account** — free at [console.groq.com](https://console.groq.com), create an API key, add as HTTP Header Auth credential (`Authorization: Bearer your-key-here`)\n- **Gmail OAuth2** — connect your Google account via n8n's built-in Gmail credential\n- **No Reddit auth needed** — uses public JSON API with a User-Agent header\n- Open the **Gmail node** and change the `To` field to your own email address\n\n---\n\n## Customization tips\n\n- Edit the subreddit list in the **Define Subreddits** node to target your specific niche\n- Add or remove keywords in the **Filter Pain Points** node to tune sensitivity\n- Swap the **Gmail** node for **Slack**, **Telegram**, or **Outlook** if preferred\n- Change the schedule in **Every Monday 8AM** to run daily for higher frequency\n- Replace Groq with **OpenAI GPT-4o** by swapping the HTTP Request URL and auth header\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f15b1db6-0d5a-43b6-aa12-dbc3083cb255",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            928,
+            0
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 720,
+            "height": 432,
+            "content": "\n## Workflow diagram (high level)\n\n- **Schedule Trigger** → fires every Monday 8AM\n- **Define Subreddits** → outputs 10 items, one per subreddit\n- **Fetch Reddit Posts** → HTTP GET to `reddit.com/r/{subreddit}/new.json` — runs 10 times\n- **Filter Pain Points** → Code node scanning title + body for 27 keywords\n  - Match → passes forward with title, text, score, comments, URL\n  - No match → item dropped silently\n- **Aggregate All Posts** → merges all 10 subreddit results into one array\n- **Build AI Prompt** → Code node constructing full system + user prompt with all posts embedded\n- **HTTP Request → Groq** → POST to `api.groq.com/openai/v1/chat/completions`\n  - Model: `llama-3.3-70b-versatile`\n  - Returns: clustered pain points, best opportunities, underserved niches, quick wins\n- **Format Email** → Code node wrapping AI output in styled HTML template\n- **Gmail** → sends final report to your inbox\n  - Success → report delivered\n  - Gmail auth failure → reconnect OAuth credential\n\n---"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "93a4356c-3e36-459d-8800-a6174767d3d1",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2912,
+            208
+          ],
+          "parameters": {
+            "width": 656,
+            "height": 576,
+            "content": "\n## Example output sections\n\n### The weekly email report is structured into four sections:\n\n### 🔥 **Top Pain Point Clusters**\n### Grouped complaints with subreddit sources and post frequency. Tells you what people keep complaining about across multiple communities.\n\n### 💡 **Best Opportunities**\n### For each top cluster: what to build, who would pay for it, and how to validate it in 1 week — specific and actionable.\n\n### 🎯 **Underserved Niches**\n### 2–3 very specific pain points that appear overlooked — small but real markets with little competition.\n\n### ⚡ **Quick Wins**\n### Ideas that could be built as an MVP or validated in under 2 weeks. Concrete, not generic.\n\n---\n"
+          },
+          "typeVersion": 1
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "7. Format Email": {
+          "main": [
+            [
+              {
+                "node": "8. Gmail. Send Email Report",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Every Monday 8AM": {
+          "main": [
+            [
+              {
+                "node": "1. Define Subreddits",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. Build AI Prompt": {
+          "main": [
+            [
+              {
+                "node": "6. HTTP Request @Groq",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Define Subreddits": {
+          "main": [
+            [
+              {
+                "node": "2. Fetch Reddit Posts",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "2. Fetch Reddit Posts": {
+          "main": [
+            [
+              {
+                "node": "3. Filter Pain Points",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "3. Filter Pain Points": {
+          "main": [
+            [
+              {
+                "node": "4. Aggregate All Posts",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. HTTP Request @Groq": {
+          "main": [
+            [
+              {
+                "node": "7. Format Email",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "4. Aggregate All Posts": {
+          "main": [
+            [
+              {
+                "node": "5. Build AI Prompt",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "When clicking ‘Execute workflow’": {
+          "main": [
+            [
+              {
+                "node": "1. Define Subreddits",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 13,
+      "nodeTypes": {
+        "n8n-nodes-base.code": {
+          "count": 4
+        },
+        "n8n-nodes-base.gmail": {
+          "count": 1
+        },
+        "n8n-nodes-base.aggregate": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 3
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 2
+        },
+        "n8n-nodes-base.manualTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Mohammad Abubakar",
+      "username": "m7abr",
+      "bio": "Full Stack Developer | .NET Core | NodeJS | Restful APIs | n8n AI agents",
+      "verified": true,
+      "links": [
+        "https://portfolio-opal-psi-28.vercel.app/"
+      ],
+      "avatar": "https://gravatar.com/avatar/4b4e2b01689c7c21232e20a53cda2c624b6d10a16f2d4c872dcbe417acba8c49?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 356,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmail",
+        "codex": {
+          "data": {
+            "alias": [
+              "email",
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.gmail/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Gmail"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 838,
+        "icon": "fa:mouse-pointer",
+        "name": "n8n-nodes-base.manualTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.manualworkflowtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "When clicking ‘Execute workflow’",
+          "color": "#909298"
+        },
+        "iconData": {
+          "icon": "mouse-pointer",
+          "type": "icon"
+        },
+        "displayName": "Manual Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1236,
+        "icon": "file:aggregate.svg",
+        "name": "n8n-nodes-base.aggregate",
+        "codex": {
+          "data": {
+            "alias": [
+              "Aggregate",
+              "Combine",
+              "Flatten",
+              "Transform",
+              "Array",
+              "List",
+              "Item"
+            ],
+            "details": "",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.aggregate/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Aggregate"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJub25lIj48ZyBmaWxsPSIjRkY2RDVBIiBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTMyIDE0OGMwLTYuNjI3IDUuMzczLTEyIDEyLTEyaDE0NmM2LjYyNyAwIDEyIDUuMzczIDEyIDEydjI0YzAgNi42MjctNS4zNzMgMTItMTIgMTJINDRjLTYuNjI3IDAtMTItNS4zNzMtMTItMTJ6bTAgOTZjMC02LjYyNyA1LjM3My0xMiAxMi0xMmgxNDZjNi42MjcgMCAxMiA1LjM3MyAxMiAxMnYyNGMwIDYuNjI3LTUuMzczIDEyLTEyIDEySDQ0Yy02LjYyNyAwLTEyLTUuMzczLTEyLTEyem0wIDk2YzAtNi42MjcgNS4zNzMtMTIgMTItMTJoMTQ2YzYuNjI3IDAgMTIgNS4zNzMgMTIgMTJ2MjRjMCA2LjYyNy01LjM3MyAxMi0xMiAxMkg0NGMtNi42MjcgMC0xMi01LjM3My0xMi0xMnoiIGNsaXAtcnVsZT0iZXZlbm9kZCIvPjxwYXRoIGQ9Ik03NCA3NmMwIDYuNjI3IDUuMzczIDEyIDEyIDEyaDExNi4yMTdjMTcuNjczIDAgMzIgMTQuMzI3IDMyIDMydjU2YzAgMjYuOTc4IDEwLjI3MiA1MS41NTcgMjcuMTE5IDcwLjAzOSA1LjA1NSA1LjU0NSA1LjA1NSAxNC4zNzcgMCAxOS45MjItMTYuODQ3IDE4LjQ4Mi0yNy4xMTkgNDMuMDYxLTI3LjExOSA3MC4wMzl2NTZjMCAxNy42NzMtMTQuMzI3IDMyLTMyIDMySDg2Yy02LjYyNyAwLTEyIDUuMzczLTEyIDEydjI0YzAgNi42MjcgNS4zNzMgMTIgMTIgMTJoMTE2LjIxN2M0NC4xODMgMCA4MC0zNS44MTcgODAtODB2LTU2YzAtMzAuOTI4IDI1LjA3Mi01NiA1Ni01NmE1Ljc4MyA1Ljc4MyAwIDAgMCA1Ljc4My01Ljc4M3YtMzYuNDM0YTUuNzgzIDUuNzgzIDAgMCAwLTUuNzgzLTUuNzgzYy0zMC45MjggMC01Ni0yNS4wNzItNTYtNTZ2LTU2YzAtNDQuMTgzLTM1LjgxNy04MC04MC04MEg4NmMtNi42MjcgMC0xMiA1LjM3My0xMiAxMnoiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0zNzYgMjQ0YzAtNi42MjcgNS4zNzMtMTIgMTItMTJoMTEyYzYuNjI3IDAgMTIgNS4zNzMgMTIgMTJ2MjRjMCA2LjYyNy01LjM3MyAxMi0xMiAxMkgzODhjLTYuNjI3IDAtMTItNS4zNzMtMTItMTJ6IiBjbGlwLXJ1bGU9ImV2ZW5vZGQiLz48L2c+PGRlZnM+PGNsaXBQYXRoIGlkPSJhIj48cGF0aCBmaWxsPSIjZmZmIiBkPSJNMCAwaDUxMnY1MTJIMHoiLz48L2NsaXBQYXRoPjwvZGVmcz48L3N2Zz4="
+        },
+        "displayName": "Aggregate",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 32,
+        "name": "Market Research"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

@@ -1,0 +1,1801 @@
+{
+  "workflow": {
+    "id": 14442,
+    "name": "Screen resumes and match candidates with GPT-4o, Google Sheets and email",
+    "views": 19,
+    "recentViews": 1,
+    "totalViews": 19,
+    "createdAt": "2026-03-29T13:27:50.465Z",
+    "description": "## How It Works\nThis workflow automates candidate screening and job matching for recruiters, HR operations teams, and talent acquisition leads. It eliminates the manual effort of parsing resumes, evaluating multi-dimensional candidate fit, and routing outcomes based on assessment confidence. Resume and job data are received via a POST webhook and passed directly to the Matching Agent Orchestrator, backed by a matching model and shared memory. The orchestrator coordinates four specialist agents in parallel: a Resume Parser Agent (structured extraction), a Skill Analysis Agent (competency mapping), an Experience Assessment Agent (seniority and relevance scoring), and a Cultural Fit Agent (organisational alignment evaluation). A Validation Logic Tool cross-checks outputs before a Ranking Output Parser produces a structured candidate ranking. Results are then checked against a confidence threshold — low-confidence cases trigger a review alert via email and are stored in Google Sheets for human follow-up, while high-confidence matches are prepared as analysis data, stored in Sheets, and distributed as a ranked report via email.\n\n## Setup Steps\n1. Import workflow; configure the POST webhook trigger URL for resume and job data ingestion.\n2. Add AI model credentials to the Matching Agent Orchestrator, Resume Parser Agent, Skill Analysis Agent, Experience Assessment Agent, and Cultural Fit Agent.\n3. Link Google Sheets credentials; set sheet IDs for Low Confidence Cases and Analysis Results tabs.\n4. Connect email credentials to the Send Review Required Alert and Send High Confidence Report nodes.\n5. Set confidence threshold values in the Check Confidence Level node.\n\n## Prerequisites\n- OpenAI API key (or compatible LLM)\n- Google Sheets with candidate tracking tabs pre-created\n- Email account credentials (SMTP or Gmail OAuth)\n## Use Cases\n- Recruiters automating high-volume resume screening against structured job descriptions\n## Customisation\n- Extend specialist agents with domain-specific scoring rubrics for technical or executive roles\n## Benefits\n- Four parallel specialist agents evaluate candidates across skills, experience, and cultural fit simultaneously\n",
+    "workflow": {
+      "id": "RIl15VENoTnyquUt",
+      "meta": {
+        "instanceId": "b91e510ebae4127f953fd2f5f8d40d58ca1e71c746d4500c12ae86aad04c1502"
+      },
+      "name": "Intelligent resume screening and candidate matching with confidence routing",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "922861ac-44e2-444e-b67a-a699ef833894",
+          "name": "Receive Resume & Job Data",
+          "type": "n8n-nodes-base.webhook",
+          "position": [
+            256,
+            400
+          ],
+          "webhookId": "e2f9b930-a499-43d5-aaeb-63e70aa50b7b",
+          "parameters": {
+            "path": "recruitment-analysis",
+            "options": {},
+            "httpMethod": "POST",
+            "responseMode": "lastNode"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "5a82b5f7-ab33-48c7-8905-4f5aa0231ab2",
+          "name": "Matching Agent (Orchestrator)",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            1192,
+            400
+          ],
+          "parameters": {
+            "text": "={{ $json.body }}",
+            "options": {
+              "systemMessage": "You are the Matching Agent orchestrator for a recruitment system. Your role is to coordinate specialized sub-agents (Resume Parser, Skill Analysis, Experience Assessment, Cultural Fit) to evaluate candidates against job requirements. You MUST provide detailed ranking explanations but NEVER make autonomous hiring decisions. Always present findings as recommendations requiring human review. Analyze the candidate data and job requirements, delegate tasks to your specialized agents, then synthesize their findings into a comprehensive ranking explanation with confidence scores and reasoning."
+            },
+            "promptType": "define",
+            "hasOutputParser": true
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "a715144c-8201-41bb-b0f1-e4f598b98489",
+          "name": "Matching Agent Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            480,
+            736
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "id",
+              "value": "gpt-4o"
+            },
+            "options": {
+              "temperature": 0.2
+            },
+            "builtInTools": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "mv2ECvRtbAK63G2g",
+              "name": "OpenAi account"
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "2b608072-1da6-41cd-a72a-8fd5f3aa3339",
+          "name": "Ranking Output Parser",
+          "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+          "position": [
+            1952,
+            736
+          ],
+          "parameters": {
+            "schemaType": "manual",
+            "inputSchema": "{\n\t\"type\": \"object\",\n\t\"properties\": {\n\t\t\"candidateId\": {\n\t\t\t\"type\": \"string\",\n\t\t\t\"description\": \"Unique identifier for the candidate\"\n\t\t},\n\t\t\"overallScore\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"minimum\": 0,\n\t\t\t\"maximum\": 100,\n\t\t\t\"description\": \"Overall matching score from 0 to 100\"\n\t\t},\n\t\t\"confidenceLevel\": {\n\t\t\t\"type\": \"string\",\n\t\t\t\"enum\": [\"high\", \"medium\", \"low\"],\n\t\t\t\"description\": \"Confidence level of the match assessment\"\n\t\t},\n\t\t\"skillMatchScore\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"description\": \"Score representing how well candidate skills match job requirements\"\n\t\t},\n\t\t\"experienceScore\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"description\": \"Score representing candidate experience level\"\n\t\t},\n\t\t\"culturalFitScore\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"description\": \"Score representing cultural fit assessment\"\n\t\t},\n\t\t\"strengths\": {\n\t\t\t\"type\": \"array\",\n\t\t\t\"items\": {\n\t\t\t\t\"type\": \"string\"\n\t\t\t},\n\t\t\t\"description\": \"List of candidate strengths\"\n\t\t},\n\t\t\"concerns\": {\n\t\t\t\"type\": \"array\",\n\t\t\t\"items\": {\n\t\t\t\t\"type\": \"string\"\n\t\t\t},\n\t\t\t\"description\": \"List of concerns or potential issues\"\n\t\t},\n\t\t\"recommendation\": {\n\t\t\t\"type\": \"string\",\n\t\t\t\"description\": \"Overall recommendation for the candidate\"\n\t\t},\n\t\t\"requiresHumanReview\": {\n\t\t\t\"type\": \"boolean\",\n\t\t\t\"default\": true,\n\t\t\t\"description\": \"Flag indicating if human review is required\"\n\t\t},\n\t\t\"detailedExplanation\": {\n\t\t\t\"type\": \"string\",\n\t\t\t\"description\": \"Detailed explanation of the ranking decision\"\n\t\t}\n\t},\n\t\"required\": [\"candidateId\", \"overallScore\", \"confidenceLevel\", \"skillMatchScore\", \"experienceScore\", \"culturalFitScore\", \"strengths\", \"concerns\", \"recommendation\", \"requiresHumanReview\", \"detailedExplanation\"]\n}"
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "34265133-efe2-41ce-b80f-7309edb49e3a",
+          "name": "Resume Parser Agent",
+          "type": "@n8n/n8n-nodes-langchain.agentTool",
+          "position": [
+            608,
+            736
+          ],
+          "parameters": {
+            "text": "={{ $fromAI('resumeData', 'The resume content to parse and structure') }}",
+            "options": {
+              "systemMessage": "You are a Resume Parser Agent. Extract structured information from resume text including: personal details, education history, work experience, technical skills, soft skills, certifications, and achievements. Validate data completeness and flag missing critical fields. Return structured JSON metadata."
+            },
+            "hasOutputParser": true,
+            "toolDescription": "Extracts and structures resume data including contact info, education, work history, skills, and certifications. Returns validated metadata in standardized JSON format."
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "f14c202b-5776-4540-832e-bc0e886eae03",
+          "name": "Resume Parser Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            688,
+            944
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "id",
+              "value": "gpt-4o"
+            },
+            "options": {
+              "temperature": 0.1
+            },
+            "builtInTools": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "mv2ECvRtbAK63G2g",
+              "name": "OpenAi account"
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "591d3ac8-b01a-44a4-bb2e-c4729528c631",
+          "name": "Skill Analysis Agent",
+          "type": "@n8n/n8n-nodes-langchain.agentTool",
+          "position": [
+            896,
+            736
+          ],
+          "parameters": {
+            "text": "={{ $fromAI('skillData', 'Candidate skills and job requirements to analyze') }}",
+            "options": {
+              "systemMessage": "You are a Skill Analysis Agent specializing in technical and professional skill validation. Compare candidate skills against job requirements. Assess proficiency levels, identify skill gaps, recognize transferable skills, and calculate match scores. Provide detailed explanations for each assessment. Flag any skill mismatches or concerns."
+            },
+            "hasOutputParser": true,
+            "toolDescription": "Validates candidate skills against job requirements. Analyzes technical proficiency, skill gaps, transferable skills, and provides match scoring with detailed explanations."
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "7f0c6241-1bc2-43e7-8a8d-d7bb1f96c634",
+          "name": "Skill Analysis Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            976,
+            944
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "id",
+              "value": "gpt-4o"
+            },
+            "options": {
+              "temperature": 0.2
+            },
+            "builtInTools": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "mv2ECvRtbAK63G2g",
+              "name": "OpenAi account"
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "e9941ce5-c2d1-41bf-b023-9627e52a96f5",
+          "name": "Experience Assessment Agent",
+          "type": "@n8n/n8n-nodes-langchain.agentTool",
+          "position": [
+            1184,
+            736
+          ],
+          "parameters": {
+            "text": "={{ $fromAI('experienceData', 'Candidate work history and job experience requirements to evaluate') }}",
+            "options": {
+              "systemMessage": "You are an Experience Assessment Agent specializing in work history evaluation. Analyze candidate work experience against job requirements. Assess: years of relevant experience, career progression trajectory, role responsibilities alignment, industry experience, leadership roles, and achievement impact. Calculate experience match scores and provide detailed explanations for your assessments."
+            },
+            "hasOutputParser": true,
+            "toolDescription": "Evaluates work history relevance, career progression, role responsibilities, and industry experience alignment with job requirements. Provides scoring and detailed reasoning."
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "16842a64-7455-4973-b7ab-ca0be9ffc796",
+          "name": "Experience Assessment Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            1264,
+            944
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "id",
+              "value": "gpt-4o"
+            },
+            "options": {
+              "temperature": 0.2
+            },
+            "builtInTools": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "mv2ECvRtbAK63G2g",
+              "name": "OpenAi account"
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "40de05bb-77e4-4190-aef5-02b90a220c77",
+          "name": "Cultural Fit Agent",
+          "type": "@n8n/n8n-nodes-langchain.agentTool",
+          "position": [
+            1472,
+            736
+          ],
+          "parameters": {
+            "text": "={{ $fromAI('culturalData', 'Candidate soft skills and company culture requirements to analyze') }}",
+            "options": {
+              "systemMessage": "You are a Cultural Fit Agent specializing in soft skills and values alignment analysis. Evaluate candidate cultural compatibility based on: communication style, collaboration indicators, adaptability, problem-solving approach, leadership style, and values expressed in resume. Compare against company culture requirements. Provide cultural fit scores with detailed reasoning. Note: This is advisory only - final cultural fit must be assessed through human interviews."
+            },
+            "hasOutputParser": true,
+            "toolDescription": "Analyzes soft skills, communication style, values alignment, team collaboration indicators, and cultural compatibility with company values. Provides fit assessment with explanations."
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "724038b5-4478-4575-bd7e-13fe46e23eeb",
+          "name": "Cultural Fit Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            1552,
+            944
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "id",
+              "value": "gpt-4o"
+            },
+            "options": {
+              "temperature": 0.3
+            },
+            "builtInTools": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "mv2ECvRtbAK63G2g",
+              "name": "OpenAi account"
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "f74c3a7b-6990-4b0e-bad8-1f31a191a053",
+          "name": "Validation Logic Tool",
+          "type": "@n8n/n8n-nodes-langchain.toolCode",
+          "position": [
+            1760,
+            736
+          ],
+          "parameters": {
+            "jsCode": "// Validation Logic Tool - Resume Metadata Validator\n// Validates resume metadata completeness and quality\n\nconst resumeMetadata = query;\n\n// Initialize validation result\nconst validationResult = {\n  isValid: true,\n  missingFields: [],\n  qualityScore: 100,\n  warnings: []\n};\n\n// Check required fields\nconst requiredFields = ['name', 'email', 'skills', 'experience'];\n\nfor (const field of requiredFields) {\n  if (!resumeMetadata[field] || \n      (Array.isArray(resumeMetadata[field]) && resumeMetadata[field].length === 0) ||\n      (typeof resumeMetadata[field] === 'string' && resumeMetadata[field].trim() === '')) {\n    validationResult.missingFields.push(field);\n    validationResult.isValid = false;\n    validationResult.qualityScore -= 25;\n  }\n}\n\n// Validate email format\nif (resumeMetadata.email) {\n  const emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n  if (!emailRegex.test(resumeMetadata.email)) {\n    validationResult.warnings.push('Invalid email format');\n    validationResult.qualityScore -= 10;\n  }\n} else {\n  validationResult.warnings.push('Email is missing');\n}\n\n// Validate minimum experience years\nif (resumeMetadata.experience !== undefined) {\n  const experienceYears = Array.isArray(resumeMetadata.experience) \n    ? resumeMetadata.experience.length \n    : (typeof resumeMetadata.experience === 'number' ? resumeMetadata.experience : 0);\n  \n  if (experienceYears < 0) {\n    validationResult.warnings.push('Experience years cannot be negative');\n    validationResult.qualityScore -= 15;\n  }\n} else {\n  validationResult.warnings.push('Experience data is missing');\n}\n\n// Check skill count\nif (resumeMetadata.skills) {\n  const skillCount = Array.isArray(resumeMetadata.skills) \n    ? resumeMetadata.skills.length \n    : 0;\n  \n  if (skillCount === 0) {\n    validationResult.warnings.push('No skills listed');\n    validationResult.qualityScore -= 20;\n  } else if (skillCount < 3) {\n    validationResult.warnings.push('Very few skills listed (less than 3)');\n    validationResult.qualityScore -= 10;\n  }\n} else {\n  validationResult.warnings.push('Skills data is missing');\n}\n\n// Ensure quality score doesn't go below 0\nvalidationResult.qualityScore = Math.max(0, validationResult.qualityScore);\n\n// Return validation result as JSON string\nreturn JSON.stringify(validationResult, null, 2);",
+            "schemaType": "manual",
+            "description": "Validates resume metadata completeness, checks required fields, calculates data quality scores, and flags incomplete or suspicious data.",
+            "inputSchema": "{\n\t\"type\": \"object\",\n\t\"properties\": {\n\t\t\"resumeMetadata\": {\n\t\t\t\"type\": \"object\",\n\t\t\t\"description\": \"Resume metadata object to validate\",\n\t\t\t\"properties\": {\n\t\t\t\t\"name\": {\n\t\t\t\t\t\"type\": \"string\",\n\t\t\t\t\t\"description\": \"Candidate name\"\n\t\t\t\t},\n\t\t\t\t\"email\": {\n\t\t\t\t\t\"type\": \"string\",\n\t\t\t\t\t\"description\": \"Candidate email address\"\n\t\t\t\t},\n\t\t\t\t\"skills\": {\n\t\t\t\t\t\"type\": \"array\",\n\t\t\t\t\t\"description\": \"List of candidate skills\"\n\t\t\t\t},\n\t\t\t\t\"experience\": {\n\t\t\t\t\t\"description\": \"Candidate experience data\"\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t},\n\t\"required\": [\"resumeMetadata\"]\n}",
+            "specifyInputSchema": true
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "541003a8-cf59-4e97-8c00-ce98c49be327",
+          "name": "Store Analysis Results",
+          "type": "n8n-nodes-base.dataTable",
+          "position": [
+            2544,
+            496
+          ],
+          "parameters": {
+            "columns": {
+              "value": null,
+              "mappingMode": "autoMapInputData"
+            },
+            "options": {},
+            "dataTableId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "<__PLACEHOLDER_VALUE__candidate_analysis_table__>"
+            }
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "54e461a8-d5a3-40cf-acef-06755cf1493e",
+          "name": "Prepare Analysis Data",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            2320,
+            496
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "id-1",
+                  "name": "candidateId",
+                  "type": "string",
+                  "value": "={{ $json.candidateId }}"
+                },
+                {
+                  "id": "id-2",
+                  "name": "timestamp",
+                  "type": "string",
+                  "value": "={{ $now }}"
+                },
+                {
+                  "id": "id-3",
+                  "name": "overallScore",
+                  "type": "number",
+                  "value": "={{ $json.overallScore }}"
+                },
+                {
+                  "id": "id-4",
+                  "name": "confidenceLevel",
+                  "type": "string",
+                  "value": "={{ $json.confidenceLevel }}"
+                },
+                {
+                  "id": "id-5",
+                  "name": "skillMatchScore",
+                  "type": "number",
+                  "value": "={{ $json.skillMatchScore }}"
+                },
+                {
+                  "id": "id-6",
+                  "name": "experienceScore",
+                  "type": "number",
+                  "value": "={{ $json.experienceScore }}"
+                },
+                {
+                  "id": "id-7",
+                  "name": "culturalFitScore",
+                  "type": "number",
+                  "value": "={{ $json.culturalFitScore }}"
+                },
+                {
+                  "id": "id-8",
+                  "name": "recommendation",
+                  "type": "string",
+                  "value": "={{ $json.recommendation }}"
+                },
+                {
+                  "id": "id-9",
+                  "name": "detailedExplanation",
+                  "type": "string",
+                  "value": "={{ $json.detailedExplanation }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "e649cdcf-adc8-4b6a-b9bd-88769c701fb6",
+          "name": "Check Confidence Level",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            2096,
+            400
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "or",
+              "conditions": [
+                {
+                  "id": "id-1",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ $json.confidenceLevel }}",
+                  "rightValue": "high"
+                },
+                {
+                  "id": "id-2",
+                  "operator": {
+                    "type": "number",
+                    "operation": "gt"
+                  },
+                  "leftValue": "={{ $json.overallScore }}",
+                  "rightValue": "75"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "6af1d837-6801-4f30-ace2-2083b209d12e",
+          "name": "Send High Confidence Report",
+          "type": "n8n-nodes-base.emailSend",
+          "position": [
+            2768,
+            496
+          ],
+          "webhookId": "36a5a889-8e20-4fe8-802f-30bda80230b7",
+          "parameters": {
+            "html": "=<h2>High Confidence Candidate Analysis Report</h2>\n\n<div style=\"background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;\">\n  <h3 style=\"color: #2c5282; margin-top: 0;\">Candidate Overview</h3>\n  <p><strong>Candidate ID:</strong> {{ $json.output.candidateId }}</p>\n  <p><strong>Overall Score:</strong> {{ $json.output.overallScore }}/100</p>\n  <p><strong>Confidence Level:</strong> {{ $json.output.confidenceLevel }}</p>\n</div>\n\n<div style=\"background-color: #ffffff; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; margin: 20px 0;\">\n  <h3 style=\"color: #2c5282;\">Detailed Scores</h3>\n  <ul style=\"list-style-type: none; padding-left: 0;\">\n    <li style=\"padding: 8px 0; border-bottom: 1px solid #e2e8f0;\"><strong>Skill Match Score:</strong> {{ $json.output.skillMatchScore }}</li>\n    <li style=\"padding: 8px 0; border-bottom: 1px solid #e2e8f0;\"><strong>Experience Score:</strong> {{ $json.output.experienceScore }}</li>\n    <li style=\"padding: 8px 0;\"><strong>Cultural Fit Score:</strong> {{ $json.output.culturalFitScore }}</li>\n  </ul>\n</div>\n\n<div style=\"background-color: #f0fff4; padding: 20px; border-left: 4px solid #48bb78; border-radius: 8px; margin: 20px 0;\">\n  <h3 style=\"color: #2c5282; margin-top: 0;\">Strengths</h3>\n  <ul>\n    {{ $json.output.strengths.map(strength => '<li>' + strength + '</li>').join('') }}\n  </ul>\n</div>\n\n<div style=\"background-color: #fffaf0; padding: 20px; border-left: 4px solid #ed8936; border-radius: 8px; margin: 20px 0;\">\n  <h3 style=\"color: #2c5282; margin-top: 0;\">Recommendation</h3>\n  <p>{{ $json.output.recommendation }}</p>\n</div>\n\n<div style=\"background-color: #ffffff; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; margin: 20px 0;\">\n  <h3 style=\"color: #2c5282; margin-top: 0;\">Detailed Explanation</h3>\n  <p style=\"line-height: 1.6;\">{{ $json.output.detailedExplanation }}</p>\n</div>\n\n<div style=\"margin-top: 30px; padding-top: 20px; border-top: 2px solid #e2e8f0; color: #718096; font-size: 12px;\">\n  <p>This is an automated analysis report. Please review the candidate details and proceed with the next steps in the recruitment process.</p>\n</div>",
+            "options": {
+              "appendAttribution": true
+            },
+            "subject": "=High Confidence Candidate Analysis - {{ $json.output.candidateId }}",
+            "toEmail": "<__PLACEHOLDER_VALUE__hiring_manager_email__>",
+            "fromEmail": "<__PLACEHOLDER_VALUE__system_email__>"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "890d8787-abbb-46e4-bade-3a245a425edc",
+          "name": "Send Review Required Alert",
+          "type": "n8n-nodes-base.emailSend",
+          "position": [
+            2768,
+            304
+          ],
+          "webhookId": "a45c73e0-d685-489f-b082-da61ea8e3b23",
+          "parameters": {
+            "html": "=<h2 style=\"color: #ff6d5a;\">⚠️ MANUAL REVIEW REQUIRED</h2>\n\n<p>A candidate analysis has been completed with <strong>low confidence</strong> and requires immediate human review before proceeding.</p>\n\n<hr style=\"border: 1px solid #dbdfe7; margin: 20px 0;\">\n\n<h3>Candidate Overview</h3>\n<table style=\"width: 100%; border-collapse: collapse;\">\n  <tr>\n    <td style=\"padding: 8px; background-color: #f5f5f5; font-weight: bold; width: 40%;\">Candidate ID:</td>\n    <td style=\"padding: 8px;\">{{ $json.output.candidateId }}</td>\n  </tr>\n  <tr>\n    <td style=\"padding: 8px; background-color: #f5f5f5; font-weight: bold;\">Overall Score:</td>\n    <td style=\"padding: 8px; color: {{ $json.output.overallScore >= 75 ? '#28a745' : ($json.output.overallScore >= 50 ? '#ffc107' : '#dc3545') }}; font-weight: bold;\">{{ $json.output.overallScore }}/100</td>\n  </tr>\n  <tr>\n    <td style=\"padding: 8px; background-color: #f5f5f5; font-weight: bold;\">Confidence Level:</td>\n    <td style=\"padding: 8px; color: #dc3545; font-weight: bold;\">{{ $json.output.confidenceLevel.toUpperCase() }}</td>\n  </tr>\n  <tr>\n    <td style=\"padding: 8px; background-color: #f5f5f5; font-weight: bold;\">Skill Match Score:</td>\n    <td style=\"padding: 8px;\">{{ $json.output.skillMatchScore }}</td>\n  </tr>\n  <tr>\n    <td style=\"padding: 8px; background-color: #f5f5f5; font-weight: bold;\">Experience Score:</td>\n    <td style=\"padding: 8px;\">{{ $json.output.experienceScore }}</td>\n  </tr>\n  <tr>\n    <td style=\"padding: 8px; background-color: #f5f5f5; font-weight: bold;\">Cultural Fit Score:</td>\n    <td style=\"padding: 8px;\">{{ $json.output.culturalFitScore }}</td>\n  </tr>\n</table>\n\n<hr style=\"border: 1px solid #dbdfe7; margin: 20px 0;\">\n\n<h3 style=\"color: #dc3545;\">⚠️ Concerns Identified</h3>\n<ul style=\"background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107;\">\n  {{ $json.output.concerns.map(concern => '<li>' + concern + '</li>').join('') }}\n</ul>\n\n<hr style=\"border: 1px solid #dbdfe7; margin: 20px 0;\">\n\n<h3>Detailed Analysis</h3>\n<div style=\"background-color: #f8f9fa; padding: 15px; border-radius: 5px; line-height: 1.6;\">\n  {{ $json.output.detailedExplanation }}\n</div>\n\n<hr style=\"border: 1px solid #dbdfe7; margin: 20px 0;\">\n\n<h3>AI Recommendation</h3>\n<div style=\"background-color: #e7f3ff; padding: 15px; border-left: 4px solid #2196F3;\">\n  {{ $json.output.recommendation }}\n</div>\n\n<hr style=\"border: 1px solid #dbdfe7; margin: 20px 0;\">\n\n<div style=\"background-color: #fff3cd; padding: 20px; border: 2px solid #ffc107; border-radius: 5px; margin-top: 30px;\">\n  <h3 style=\"color: #856404; margin-top: 0;\">🔍 IMPORTANT: Manual Review Required</h3>\n  <p style=\"color: #856404; font-weight: bold; margin-bottom: 0;\">\n    This analysis has been flagged for mandatory human review due to low confidence levels. \n    Please conduct a thorough manual assessment before making any hiring decisions. \n    The AI analysis should be used as a supplementary tool only.\n  </p>\n</div>\n\n<hr style=\"border: 1px solid #dbdfe7; margin: 20px 0;\">\n\n<p style=\"font-size: 12px; color: #6c757d; margin-top: 30px;\">\n  <em>This automated analysis was generated by the AI-Powered Recruitment System. All recommendations require human validation.</em>\n</p>",
+            "options": {
+              "appendAttribution": true
+            },
+            "subject": "=REVIEW REQUIRED - Low Confidence Candidate Analysis - {{ $json.output.candidateId }}",
+            "toEmail": "<__PLACEHOLDER_VALUE__hiring_manager_email__>",
+            "fromEmail": "<__PLACEHOLDER_VALUE__system_email__>"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "311cea88-9a9f-4698-9ad4-16748e8a19b3",
+          "name": "Prepare Low Confidence Data",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            2320,
+            304
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "id-1",
+                  "name": "candidateId",
+                  "type": "string",
+                  "value": "={{ $json.candidateId }}"
+                },
+                {
+                  "id": "id-2",
+                  "name": "timestamp",
+                  "type": "string",
+                  "value": "={{ $now }}"
+                },
+                {
+                  "id": "id-3",
+                  "name": "overallScore",
+                  "type": "number",
+                  "value": "={{ $json.overallScore }}"
+                },
+                {
+                  "id": "id-4",
+                  "name": "confidenceLevel",
+                  "type": "string",
+                  "value": "={{ $json.confidenceLevel }}"
+                },
+                {
+                  "id": "id-5",
+                  "name": "concerns",
+                  "type": "array",
+                  "value": "={{ $json.concerns }}"
+                },
+                {
+                  "id": "id-6",
+                  "name": "requiresHumanReview",
+                  "type": "boolean",
+                  "value": true
+                },
+                {
+                  "id": "id-7",
+                  "name": "reviewStatus",
+                  "type": "string",
+                  "value": "pending"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "c34cbcdb-d26d-4ff5-a724-dca6ffb41983",
+          "name": "Store Low Confidence Cases",
+          "type": "n8n-nodes-base.dataTable",
+          "position": [
+            2544,
+            304
+          ],
+          "parameters": {
+            "columns": {
+              "value": null,
+              "mappingMode": "autoMapInputData"
+            },
+            "options": {},
+            "dataTableId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "<__PLACEHOLDER_VALUE__review_queue_table__>"
+            }
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "85979882-7660-4be7-9108-543136b0df46",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1456,
+            -80
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 576,
+            "height": 384,
+            "content": "## Prerequisites\n- OpenAI API key (or compatible LLM)\n- Google Sheets with candidate tracking tabs pre-created\n- Email account credentials (SMTP or Gmail OAuth)\n## Use Cases\n- Recruiters automating high-volume resume screening against structured job descriptions\n## Customisation\n- Extend specialist agents with domain-specific scoring rubrics for technical or executive roles\n## Benefits\n- Four parallel specialist agents evaluate candidates across skills, experience, and cultural fit simultaneously"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f431e002-3084-4b4b-a4f4-f982c8340fef",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            928,
+            16
+          ],
+          "parameters": {
+            "width": 464,
+            "height": 288,
+            "content": "## Setup Steps\n1. Import workflow; configure the POST webhook trigger URL for resume and job data ingestion.\n2. Add AI model credentials to the Matching Agent Orchestrator, Resume Parser Agent, Skill Analysis Agent, Experience Assessment Agent, and Cultural Fit Agent.\n3. Link Google Sheets credentials; set sheet IDs for Low Confidence Cases and Analysis Results tabs.\n4. Connect email credentials to the Send Review Required Alert and Send High Confidence Report nodes.\n5. Set confidence threshold values in the Check Confidence Level node."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9230912c-12bc-4709-86aa-2543398ae4f1",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            256,
+            -48
+          ],
+          "parameters": {
+            "width": 624,
+            "height": 336,
+            "content": "## How It Works\nThis workflow automates candidate screening and job matching for recruiters, HR operations teams, and talent acquisition leads. It eliminates the manual effort of parsing resumes, evaluating multi-dimensional candidate fit, and routing outcomes based on assessment confidence. Resume and job data are received via a POST webhook and passed directly to the Matching Agent Orchestrator, backed by a matching model and shared memory. The orchestrator coordinates four specialist agents in parallel: a Resume Parser Agent (structured extraction), a Skill Analysis Agent (competency mapping), an Experience Assessment Agent (seniority and relevance scoring), and a Cultural Fit Agent (organisational alignment evaluation). A Validation Logic Tool cross-checks outputs before a Ranking Output Parser produces a structured candidate ranking. Results are then checked against a confidence threshold — low-confidence cases trigger a review alert via email and are stored in Google Sheets for human follow-up, while high-confidence matches are prepared as analysis data, stored in Sheets, and distributed as a ranked report via email."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9814e308-abf9-4996-ad04-4fb4a3ae87ea",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2048,
+            176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 400,
+            "height": 608,
+            "content": "## Check Confidence Level & Route Outcomes\n**Why** — Confidence-based routing separates high-quality matches from uncertain assessments, directing low-confidence cases to human review without discarding them."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "a5d0614a-d8d1-4fea-b2cd-7139ffd3010c",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            416,
+            576
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 1632,
+            "height": 576,
+            "content": "## Validation Logic Tool & Ranking Output Parser\n**Why** — Cross-validates multi-agent outputs and structures them into a ranked candidate list, ensuring scoring consistency before confidence checking."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "fb2c8c6f-d987-43ea-95b2-2ca286e8f79a",
+          "name": "Sticky Note5",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            144,
+            320
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 1424,
+            "height": 240,
+            "content": "## Receiving, Matching Agent Orchestrator & Specialist Agents\n**Why** — Coordinates Resume Parsing, Skill Analysis, Experience Assessment, and Cultural Fit agents in parallel using shared memory for comprehensive, multi-dimensional candidate evaluation."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "29fd6d78-36eb-4ffb-adcf-2d912f5aab11",
+          "name": "Sticky Note6",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2464,
+            160
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 576,
+            "height": 640,
+            "content": "## Store Results & Send Reports\n**Why** — Both confidence paths store outputs in Google Sheets and distribute reports via email, maintaining a complete candidate record regardless of confidence outcome."
+          },
+          "typeVersion": 1
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "binaryMode": "separate",
+        "executionOrder": "v1"
+      },
+      "versionId": "b40afb64-e4ae-4d0e-bd0a-0528d4396a87",
+      "connections": {
+        "Cultural Fit Agent": {
+          "ai_tool": [
+            [
+              {
+                "node": "Matching Agent (Orchestrator)",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Cultural Fit Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Cultural Fit Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Resume Parser Agent": {
+          "ai_tool": [
+            [
+              {
+                "node": "Matching Agent (Orchestrator)",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Resume Parser Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Resume Parser Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Matching Agent Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Matching Agent (Orchestrator)",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Skill Analysis Agent": {
+          "ai_tool": [
+            [
+              {
+                "node": "Matching Agent (Orchestrator)",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Skill Analysis Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Skill Analysis Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Prepare Analysis Data": {
+          "main": [
+            [
+              {
+                "node": "Store Analysis Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Ranking Output Parser": {
+          "ai_outputParser": [
+            [
+              {
+                "node": "Matching Agent (Orchestrator)",
+                "type": "ai_outputParser",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Validation Logic Tool": {
+          "ai_tool": [
+            [
+              {
+                "node": "Matching Agent (Orchestrator)",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Check Confidence Level": {
+          "main": [
+            [
+              {
+                "node": "Prepare Analysis Data",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Prepare Low Confidence Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Store Analysis Results": {
+          "main": [
+            [
+              {
+                "node": "Send High Confidence Report",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Receive Resume & Job Data": {
+          "main": [
+            [
+              {
+                "node": "Matching Agent (Orchestrator)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Store Low Confidence Cases": {
+          "main": [
+            [
+              {
+                "node": "Send Review Required Alert",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Experience Assessment Agent": {
+          "ai_tool": [
+            [
+              {
+                "node": "Matching Agent (Orchestrator)",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Experience Assessment Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Experience Assessment Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Prepare Low Confidence Data": {
+          "main": [
+            [
+              {
+                "node": "Store Low Confidence Cases",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Matching Agent (Orchestrator)": {
+          "main": [
+            [
+              {
+                "node": "Check Confidence Level",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 27,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.set": {
+          "count": 2
+        },
+        "n8n-nodes-base.webhook": {
+          "count": 1
+        },
+        "n8n-nodes-base.dataTable": {
+          "count": 2
+        },
+        "n8n-nodes-base.emailSend": {
+          "count": 2
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 7
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.toolCode": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.agentTool": {
+          "count": 4
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 5
+        },
+        "@n8n/n8n-nodes-langchain.outputParserStructured": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Cheng Siong Chin",
+      "username": "cschin",
+      "bio": "Dr. Cheng Siong CHIN is an n8n workflow creator specializing in AI-powered automation, agent orchestration, and intelligent system integrations. He designs and builds end-to-end workflows that combine LLMs, APIs, and data pipelines to streamline complex processes and deliver production-ready automation solutions. Contact me to discuss custom AI workflows and agent architectures.\n",
+      "verified": true,
+      "links": [
+        "https://gravatar.com/mysticluminary9fa255f7f5"
+      ],
+      "avatar": "https://gravatar.com/avatar/54544f98e839bb9dd9a764ad1e6823eeddb6db5138d201e42f291a7b0a73303f?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 11,
+        "icon": "fa:envelope",
+        "name": "n8n-nodes-base.emailSend",
+        "codex": {
+          "data": {
+            "alias": [
+              "SMTP",
+              "email",
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.sendemail/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/sendemail/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Send Email",
+          "color": "#00bb88"
+        },
+        "iconData": {
+          "icon": "envelope",
+          "type": "icon"
+        },
+        "displayName": "Send Email",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 47,
+        "icon": "file:webhook.svg",
+        "name": "n8n-nodes-base.webhook",
+        "codex": {
+          "data": {
+            "alias": [
+              "HTTP",
+              "API",
+              "Build",
+              "WH"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-custom-incident-response-workflows-with-n8n/",
+                  "label": "How to automate every step of an incident response workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Webhook"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTM1IDM3Yy0yLjIgMC00LTEuOC00LTRzMS44LTQgNC00IDQgMS44IDQgNC0xLjggNC00IDQiLz48cGF0aCBmaWxsPSIjMzc0NzRmIiBkPSJNMzUgNDNjLTMgMC01LjktMS40LTcuOC0zLjdsMy4xLTIuNWMxLjEgMS40IDIuOSAyLjMgNC43IDIuMyAzLjMgMCA2LTIuNyA2LTZzLTIuNy02LTYtNmMtMSAwLTIgLjMtMi45LjdsLTEuNyAxTDIzLjMgMTZsMy41LTEuOSA1LjMgOS40YzEtLjMgMi0uNSAzLS41IDUuNSAwIDEwIDQuNSAxMCAxMFM0MC41IDQzIDM1IDQzIi8+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTE0IDQzQzguNSA0MyA0IDM4LjUgNCAzM2MwLTQuNiAzLjEtOC41IDcuNS05LjdsMSAzLjlDOS45IDI3LjkgOCAzMC4zIDggMzNjMCAzLjMgMi43IDYgNiA2czYtMi43IDYtNnYtMmgxNXY0SDIzLjhjLS45IDQuNi01IDgtOS44IDgiLz48cGF0aCBmaWxsPSIjZTkxZTYzIiBkPSJNMTQgMzdjLTIuMiAwLTQtMS44LTQtNHMxLjgtNCA0LTQgNCAxLjggNCA0LTEuOCA0LTQgNCIvPjxwYXRoIGZpbGw9IiMzNzQ3NGYiIGQ9Ik0yNSAxOWMtMi4yIDAtNC0xLjgtNC00czEuOC00IDQtNCA0IDEuOCA0IDQtMS44IDQtNCA0Ii8+PHBhdGggZmlsbD0iI2U5MWU2MyIgZD0ibTE1LjcgMzQtMy40LTIgNS45LTkuN2MtMi0xLjktMy4yLTQuNS0zLjItNy4zIDAtNS41IDQuNS0xMCAxMC0xMHMxMCA0LjUgMTAgMTBjMCAuOS0uMSAxLjctLjMgMi41bC0zLjktMWMuMS0uNS4yLTEgLjItMS41IDAtMy4zLTIuNy02LTYtNnMtNiAyLjctNiA2YzAgMi4xIDEuMSA0IDIuOSA1LjFsMS43IDF6Ii8+PC9zdmc+"
+        },
+        "displayName": "Webhook",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1179,
+        "icon": "fa:code",
+        "name": "@n8n/n8n-nodes-langchain.outputParserStructured",
+        "codex": {
+          "data": {
+            "alias": [
+              "json",
+              "zod"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.outputparserstructured/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Output Parsers"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Structured Output Parser"
+        },
+        "iconData": {
+          "icon": "code",
+          "type": "icon"
+        },
+        "displayName": "Structured Output Parser",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1197,
+        "icon": "fa:code",
+        "name": "@n8n/n8n-nodes-langchain.toolCode",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.toolcode/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Tools"
+              ],
+              "Tools": [
+                "Recommended Tools"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code Tool"
+        },
+        "iconData": {
+          "icon": "code",
+          "type": "icon"
+        },
+        "displayName": "Code Tool",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1310,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agentTool",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Tools"
+              ],
+              "Tools": [
+                "Recommended Tools"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent Tool",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent Tool",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1315,
+        "icon": "fa:table",
+        "name": "n8n-nodes-base.dataTable",
+        "codex": {
+          "data": {
+            "alias": [
+              "data",
+              "table",
+              "knowledge",
+              "data table",
+              "table",
+              "sheet",
+              "database",
+              "data base",
+              "mysql",
+              "postgres",
+              "postgresql",
+              "airtable",
+              "supabase",
+              "noco",
+              "notion"
+            ],
+            "details": "Data table",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.datatable/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes",
+              "Development"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\",\"transform\"]",
+        "defaults": {
+          "name": "Data table"
+        },
+        "iconData": {
+          "icon": "table",
+          "type": "icon"
+        },
+        "displayName": "Data table",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 17,
+        "name": "HR"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

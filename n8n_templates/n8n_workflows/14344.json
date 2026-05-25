@@ -1,0 +1,1593 @@
+{
+  "workflow": {
+    "id": 14344,
+    "name": "Scrape WooCommerce store leads with ScraperCity and sync verified contacts to Airtable",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-03-26T06:04:31.295Z",
+    "description": "## Who is this for\n\nThis template is for sales teams, lead generation agencies, and growth marketers who want to build targeted lists of WooCommerce store owners -- complete with verified emails, phone numbers, and social profiles -- and have those contacts automatically land in Airtable for outreach or CRM workflows.\n\n## How it works\n\n1. A manual trigger starts the workflow and a configuration node lets you set your target country, lead volume, and which data points to collect (emails, phones).\n2. A POST request to the ScraperCity store-leads API kicks off an async scrape job targeting WooCommerce stores and returns a `runId`.\n3. The workflow enters a polling loop -- waiting 60 seconds between each status check -- until the ScraperCity job reports `SUCCEEDED`.\n4. Once complete, the results CSV is downloaded via the ScraperCity download endpoint.\n5. A Code node parses the CSV, cleans the data, and deduplicates records by email address.\n6. A filter removes rows missing both email and phone, keeping only actionable contacts.\n7. Each verified contact is upserted into an Airtable base, ready for outreach.\n\n## How to set up\n\n1. Create a ScraperCity account at scrapercity.com and copy your API key.\n2. In n8n, create an HTTP Header Auth credential named `ScraperCity API Key` with the header `Authorization: Bearer YOUR_KEY`.\n3. Create an Airtable personal access token credential in n8n.\n4. Open the **Configure Scrape Parameters** node and set your country code, lead volume, and Airtable base/table IDs.\n5. Click **Execute workflow** to run.\n\n## Requirements\n\n- ScraperCity account (store-leads product)\n- Airtable account with a base containing columns: Name, Website, Email, Phone, Instagram, Facebook, Country\n- n8n instance (cloud or self-hosted)\n\n## How to customize the workflow\n\n- Change `platform` in the config node from `woocommerce` to `shopify` to target Shopify stores instead.\n- Adjust `totalLeads` to scrape more or fewer contacts per run.\n- Add a Filter node after the Code node to restrict results to stores with Instagram profiles only.\n- Replace the Airtable output node with HubSpot, Google Sheets, or Notion to match your CRM stack.\n- Attach a Schedule Trigger to run the scrape weekly for ongoing lead generation.",
+    "workflow": {
+      "meta": {
+        "instanceId": "template-instance",
+        "templateCredsSetupCompleted": false
+      },
+      "name": "Scrape WooCommerce store leads and sync verified contacts into Airtable",
+      "nodes": [
+        {
+          "id": "cb976b5c-b073-44a2-a24f-45129b414bad",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -400,
+            -176
+          ],
+          "parameters": {
+            "width": 480,
+            "height": 896,
+            "content": "## Scrape WooCommerce store leads and sync verified contacts into Airtable\n\n### How it works\n\n1. The workflow is triggered manually and configured with scrape parameters (platform, country, lead count, email collection).\n2. A scrape job is submitted to the ScraperCity API and the returned run ID is stored.\n3. The workflow polls the ScraperCity API at intervals, retrying every 60 seconds until the scrape job is marked complete.\n4. Once complete, the scraped CSV results are downloaded and parsed into structured records.\n5. Contacts are filtered to retain only those with an email or phone number, and duplicates are removed.\n6. Verified, deduplicated leads are upserted into an Airtable base for ongoing outreach.\n\n### Setup steps\n\n- [ ] Create a ScraperCity account and obtain your API key at app.scrapercity.com\n- [ ] Add your ScraperCity API key as an n8n credential (HTTP Header Auth) and attach it to the HTTP Request nodes\n- [ ] Set up an Airtable base with fields matching the scraped lead data (e.g. email, phone, store URL) and obtain your Airtable API key\n- [ ] Configure the Airtable node with your base ID, table name, and API credential\n- [ ] In 'Configure Scrape Parameters', set your desired platform, countryCode, totalLeads, and collectEmails values\n- [ ] Adjust the wait durations in 'Wait Before First Poll' and 'Wait 60 Seconds Before Retry' to match expected scrape times\n\n### Customization\n\nIncrease 'totalLeads' in the scrape parameters to collect larger datasets. Adjust the polling interval (Wait 60 Seconds Before Retry) if scrapes consistently take longer or shorter. Add a Slack or email notification node after the Airtable upsert to alert the team when new leads are synced. The filter node can be extended to require both email AND phone if stricter lead quality is needed."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "0d9231a1-bf3a-4846-8bea-fca652d0bb27",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            160,
+            176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 960,
+            "height": 304,
+            "content": "## Trigger and scrape setup\n\nManually triggers the workflow, defines scrape parameters, submits the scrape job to ScraperCity, and stores the returned run ID for polling."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ce0ed25d-348e-4aa5-b659-db4b4447399e",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1200,
+            176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 1232,
+            "height": 768,
+            "content": "## Scrape status polling loop\n\nWaits before the first poll, checks the scrape job status, and routes to either download (if complete) or a retry loop that waits 60 seconds and re-polls."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "cbca461d-c3ba-4689-9789-be676d20fdc3",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1968,
+            -176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 464,
+            "height": 320,
+            "content": "## Results download and parsing\n\nDownloads the completed scrape as a CSV file from ScraperCity and parses and cleans it into structured data items ready for filtering."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "5d01a0eb-fd6e-4cd7-9e2a-b7ca4fa2ec1c",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2496,
+            144
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 448,
+            "height": 320,
+            "content": "## Contact filtering and deduplication\n\nRetains only contacts that have a valid email or phone number, then removes any duplicate email entries to ensure clean lead data."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "d012a7b7-6537-4832-8c4c-aee2793ebeb7",
+          "name": "Sticky Note5",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3008,
+            96
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 240,
+            "height": 368,
+            "content": "## Airtable lead sync\n\nUpserts each verified, deduplicated lead record into the Airtable base, creating new entries or updating existing ones."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "a1000000-0000-0000-0000-000000000001",
+          "name": "When clicking 'Execute workflow'",
+          "type": "n8n-nodes-base.manualTrigger",
+          "position": [
+            208,
+            304
+          ],
+          "parameters": {},
+          "typeVersion": 1
+        },
+        {
+          "id": "a1000000-0000-0000-0000-000000000002",
+          "name": "Configure Scrape Parameters",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            464,
+            304
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "cfg-001",
+                  "name": "platform",
+                  "type": "string",
+                  "value": "woocommerce"
+                },
+                {
+                  "id": "cfg-002",
+                  "name": "countryCode",
+                  "type": "string",
+                  "value": "US"
+                },
+                {
+                  "id": "cfg-003",
+                  "name": "totalLeads",
+                  "type": "number",
+                  "value": 500
+                },
+                {
+                  "id": "cfg-004",
+                  "name": "collectEmails",
+                  "type": "boolean",
+                  "value": true
+                },
+                {
+                  "id": "cfg-005",
+                  "name": "collectPhones",
+                  "type": "boolean",
+                  "value": true
+                },
+                {
+                  "id": "cfg-006",
+                  "name": "airtableBaseId",
+                  "type": "string",
+                  "value": "appYOUR_BASE_ID"
+                },
+                {
+                  "id": "cfg-007",
+                  "name": "airtableTableName",
+                  "type": "string",
+                  "value": "WooCommerce Leads"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "a1000000-0000-0000-0000-000000000003",
+          "name": "Start WooCommerce Lead Scrape",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            720,
+            304
+          ],
+          "parameters": {
+            "url": "https://app.scrapercity.com/api/v1/scrape/store-leads",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"platform\": \"{{ $json.platform }}\",\n  \"countryCode\": \"{{ $json.countryCode }}\",\n  \"emails\": {{ $json.collectEmails }},\n  \"phones\": {{ $json.collectPhones }},\n  \"totalLeads\": {{ $json.totalLeads }}\n}",
+            "sendBody": true,
+            "specifyBody": "json",
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth"
+          },
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "credential-id",
+              "name": "ScraperCity API Key"
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "a1000000-0000-0000-0000-000000000004",
+          "name": "Store Run ID",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            976,
+            304
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "rid-001",
+                  "name": "runId",
+                  "type": "string",
+                  "value": "={{ $json.runId }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "a1000000-0000-0000-0000-000000000005",
+          "name": "Wait Before First Poll",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            1248,
+            304
+          ],
+          "webhookId": "a1000000-wait-0001-0000-000000000005",
+          "parameters": {
+            "amount": 60
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "a1000000-0000-0000-0000-000000000006",
+          "name": "Poll Scrape Status",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            1504,
+            304
+          ],
+          "parameters": {
+            "url": "=https://app.scrapercity.com/api/v1/scrape/status/{{ $json.runId }}",
+            "method": "GET",
+            "options": {},
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth"
+          },
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "credential-id",
+              "name": "ScraperCity API Key"
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "a1000000-0000-0000-0000-000000000007",
+          "name": "Is Scrape Complete?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            1760,
+            304
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 2,
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-001",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ $json.status }}",
+                  "rightValue": "SUCCEEDED"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "a1000000-0000-0000-0000-000000000008",
+          "name": "Wait 60 Seconds Before Retry",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            2016,
+            768
+          ],
+          "webhookId": "a1000000-wait-0002-0000-000000000008",
+          "parameters": {
+            "amount": 60
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "a1000000-0000-0000-0000-000000000009",
+          "name": "Preserve Run ID for Retry",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            2288,
+            528
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "prid-001",
+                  "name": "runId",
+                  "type": "string",
+                  "value": "={{ $json.runId }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "a1000000-0000-0000-0000-000000000010",
+          "name": "Download Scraped Results",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            2016,
+            -16
+          ],
+          "parameters": {
+            "url": "=https://app.scrapercity.com/api/downloads/{{ $json.runId }}",
+            "method": "GET",
+            "options": {
+              "response": {
+                "response": {
+                  "responseFormat": "text"
+                }
+              }
+            },
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth"
+          },
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "credential-id",
+              "name": "ScraperCity API Key"
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "a1000000-0000-0000-0000-000000000011",
+          "name": "Parse and Clean CSV Results",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2288,
+            -16
+          ],
+          "parameters": {
+            "jsCode": "// Parse CSV text returned by ScraperCity download endpoint\n// Expected columns: name, website, email, phone, instagram, facebook, country\n\nconst csvText = items[0].json.data || items[0].json.body || '';\n\nif (!csvText || csvText.trim().length === 0) {\n  return [];\n}\n\nconst lines = csvText.trim().split('\\n');\nif (lines.length < 2) return [];\n\n// Parse header row - handle quoted headers\nconst parseCSVLine = (line) => {\n  const result = [];\n  let current = '';\n  let inQuotes = false;\n  for (let i = 0; i < line.length; i++) {\n    const ch = line[i];\n    if (ch === '\"') {\n      inQuotes = !inQuotes;\n    } else if (ch === ',' && !inQuotes) {\n      result.push(current.trim());\n      current = '';\n    } else {\n      current += ch;\n    }\n  }\n  result.push(current.trim());\n  return result;\n};\n\nconst headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/\\s+/g, '_'));\n\nconst seen = new Set();\nconst output = [];\n\nfor (let i = 1; i < lines.length; i++) {\n  if (!lines[i].trim()) continue;\n  const values = parseCSVLine(lines[i]);\n  const record = {};\n  headers.forEach((h, idx) => {\n    record[h] = values[idx] || '';\n  });\n\n  // Normalize email\n  const email = (record.email || '').trim().toLowerCase();\n\n  // Deduplicate by email; allow blank emails but only one blank\n  const dedupeKey = email || ('no-email-' + i);\n  if (seen.has(dedupeKey)) continue;\n  seen.add(dedupeKey);\n\n  output.push({ json: record });\n}\n\nreturn output;"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "a1000000-0000-0000-0000-000000000012",
+          "name": "Filter Contacts with Email or Phone",
+          "type": "n8n-nodes-base.filter",
+          "position": [
+            2544,
+            304
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 2,
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "or",
+              "conditions": [
+                {
+                  "id": "flt-001",
+                  "operator": {
+                    "type": "string",
+                    "operation": "isNotEmpty"
+                  },
+                  "leftValue": "={{ $json.email }}",
+                  "rightValue": ""
+                },
+                {
+                  "id": "flt-002",
+                  "operator": {
+                    "type": "string",
+                    "operation": "isNotEmpty"
+                  },
+                  "leftValue": "={{ $json.phone }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "a1000000-0000-0000-0000-000000000013",
+          "name": "Remove Duplicate Emails",
+          "type": "n8n-nodes-base.removeDuplicates",
+          "position": [
+            2800,
+            304
+          ],
+          "parameters": {
+            "options": {},
+            "fieldsToCompare": {
+              "fields": [
+                {
+                  "fieldName": "email"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "a1000000-0000-0000-0000-000000000014",
+          "name": "Upsert Lead into Airtable",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            3056,
+            304
+          ],
+          "parameters": {
+            "table": {
+              "__rl": true,
+              "mode": "name",
+              "value": "={{ $('Configure Scrape Parameters').item.json.airtableTableName }}"
+            },
+            "columns": {
+              "value": {
+                "Name": "={{ $json.name }}",
+                "Email": "={{ $json.email }}",
+                "Phone": "={{ $json.phone }}",
+                "Country": "={{ $json.country }}",
+                "Website": "={{ $json.website }}",
+                "Facebook": "={{ $json.facebook }}",
+                "Instagram": "={{ $json.instagram }}"
+              },
+              "mappingMode": "defineBelow"
+            },
+            "options": {},
+            "operation": "upsert",
+            "application": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $('Configure Scrape Parameters').item.json.airtableBaseId }}"
+            },
+            "fieldsToMatchOn": {
+              "fields": [
+                "Email"
+              ]
+            }
+          },
+          "credentials": {
+            "airtableTokenApi": {
+              "id": "credential-id",
+              "name": "Airtable Personal Access Token"
+            }
+          },
+          "typeVersion": 2.1
+        }
+      ],
+      "settings": {
+        "executionOrder": "v1"
+      },
+      "connections": {
+        "Store Run ID": {
+          "main": [
+            [
+              {
+                "node": "Wait Before First Poll",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Poll Scrape Status": {
+          "main": [
+            [
+              {
+                "node": "Is Scrape Complete?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Is Scrape Complete?": {
+          "main": [
+            [
+              {
+                "node": "Download Scraped Results",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Wait 60 Seconds Before Retry",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Wait Before First Poll": {
+          "main": [
+            [
+              {
+                "node": "Poll Scrape Status",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Remove Duplicate Emails": {
+          "main": [
+            [
+              {
+                "node": "Upsert Lead into Airtable",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Download Scraped Results": {
+          "main": [
+            [
+              {
+                "node": "Parse and Clean CSV Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Preserve Run ID for Retry": {
+          "main": [
+            [
+              {
+                "node": "Poll Scrape Status",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Configure Scrape Parameters": {
+          "main": [
+            [
+              {
+                "node": "Start WooCommerce Lead Scrape",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Parse and Clean CSV Results": {
+          "main": [
+            [
+              {
+                "node": "Filter Contacts with Email or Phone",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Wait 60 Seconds Before Retry": {
+          "main": [
+            [
+              {
+                "node": "Preserve Run ID for Retry",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Start WooCommerce Lead Scrape": {
+          "main": [
+            [
+              {
+                "node": "Store Run ID",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "When clicking 'Execute workflow'": {
+          "main": [
+            [
+              {
+                "node": "Configure Scrape Parameters",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Filter Contacts with Email or Phone": {
+          "main": [
+            [
+              {
+                "node": "Remove Duplicate Emails",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 20,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.set": {
+          "count": 3
+        },
+        "n8n-nodes-base.code": {
+          "count": 1
+        },
+        "n8n-nodes-base.wait": {
+          "count": 2
+        },
+        "n8n-nodes-base.filter": {
+          "count": 1
+        },
+        "n8n-nodes-base.airtable": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 3
+        },
+        "n8n-nodes-base.manualTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.removeDuplicates": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Alex Berman",
+      "username": "alexberman",
+      "bio": "Serial entrepreneur, author of The Cold Email Manifesto, 100K+ YouTube subscribers. Built ScraperCity - web scraping and lead generation SaaS with 12+ scrapers including Apollo, Google Maps, People Finder, and a 3M+ contact B2B Lead Database.",
+      "verified": true,
+      "links": [
+        "https://scrapercity.com"
+      ],
+      "avatar": "https://gravatar.com/avatar/0526442f3f7a36050517a2796f820fddb26c5f6c873b7af4a560b6ba9a177c3d?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 2,
+        "icon": "file:airtable.svg",
+        "name": "n8n-nodes-base.airtable",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-goals-level-up-your-vocabulary-with-vonage-and-n8n/",
+                  "icon": "🎯",
+                  "label": "2021 Goals: Level Up Your Vocabulary With Vonage and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-sms-the-low-code-way-with-airtable-twilio-programmable-sms-and-n8n/",
+                  "icon": "📱",
+                  "label": "Sending SMS the Low-Code Way with Airtable, Twilio Programmable SMS, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automating-conference-organization-processes-with-n8n/",
+                  "icon": "🙋‍♀️",
+                  "label": "Automating Conference Organization Processes with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.airtable/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/airtable/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Airtable"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMDAgMTcwIj48cGF0aCBmaWxsPSIjZmNiNDAwIiBkPSJNODkgNC44IDE2LjIgMzQuOWMtNC4xIDEuNy00IDcuNC4xIDkuMWw3My4yIDI5YzYuNCAyLjYgMTMuNiAyLjYgMjAgMGw3My4yLTI5YzQuMS0xLjYgNC4xLTcuNC4xLTkuMWwtNzMtMzAuMUMxMDMuMiAyIDk1LjcgMiA4OSA0LjgiLz48cGF0aCBmaWxsPSIjMThiZmZmIiBkPSJNMTA1LjkgODguOXY3Mi41YzAgMy40IDMuNSA1LjggNi43IDQuNWw4MS42LTMxLjdjMS45LS43IDMuMS0yLjUgMy4xLTQuNVY1Ny4yYzAtMy40LTMuNS01LjgtNi43LTQuNUwxMDkgODQuM2MtMS45LjgtMy4xIDIuNi0zLjEgNC42Ii8+PHBhdGggZmlsbD0iI2Y4MmI2MCIgZD0ibTg2LjkgOTIuNi0yNC4yIDExLjctMi41IDEuMkw5LjEgMTMwYy0zLjIgMS42LTcuNC0uOC03LjQtNC40VjU3LjVjMC0xLjMuNy0yLjQgMS42LTMuM3EuNi0uNiAxLjItLjljMS4yLS43IDMtLjkgNC40LS4zbDc3LjUgMzAuN2M0IDEuNSA0LjMgNy4xLjUgOC45Ii8+PHBhdGggZmlsbD0iI2JhMWU0NSIgZD0ibTg2LjkgOTIuNi0yNC4yIDExLjctNTkuNC01MHEuNi0uNiAxLjItLjljMS4yLS43IDMtLjkgNC40LS4zbDc3LjUgMzAuN2M0IDEuNCA0LjMgNyAuNSA4LjgiLz48L3N2Zz4="
+        },
+        "displayName": "Airtable",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 838,
+        "icon": "fa:mouse-pointer",
+        "name": "n8n-nodes-base.manualTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.manualworkflowtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "When clicking ‘Execute workflow’",
+          "color": "#909298"
+        },
+        "iconData": {
+          "icon": "mouse-pointer",
+          "type": "icon"
+        },
+        "displayName": "Manual Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 844,
+        "icon": "fa:filter",
+        "name": "n8n-nodes-base.filter",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The Filter node can be used to filter items based on a condition. If the condition is met, the item will be passed on to the next node. If the condition is not met, the item will be omitted. Conditions can be combined together by AND(meet all conditions), or OR(meet at least one condition).",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.filter/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Filter",
+          "color": "#229eff"
+        },
+        "iconData": {
+          "icon": "filter",
+          "type": "icon"
+        },
+        "displayName": "Filter",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1238,
+        "icon": "file:removeDuplicates.svg",
+        "name": "n8n-nodes-base.removeDuplicates",
+        "codex": {
+          "data": {
+            "alias": [
+              "Dedupe",
+              "Deduplicate",
+              "Duplicates",
+              "Remove",
+              "Unique",
+              "Transform",
+              "Array",
+              "List",
+              "Item"
+            ],
+            "details": "",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.removeduplicates/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Remove Duplicates"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJub25lIj48ZyBmaWxsPSIjNTRCOEM5IiBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGQ9Ik0xMzQuMDk3IDExMWgzOC44Mjl2MzIuNTA4SDEzOC4xNnYzNC42MzVoLTMyLjUwOHYtMzguNjk5YzAtMTUuNzA5IDEyLjczNS0yOC40NDQgMjguNDQ1LTI4LjQ0NG03Ny42NTggMzIuNTA4VjExMWg3Ny42NTd2MzIuNTA4em0xMTYuNDg2IDBWMTExaDc3LjY1OHYzMi41MDh6bTExNi40ODcgMFYxMTFoMzguODI5YzE1LjcxIDAgMjguNDQ1IDEyLjczNSAyOC40NDUgMjguNDQ0djM4LjY5OWgtMzIuNTA4di0zNC42MzV6bTM0Ljc2NiA3My4yMzhoMzIuNTA4djM4LjY5OGMwIDE1LjcxLTEyLjczNSAyOC40NDUtMjguNDQ1IDI4LjQ0NWgtMzguODI5di0zMi41MDhoMzQuNzY2ek0wIDI0NC41MzdDMCAyMjkuMzI5IDEyLjczNSAyMTcgMjguNDQ0IDIxN2gzNDkuNDYxYzE1LjcwOSAwIDI4LjQ0NCAxMi4zMjkgMjguNDQ0IDI3LjUzN3YxMjkuODE1YzAgMTUuMjA4LTEyLjczNSAyNy41MzctMjguNDQ0IDI3LjUzN0gyOC40NDVDMTIuNzM0IDQwMS44ODkgMCAzODkuNTYgMCAzNzQuMzUyeiIvPjwvZz48ZGVmcz48Y2xpcFBhdGggaWQ9ImEiPjxwYXRoIGZpbGw9IiNmZmYiIGQ9Ik0wIDBoNTEydjUxMkgweiIvPjwvY2xpcFBhdGg+PC9kZWZzPjwvc3ZnPg=="
+        },
+        "displayName": "Remove Duplicates",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 37,
+        "name": "Lead Generation"
+      }
+    ],
+    "image": []
+  }
+}

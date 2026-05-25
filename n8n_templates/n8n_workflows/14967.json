@@ -1,0 +1,1508 @@
+{
+  "workflow": {
+    "id": 14967,
+    "name": "Triage customer complaint emails from Gmail with GPT-4o-mini, Slack and Sheets",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-10T07:25:14.922Z",
+    "description": "\n\n### Description\n\nActivate this workflow once and it monitors your Gmail inbox every minute automatically. Every incoming email is scanned for complaint keywords — and if a complaint is detected, GPT-4o-mini scores its urgency, identifies the right department, writes a one-line summary, and drafts a ready-to-send reply. The complaint is logged to Google Sheets and a formatted alert is posted to the correct Slack channel instantly. Built for support teams, customer success managers, and small businesses who can't afford to miss or delay a complaint.\n\n---\n\n## What This Workflow Does\n\n- **Automatic inbox monitoring** — Checks your Gmail every minute so no complaint sits unread while your team is busy with other work\n- **Keyword-based complaint detection** — Scans subject lines and email bodies for 12 complaint signals and silently ignores everything else\n- **AI urgency scoring** — Rates every complaint from 1 to 10 so your team knows at a glance what needs attention first\n- **Department routing** — Classifies each complaint as Billing, Technical, or General and sends the alert to the right Slack channel automatically\n- **Reply draft generation** — GPT-4o-mini writes a professional, empathetic reply your agent can send immediately — no drafting from scratch\n- **Permanent complaint log** — Appends a 12-column record to Google Sheets for every complaint, giving you a searchable history for reporting and pattern analysis\n- **Clean non-complaint exit** — Emails that are not complaints pass through silently without triggering any logging or alerts\n\n---\n\n## Setup Requirements\n\n### Tools Needed\n- n8n instance (self-hosted or cloud)\n- Gmail account (the inbox you want monitored)\n- OpenAI account with GPT-4o-mini API access\n- Slack workspace with OAuth2 app configured\n- Google Sheets (one sheet with a tab named **Complaint Log**)\n\n### Credentials Required\n- Gmail OAuth2\n- OpenAI API key\n- Slack OAuth2\n- Google Sheets OAuth2\n\n**Estimated Setup Time: 15–20 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Import the workflow** — Open n8n → Workflows → Import from JSON → paste the workflow JSON → click Import\n\n2. **Connect Gmail** — Open node **1. Gmail — Inbox Monitor** → click the credential dropdown → select OAuth2 → sign in with the Gmail account you want monitored → authorize access\n\n3. **Fill in your config values** — Open node **2. Set — Config Values** → replace all seven placeholders:\n\n| Field | What to put here |\n|---|---|\n| `YOUR COMPANY NAME` | Your business name (used in the AI reply) |\n| `YOUR_GOOGLE_SHEET_ID` | The ID from your Google Sheet URL (the string between `/d/` and `/edit`) |\n| `Complaint Log` | Leave as-is, or match your sheet tab name exactly |\n| `#billing-support` | Your Slack channel for billing complaints |\n| `#tech-support` | Your Slack channel for technical complaints |\n| `#customer-support` | Your Slack channel for general complaints |\n| `support@yourcompany.com` | Your support team's reply-from email |\n\n4. **Connect OpenAI** — Open node **6. OpenAI — GPT-4o-mini Model** → click the credential dropdown → add your OpenAI API key → test the connection\n\n5. **Connect Google Sheets** — Open node **9. Google Sheets — Log Complaint** → click the credential dropdown → connect your Google account via OAuth2 → make sure your sheet has a tab named exactly **Complaint Log** with these 12 column headers in row 1: `Email ID`, `Received Date`, `Sender Name`, `Sender Email`, `Subject`, `One Line Summary`, `Department`, `Urgency Score`, `Urgency Level`, `Suggested Reply`, `Slack Channel Alerted`, `Logged At`\n\n6. **Connect Slack** — Open node **10. Slack — Send Department Alert** → click the credential dropdown → connect your Slack workspace via OAuth2 → invite the n8n bot to all three complaint channels in Slack (`/invite @n8n` in each channel)\n\n7. **Activate the workflow** — Toggle the workflow to Active — it will begin polling Gmail every minute immediately\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Gmail: Inbox Monitor**\nThis step checks your Gmail inbox every 60 seconds for new emails. Every new message that arrives is passed to the next step for processing. Nothing is read, flagged, or deleted — it is read-only access.\n\n**Step 2 — Set: Config Values**\nYour company name, Google Sheet ID, sheet tab name, three Slack channel names, and support email are stored here as named variables. You set these once and every other step in the workflow uses them automatically.\n\n**Step 3 — Code: Extract Email Fields**\nThis step pulls the sender name, sender email, subject line, and email body out of the raw Gmail data. The email body is trimmed to 3,000 characters to keep AI processing fast and cost-efficient. A timestamp is also captured for the log.\n\n**Step 4 — IF: Is This a Complaint?**\nThis is the filter step. It checks whether the subject or body contains any of 12 complaint signals: words like \"complaint\", \"refund\", \"not working\", \"unacceptable\", \"very unhappy\", \"demand refund\", and others. If a match is found (YES path), the email moves forward to AI triage. If no match is found (NO path), the email flows to **11. NoOp — Not a Complaint** and the workflow stops silently — no logging, no alert.\n\n**Step 5 — AI Agent: Triage Complaint**\nGPT-4o-mini reads the sender name, subject, and email body. It returns exactly four pieces of data: an urgency score from 1 to 10, the correct department (Billing, Technical, or General), a one-line summary of the complaint, and a ready-to-send reply draft under 80 words addressed to the customer by name.\n\n**Step 6 — OpenAI: GPT-4o-mini Model**\nThis is the language model powering the triage step. It runs at temperature 0.3 for consistent, structured responses and is capped at 600 tokens to keep costs low per complaint.\n\n**Step 7 — Parser: Structured Triage Output**\nThis step enforces the exact data structure GPT-4o-mini must return. It validates that urgency score is a number, department is one of the three valid options, and both the summary and reply fields are present. This prevents malformed AI output from reaching your sheet or Slack.\n\n**Step 8 — Code: Combine Triage Data**\nAll AI results are merged with the original email data here. This step also converts the numeric urgency score into a human-readable label: 1–3 = Low, 4–5 = Medium, 6–7 = High, 8–10 = CRITICAL. It also selects the correct Slack channel based on the department GPT-4o-mini assigned.\n\n**Step 9 — Google Sheets: Log Complaint**\nA new row is appended to your Complaint Log sheet with all 12 fields: email ID, received date, sender details, subject, AI summary, department, urgency score, urgency label, suggested reply, which Slack channel was alerted, and the time it was logged.\n\n**Step 10 — Slack: Send Department Alert**\nA formatted Slack message is posted to the correct channel — `#billing-support`, `#tech-support`, or `#customer-support` — depending on the department. The message shows the urgency label, score, sender details, subject, AI summary, and the suggested reply text ready for the agent to copy and send.\n\nThe final result: your team sees a structured complaint alert in Slack within seconds of the email arriving, with the reply already written.\n\n---\n\n## Key Features\n\n✅ **Runs without any manual trigger** — Gmail polling fires every minute automatically once the workflow is active\n✅ **Zero noise for non-complaints** — Regular emails pass through silently with no logging, no alerts, and no wasted API calls\n✅ **CRITICAL flag for urgent cases** — Any complaint scoring 8 or above is labelled CRITICAL in Slack so high-risk customers get immediate attention\n✅ **Ready-to-send reply included** — Every Slack alert contains a drafted reply addressed to the customer by name — agents copy, review, and send\n✅ **Structured AI output enforced** — A schema parser ensures GPT-4o-mini always returns the correct fields in the correct format, preventing broken logs\n✅ **Three-channel Slack routing** — Billing, Technical, and General complaints each go to their own channel automatically — no manual sorting\n✅ **12-column complaint history** — Every complaint is permanently recorded in Google Sheets for weekly reporting, pattern spotting, and team reviews\n✅ **Token-efficient processing** — Email body is capped at 3,000 characters and AI is capped at 600 tokens — keeping costs predictable at scale\n\n---\n\n## Customisation Options\n\n**Add more complaint keywords** — In node **4. IF — Is This a Complaint?**, add more trigger phrases to the condition (e.g. `very frustrated`, `cancel my account`, `escalate`) to catch complaints your current list misses.\n\n**Adjust urgency thresholds** — In node **8. Code — Combine Triage Data**, change the score cutoffs for Low, Medium, High, and CRITICAL to match your team's definition of urgency (e.g. raise CRITICAL from 8 to 9 for a stricter threshold).\n\n**Add a Gmail label to processed complaints** — After node **10. Slack — Send Department Alert**, add a Gmail node set to \"Add Label\" to tag every processed complaint in your inbox (e.g. \"Triaged\") so agents know which emails the workflow has already handled.\n\n**Send a copy to email** — After node **8. Code — Combine Triage Data**, add a Gmail Send node to also email the suggested reply and triage details to your support team inbox as a backup alongside Slack.\n\n**Weekly summary report** — Add a Schedule trigger that runs every Monday morning, reads the Google Sheet via a Sheets node, counts complaints by department and urgency level, and posts a summary to a `#support-weekly` Slack channel.\n\n**Route CRITICAL complaints to a separate Slack channel** — In node **8. Code — Combine Triage Data**, add a condition: if `urgencyLabel === 'CRITICAL'`, override `slackChannel` with a dedicated `#escalations` channel so your most urgent cases never get buried.\n\n---\n\n## Troubleshooting\n\n**Gmail not triggering the workflow:**\n- Make sure the workflow is toggled to Active — inactive workflows do not poll\n- Check that the Gmail OAuth2 credential in node **1. Gmail — Inbox Monitor** is connected and not expired — re-authorize if needed\n- Send a test email to the monitored inbox and wait up to 60 seconds for the next poll cycle\n\n**OpenAI credential not working:**\n- Confirm the API key is connected in node **6. OpenAI — GPT-4o-mini Model**, not in a different step\n- Check that your OpenAI account has available credits\n- Verify the key has access to gpt-4o-mini — restricted keys may block this model\n\n**Google Sheets not logging rows:**\n- Confirm the Sheet ID in node **2. Set — Config Values** matches the ID in your Google Sheet URL exactly\n- Make sure the tab is named **Complaint Log** — the name must match `sheetName` in Config Values exactly, including capitalization\n- Check that the Google Sheets OAuth2 credential in node **9. Google Sheets — Log Complaint** is connected and authorized\n\n**Slack alerts not arriving:**\n- Confirm the Slack OAuth2 credential in node **10. Slack — Send Department Alert** is connected\n- Make sure the n8n bot has been invited to all three channels — type `/invite @n8n` in each channel in Slack\n- Check that the channel names in node **2. Set — Config Values** include the `#` prefix and match exactly\n\n**AI returning wrong department or malformed output:**\n- The structured output parser in node **7. Parser — Structured Triage Output** enforces the schema — if GPT returns an unexpected format, check the execution log of node **5. AI Agent — Triage Complaint** for the raw output\n- If department values are inconsistent, the prompt in node **5** explicitly requires exactly `Billing`, `Technical`, or `General` — any deviation means the AI call failed and you should re-run\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email: [info@incrementors.com](info@incrementors.com)\n🌐 Website: [https://www.incrementors.com/contact-us/](https://www.incrementors.com/contact-us/)",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2"
+      },
+      "nodes": [
+        {
+          "id": "1c69224e-4969-4db1-a974-6023baec83ed",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1120,
+            -368
+          ],
+          "parameters": {
+            "width": 540,
+            "height": 1040,
+            "content": "## Customer Complaint Triage — Gmail + GPT-4o-mini + Slack + Google Sheets\n\nFor support teams and customer success managers who receive complaint emails and want automatic AI triage, department routing, and a ready-to-send reply draft — without manual review. Gmail is polled every minute. Each email is scanned for complaint keywords. If a complaint is detected, GPT-4o-mini scores it from 1 to 10, classifies it as Billing, Technical, or General, writes a one-line summary, and drafts a reply. The complaint is logged to Google Sheets and a formatted Slack alert is sent to the correct department channel automatically.\n\n## How it works\n- **1. Gmail — Inbox Monitor** polls Gmail every minute for new emails\n- **2. Set — Config Values** stores company name, Sheet ID, sheet tab name, three Slack channel names, and support email\n- **3. Code — Extract Email Fields** parses sender name, sender email, subject, and body from the raw Gmail payload\n- **4. IF — Is This a Complaint?** scans subject and body for 12 complaint keywords — non-complaints exit cleanly\n- **5. AI Agent — Triage Complaint** uses GPT-4o-mini to return urgency score, department, one-line summary, and a reply draft\n- **8. Code — Combine Triage Data** merges AI output with email data, sets urgency label, and picks the right Slack channel\n- **9. Google Sheets — Log Complaint** appends a 12-column row to the complaint log\n- **10. Slack — Send Department Alert** posts the full triage to the correct Billing, Technical, or General channel\n\n## Set up steps\n1. In **1. Gmail — Inbox Monitor** — connect your Gmail OAuth2 credential\n2. In **2. Set — Config Values** — replace all seven values: company name, Sheet ID, sheet tab name, three Slack channel names, and support email\n3. In **6. OpenAI — GPT-4o-mini Model** — connect your OpenAI credential\n4. In **9. Google Sheets — Log Complaint** — connect your Google Sheets OAuth2 credential and create a sheet tab named Complaint Log\n5. In **10. Slack — Send Department Alert** — connect your Slack OAuth2 credential and invite the bot to all three channels\n6. Activate the workflow — it will poll Gmail every minute automatically"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "795d09a4-b170-4708-bb17-3ac47c1c456c",
+          "name": "Section — Inbox Monitoring and Config",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -560,
+            -96
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 436,
+            "height": 340,
+            "content": "## Inbox Monitoring and Config\nGmail is polled every minute for new emails. Config stores company name, Sheet ID, three Slack channel names, and support email — all set once here."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "d59bd405-aeb0-4038-9d2e-2246fa818758",
+          "name": "Section — Email Parsing and Complaint Detection",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -112,
+            -176
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 420,
+            "height": 660,
+            "content": "## Email Parsing and Complaint Detection\nExtracts sender details, subject, and body from the raw Gmail payload. Scans subject and body for 12 complaint keywords. Non-complaint emails exit cleanly via the NoOp node."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "413d62c5-80d1-42d4-b85d-af8598fee9e8",
+          "name": "Section — AI Triage Analysis",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            336,
+            -176
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 404,
+            "height": 708,
+            "content": "## AI Triage Analysis\nGPT-4o-mini returns four structured fields: urgency score (1–10), department (Billing, Technical, or General), one-line summary, and a ready-to-send reply draft. Structured Output Parser enforces the schema."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "e682a744-daf2-4561-af6a-927053658caa",
+          "name": "Section — Data Assembly",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            752,
+            -176
+          ],
+          "parameters": {
+            "color": 6,
+            "height": 420,
+            "content": "## Data Assembly\nMerges AI output with original email data. Sets urgency label (Low, Medium, High, CRITICAL) based on score. Routes to the correct Slack channel based on department."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "04929e03-875a-482c-9772-706064c00c73",
+          "name": "Section — Complaint Log and Department Alert",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1040,
+            -320
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 408,
+            "height": 804,
+            "content": "## Complaint Log and Department Alert\nGoogle Sheets appends a 12-column permanent record for every complaint. Slack posts a formatted alert with urgency, summary, and reply draft to the correct department channel."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "8706d36d-70cf-4103-b30f-da979a75e4d5",
+          "name": "1. Gmail — Inbox Monitor",
+          "type": "n8n-nodes-base.gmailTrigger",
+          "position": [
+            -512,
+            80
+          ],
+          "parameters": {
+            "simple": false,
+            "filters": {},
+            "options": {},
+            "pollTimes": {
+              "item": [
+                {
+                  "mode": "everyMinute"
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "60b70aa9-11ce-4cda-8a10-360039a2bfe1",
+          "name": "2. Set — Config Values",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -288,
+            80
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "cfg-001",
+                  "name": "companyName",
+                  "type": "string",
+                  "value": "YOUR COMPANY NAME"
+                },
+                {
+                  "id": "cfg-002",
+                  "name": "sheetId",
+                  "type": "string",
+                  "value": "YOUR_GOOGLE_SHEET_ID"
+                },
+                {
+                  "id": "cfg-003",
+                  "name": "sheetName",
+                  "type": "string",
+                  "value": "Complaint Log"
+                },
+                {
+                  "id": "cfg-004",
+                  "name": "slackBillingChannel",
+                  "type": "string",
+                  "value": "#billing-support"
+                },
+                {
+                  "id": "cfg-005",
+                  "name": "slackTechChannel",
+                  "type": "string",
+                  "value": "#tech-support"
+                },
+                {
+                  "id": "cfg-006",
+                  "name": "slackSupportChannel",
+                  "type": "string",
+                  "value": "#customer-support"
+                },
+                {
+                  "id": "cfg-007",
+                  "name": "supportEmail",
+                  "type": "string",
+                  "value": "user@example.com"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "f6b912a1-de08-42b3-9624-ae5b1f1fb998",
+          "name": "3. Code — Extract Email Fields",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -64,
+            80
+          ],
+          "parameters": {
+            "jsCode": "// Extract clean fields from Gmail trigger output\nconst email = $input.first().json;\nconst config = $('2. Set — Config Values').item.json;\n\n// Get sender details\nconst fromRaw = email.from?.text || email.from || '';\nconst senderEmail = fromRaw.match(/[\\w.-]+@[\\w.-]+\\.[a-z]{2,}/i)?.[0] || 'user@example.com';\nconst senderName = fromRaw.replace(/<.*?>/, '').trim() || 'Unknown Sender';\n\n// Get email content\nconst subject = email.subject || 'No Subject';\nconst body = email.text || email.snippet || email.body?.text || 'No email body found';\nconst receivedAt = email.date || new Date().toISOString();\nconst emailId = email.id || email.messageId || 'unknown';\n\n// Truncate body to 3000 chars to stay within token limits\nconst bodyTruncated = body.substring(0, 3000);\n\nreturn [{\n  json: {\n    emailId,\n    senderEmail,\n    senderName,\n    subject,\n    emailBody: bodyTruncated,\n    receivedAt,\n    companyName: config.companyName,\n    sheetId: config.sheetId,\n    sheetName: config.sheetName,\n    slackBillingChannel: config.slackBillingChannel,\n    slackTechChannel: config.slackTechChannel,\n    slackSupportChannel: config.slackSupportChannel,\n    supportEmail: config.supportEmail\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "13aca007-fe69-40fb-9cfc-0d05d69d6695",
+          "name": "4. IF — Is This a Complaint?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            160,
+            80
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-complaint-001",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $json.subject.toLowerCase().includes('complaint') || $json.subject.toLowerCase().includes('issue') || $json.subject.toLowerCase().includes('problem') || $json.subject.toLowerCase().includes('not working') || $json.subject.toLowerCase().includes('broken') || $json.subject.toLowerCase().includes('refund') || $json.subject.toLowerCase().includes('angry') || $json.subject.toLowerCase().includes('disappointed') || $json.emailBody.toLowerCase().includes('complaint') || $json.emailBody.toLowerCase().includes('very unhappy') || $json.emailBody.toLowerCase().includes('unacceptable') || $json.emailBody.toLowerCase().includes('demand refund') || $json.emailBody.toLowerCase().includes('worst') }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "e4d88977-7da4-4b7d-b1ce-1b6bf588b83c",
+          "name": "5. AI Agent — Triage Complaint",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            368,
+            64
+          ],
+          "parameters": {
+            "text": "=You are a customer support triage specialist at {{ $json.companyName }}.\n\nYou must analyze this customer complaint email and return a JSON object with exactly 4 fields.\n\nCUSTOMER EMAIL:\nFrom: {{ $json.senderName }} ({{ $json.senderEmail }})\nSubject: {{ $json.subject }}\nBody: {{ $json.emailBody }}\n\nYou must return ONLY a valid JSON object with these 4 fields:\n\nurgencyScore — a number from 1 to 10 based on how urgent this complaint is.\n1 = minor inconvenience, 5 = moderate issue, 8 = very upset customer, 10 = threatening legal action or churn\n\ndepartment — which team should handle this complaint. Choose exactly one of these:\nBilling (payment issues, refund requests, invoice problems, overcharge)\nTechnical (product not working, bugs, errors, login issues, integration problems)\nGeneral (shipping, delivery, service quality, general dissatisfaction)\n\noneLineSummary — one plain sentence (under 20 words) summarizing what the customer is complaining about.\n\nsuggestedReply — a professional, empathetic reply the support agent can send to this customer. Keep it under 80 words. Plain text only. Start with the customer name. End with your company name.\n\nRULES:\n- Return ONLY the JSON object. No extra text before or after.\n- No markdown. No code blocks. No backticks.\n- urgencyScore must be a number, not a string.\n- department must be exactly: Billing OR Technical OR General",
+            "options": {},
+            "promptType": "define",
+            "hasOutputParser": true
+          },
+          "typeVersion": 1.7
+        },
+        {
+          "id": "fdf62aad-ba06-4337-ab38-3701bda73503",
+          "name": "6. OpenAI — GPT-4o-mini Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            368,
+            288
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini"
+            },
+            "options": {
+              "maxTokens": 600,
+              "temperature": 0.3
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "3e39122b-e6f4-4a52-87b7-3704e4a617b6",
+          "name": "7. Parser — Structured Triage Output",
+          "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+          "position": [
+            512,
+            384
+          ],
+          "parameters": {
+            "schemaType": "manual",
+            "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"urgencyScore\": {\n      \"type\": \"number\",\n      \"description\": \"Urgency score from 1 to 10. 1 = minor, 10 = critical\"\n    },\n    \"department\": {\n      \"type\": \"string\",\n      \"description\": \"Which department: Billing OR Technical OR General\"\n    },\n    \"oneLineSummary\": {\n      \"type\": \"string\",\n      \"description\": \"One sentence summary of the complaint under 20 words\"\n    },\n    \"suggestedReply\": {\n      \"type\": \"string\",\n      \"description\": \"Professional empathetic reply under 80 words for the support agent to send\"\n    }\n  },\n  \"required\": [\"urgencyScore\", \"department\", \"oneLineSummary\", \"suggestedReply\"]\n}"
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "8e255e4e-9b22-47bc-ab36-54374b6db966",
+          "name": "8. Code — Combine Triage Data",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            816,
+            64
+          ],
+          "parameters": {
+            "jsCode": "// Combine AI triage output with original email data\nconst aiOutput = $input.first().json.output;\nconst emailData = $('3. Code — Extract Email Fields').item.json;\n\nconst urgencyScore = aiOutput.urgencyScore || 0;\nconst department = aiOutput.department || 'General';\nconst oneLineSummary = aiOutput.oneLineSummary || 'No summary available';\nconst suggestedReply = aiOutput.suggestedReply || 'No reply generated';\n\n// Set urgency label based on score\nlet urgencyLabel = 'Low';\nif (urgencyScore >= 8) urgencyLabel = 'CRITICAL';\nelse if (urgencyScore >= 6) urgencyLabel = 'High';\nelse if (urgencyScore >= 4) urgencyLabel = 'Medium';\n\n// Decide which Slack channel based on department\nlet slackChannel = emailData.slackSupportChannel;\nif (department === 'Billing') slackChannel = emailData.slackBillingChannel;\nif (department === 'Technical') slackChannel = emailData.slackTechChannel;\n\n// Format received date nicely\nconst receivedDate = emailData.receivedAt\n  ? new Date(emailData.receivedAt).toISOString().replace('T', ' ').substring(0, 16)\n  : new Date().toISOString().replace('T', ' ').substring(0, 16);\n\nreturn [{\n  json: {\n    emailId: emailData.emailId,\n    senderEmail: emailData.senderEmail,\n    senderName: emailData.senderName,\n    subject: emailData.subject,\n    emailBody: emailData.emailBody,\n    receivedDate,\n    supportEmail: emailData.supportEmail,\n    sheetId: emailData.sheetId,\n    sheetName: emailData.sheetName,\n    urgencyScore,\n    urgencyLabel,\n    department,\n    oneLineSummary,\n    suggestedReply,\n    slackChannel,\n    loggedAt: new Date().toISOString().replace('T', ' ').substring(0, 16)\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "577af46e-295f-4cb9-a9a3-74ebac8884b0",
+          "name": "9. Google Sheets — Log Complaint",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            1152,
+            -144
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "Subject": "={{ $json.subject }}",
+                "Email ID": "={{ $json.emailId }}",
+                "Logged At": "={{ $json.loggedAt }}",
+                "Department": "={{ $json.department }}",
+                "Sender Name": "={{ $json.senderName }}",
+                "Sender Email": "={{ $json.senderEmail }}",
+                "Received Date": "={{ $json.receivedDate }}",
+                "Urgency Level": "={{ $json.urgencyLabel }}",
+                "Urgency Score": "={{ $json.urgencyScore }}",
+                "Suggested Reply": "={{ $json.suggestedReply }}",
+                "One Line Summary": "={{ $json.oneLineSummary }}",
+                "Slack Channel Alerted": "={{ $json.slackChannel }}"
+              },
+              "mappingMode": "defineBelow"
+            },
+            "options": {
+              "cellFormat": "USER_ENTERED"
+            },
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "={{ $json.sheetName }}"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $json.sheetId }}"
+            }
+          },
+          "typeVersion": 4.5
+        },
+        {
+          "id": "26bcc247-487c-4b2a-b9c8-714dda812a1b",
+          "name": "10. Slack — Send Department Alert",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            1200,
+            208
+          ],
+          "webhookId": "69948323-5866-4dc0-a10c-ccc54bbad3db",
+          "parameters": {
+            "text": "=*NEW COMPLAINT ALERT — {{ $json.urgencyLabel }}*\n\n*Urgency Score:* {{ $json.urgencyScore }}/10\n*Department:* {{ $json.department }}\n*From:* {{ $json.senderName }} ({{ $json.senderEmail }})\n*Subject:* {{ $json.subject }}\n*Received:* {{ $json.receivedDate }}\n\n*Summary:*\n{{ $json.oneLineSummary }}\n\n*Suggested Reply for Agent:*\n{{ $json.suggestedReply }}\n\n---\n_Reply to: {{ $json.senderEmail }} | Support: {{ $json.supportEmail }}_\n_Logged to Google Sheets automatically_",
+            "otherOptions": {
+              "mrkdwn": true
+            },
+            "authentication": "oAuth2"
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "71672e57-90b1-43e0-a045-4944b24d800e",
+          "name": "11. NoOp — Not a Complaint",
+          "type": "n8n-nodes-base.noOp",
+          "position": [
+            160,
+            288
+          ],
+          "parameters": {},
+          "typeVersion": 1
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "2. Set — Config Values": {
+          "main": [
+            [
+              {
+                "node": "3. Code — Extract Email Fields",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Gmail — Inbox Monitor": {
+          "main": [
+            [
+              {
+                "node": "2. Set — Config Values",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "4. IF — Is This a Complaint?": {
+          "main": [
+            [
+              {
+                "node": "5. AI Agent — Triage Complaint",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "11. NoOp — Not a Complaint",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. OpenAI — GPT-4o-mini Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "5. AI Agent — Triage Complaint",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. Code — Combine Triage Data": {
+          "main": [
+            [
+              {
+                "node": "9. Google Sheets — Log Complaint",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "10. Slack — Send Department Alert",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "3. Code — Extract Email Fields": {
+          "main": [
+            [
+              {
+                "node": "4. IF — Is This a Complaint?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. AI Agent — Triage Complaint": {
+          "main": [
+            [
+              {
+                "node": "8. Code — Combine Triage Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. Parser — Structured Triage Output": {
+          "ai_outputParser": [
+            [
+              {
+                "node": "5. AI Agent — Triage Complaint",
+                "type": "ai_outputParser",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 17,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.set": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 2
+        },
+        "n8n-nodes-base.noOp": {
+          "count": 1
+        },
+        "n8n-nodes-base.slack": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.gmailTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.outputParserStructured": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Incrementors",
+      "username": "incrementors",
+      "bio": "",
+      "verified": true,
+      "links": [
+        "https://www.incrementors.com/"
+      ],
+      "avatar": "https://gravatar.com/avatar/e09b4b6a8c5a00f886a9eedf3be23a4af5a50cc216cd6b2aee2a12c2dfba99dd?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 26,
+        "icon": "fa:arrow-right",
+        "name": "n8n-nodes-base.noOp",
+        "codex": {
+          "data": {
+            "alias": [
+              "nothing"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.noop/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "No Operation, do nothing",
+          "color": "#b0b0b0"
+        },
+        "iconData": {
+          "icon": "arrow-right",
+          "type": "icon"
+        },
+        "displayName": "No Operation, do nothing",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 824,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmailTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/trigger-nodes/n8n-nodes-base.gmailtrigger/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Gmail Trigger"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1179,
+        "icon": "fa:code",
+        "name": "@n8n/n8n-nodes-langchain.outputParserStructured",
+        "codex": {
+          "data": {
+            "alias": [
+              "json",
+              "zod"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.outputparserstructured/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Output Parsers"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Structured Output Parser"
+        },
+        "iconData": {
+          "icon": "code",
+          "type": "icon"
+        },
+        "displayName": "Structured Output Parser",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 41,
+        "name": "Ticket Management"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

@@ -1,0 +1,1797 @@
+{
+  "workflow": {
+    "id": 15415,
+    "name": "Auto-index your website and build a RAG chatbot with Firecrawl, Qdrant, and GPT-4o-mini",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-30T23:07:17.514Z",
+    "description": "Build a fully functional AI chatbot for any website using Retrieval-Augmented \nGeneration (RAG). This workflow automatically crawls and indexes your entire \nsite into a Qdrant vector database, then powers a conversational chatbot that \nsearches your content to answer user questions — and escalates unresolved issues \nto your support team via Gmail.\n\n## How it works\n\n**Indexing Pipeline**\n- A Code node defines which root domains to crawl\n- Firecrawl maps every link across those domains before scraping begins, giving \n  you full visibility of what will be indexed without wasting credits\n- Duplicate URLs are removed across all domains before any scraping starts\n- Each unique page is scraped individually and returned as clean markdown\n- Content is chunked into overlapping segments using a Recursive Character Text \n  Splitter (1000 characters, 200 overlap) to preserve context at chunk boundaries\n- Mistral's codestral-embed-2505 model converts each chunk into a vector embedding\n- All embeddings are stored in Qdrant Cloud in batches of 100\n- A Wait node paces the loop to avoid hitting API rate limits on large sites\n\n**AI Chatbot**\n- A public Chat Trigger receives messages and generates an embeddable URL for \n  your website\n- GPT-4o-mini processes each message with a 10-message memory window for \n  natural conversation\n- The AI Agent searches the Qdrant vector store only when a question requires \n  it, retrieving the top 3 most relevant chunks per query\n- When it cannot resolve an issue, it collects the user's email, writes a \n  summary, confirms with the user, then sends it via Gmail\n\n## How to use\n\n1. Add all required credentials in n8n Settings &gt; Credentials\n2. Create a Qdrant Cloud collection (1536 dimensions, Cosine distance)\n3. Update the collection name in both Qdrant Vector Store nodes\n4. Open the \"set urls to scrape\" Code node and replace the placeholder URLs \n   with your own site's root domains\n5. Update the Gmail tool with your support inbox address\n6. Run the indexing pipeline manually using the Run Indexing trigger\n7. Once indexing is complete, activate the workflow and test via Open Chat\n8. Embed the chat trigger URL on your website\n\n## Requirements\n\n- **Firecrawl** — for site mapping and scraping (firecrawl.dev)\n- **Mistral Cloud** — for embeddings in both indexing and retrieval (console.mistral.ai)\n- **Qdrant Cloud** — for vector storage and semantic search (cloud.qdrant.io)\n- **OpenAI** — for the GPT-4o-mini chat model (platform.openai.com)\n- **Gmail OAuth2** — for support email escalation\n\n## Customising this workflow\n\n- Swap GPT-4o-mini for any chat model supported by n8n's LangChain nodes \n  including Gemini, Claude, or Mistral\n- Change the embedding model — if you do, delete and recreate the Qdrant \n  collection with the correct dimensions and re-run indexing\n- Add more URLs to the Code node array to index additional domains\n- Adjust chunk size in the Text Splitter for denser or shorter content\n- Increase the retrieval limit from 3 if answers feel incomplete\n- Replace Gmail with Slack, Zendesk, or any other escalation tool\n- Update the AI Agent system prompt to match your own website and brand voice",
+    "workflow": {
+      "meta": {
+        "instanceId": "4779f3143a15fecdecf0954645ebdbd88da9bd3e9816c57aebc7f51b1487ce9d",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "cfb1fdf8-41a3-4ff4-81f7-ff2be701223b",
+          "name": "When chat message received",
+          "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+          "position": [
+            3344,
+            912
+          ],
+          "webhookId": "9d0e8bcd-9021-4684-99f4-b877d44288f2",
+          "parameters": {
+            "mode": "webhook",
+            "public": true,
+            "options": {}
+          },
+          "typeVersion": 1.4
+        },
+        {
+          "id": "e486fe08-9624-47dd-9558-87b2a3e0442d",
+          "name": "Simple Memory",
+          "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+          "position": [
+            3856,
+            1216
+          ],
+          "parameters": {
+            "contextWindowLength": 10
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "24ae52da-2673-4127-b3f0-c0fe62c917be",
+          "name": "Send a message in Gmail",
+          "type": "n8n-nodes-base.gmailTool",
+          "position": [
+            4176,
+            1200
+          ],
+          "webhookId": "1875c448-2c8d-4fe2-8aa6-0292a6313302",
+          "parameters": {
+            "sendTo": "user@example.com",
+            "message": "={{ $fromAI('Message', ``, 'string') }}",
+            "options": {
+              "appendAttribution": false
+            },
+            "subject": "NEW SUPPORT REQUEST",
+            "emailType": "text"
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "b058335d-d652-4a03-9839-554b65fddb1f",
+          "name": "Run Indexing",
+          "type": "n8n-nodes-base.manualTrigger",
+          "position": [
+            3216,
+            2880
+          ],
+          "parameters": {},
+          "typeVersion": 1
+        },
+        {
+          "id": "7734e624-417e-401e-b0dc-ff7a1734e2f6",
+          "name": "Qdrant Vector Store",
+          "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+          "position": [
+            4816,
+            2352
+          ],
+          "parameters": {
+            "mode": "insert",
+            "options": {},
+            "qdrantCollection": {
+              "__rl": true,
+              "mode": "list",
+              "value": "your-collection-name",
+              "cachedResultName": "your-collection-name"
+            },
+            "embeddingBatchSize": 100
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "cd21d54f-e213-43ae-ad08-c55fc6665852",
+          "name": "Default Data Loader",
+          "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+          "position": [
+            4912,
+            2576
+          ],
+          "parameters": {
+            "options": {},
+            "textSplittingMode": "custom"
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "a5887993-16a7-404d-aa99-c39a8e352aed",
+          "name": "Map Site",
+          "type": "@mendable/n8n-nodes-firecrawl.firecrawl",
+          "position": [
+            3888,
+            2880
+          ],
+          "parameters": {
+            "url": "={{ $json.url }}",
+            "resource": "MapSearch",
+            "operation": "map",
+            "requestOptions": {},
+            "includeSubdomains": true
+          },
+          "retryOnFail": true,
+          "typeVersion": 1
+        },
+        {
+          "id": "af28a652-e8eb-468e-903d-cd05c2614545",
+          "name": "Remove Duplicates",
+          "type": "n8n-nodes-base.removeDuplicates",
+          "position": [
+            3888,
+            2528
+          ],
+          "parameters": {
+            "options": {}
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "7a7dd937-8ee2-4d00-9a5d-752258ce83fa",
+          "name": "Loop Over Items1",
+          "type": "n8n-nodes-base.splitInBatches",
+          "position": [
+            4112,
+            2528
+          ],
+          "parameters": {
+            "options": {}
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "82570cba-9e22-473e-86ce-f6e07a5fd4d2",
+          "name": "Single Scrape",
+          "type": "@mendable/n8n-nodes-firecrawl.firecrawl",
+          "position": [
+            4336,
+            2352
+          ],
+          "parameters": {
+            "url": "={{ $json.url }}",
+            "operation": "scrape",
+            "scrapeOptions": {
+              "options": {
+                "formats": {
+                  "format": [
+                    {}
+                  ]
+                },
+                "headers": {},
+                "waitFor": 10
+              }
+            },
+            "requestOptions": {}
+          },
+          "retryOnFail": true,
+          "typeVersion": 1
+        },
+        {
+          "id": "5e8dd746-480b-4956-ad3c-d27a5576d931",
+          "name": "Recursive Character Text Splitter",
+          "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+          "position": [
+            4992,
+            2784
+          ],
+          "parameters": {
+            "options": {},
+            "chunkOverlap": 200
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "7f7b3fb8-32f9-4c40-841d-73fcb164c5d8",
+          "name": "set urls to scrape",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            3440,
+            2880
+          ],
+          "parameters": {
+            "jsCode": "// IMPORTANT: Track which URLs you have already indexed in the comment below.\n// If you run this workflow again with a URL that was already indexed,\n// it will create duplicate data in your vector store — which hurts retrieval quality.\n// Update the 'used' list each time you successfully index a new URL.\n//\n// used: none\n\nreturn [\n  { json: { url: \"https://your-site.com\" } },\n  { json: { url: \"https://blog.your-site.com\" } }\n];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "876d352f-30ad-4c8c-9161-5a058b270dbc",
+          "name": "Loop Over urls",
+          "type": "n8n-nodes-base.splitInBatches",
+          "position": [
+            3664,
+            2880
+          ],
+          "parameters": {
+            "options": {}
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "aa54bf61-eaef-4ccb-a113-d268e4398be1",
+          "name": "Split Out links",
+          "type": "n8n-nodes-base.splitOut",
+          "position": [
+            4112,
+            2880
+          ],
+          "parameters": {
+            "options": {},
+            "fieldToSplitOut": "links"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "0f414450-6fbb-400e-bb04-5eb6c28ee599",
+          "name": "extract only urls",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            4336,
+            2944
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "f6b96b52-aff5-4e3e-b6bd-0623cdbeb989",
+                  "name": "url",
+                  "type": "string",
+                  "value": "={{ $json.url }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "da115c9c-2e78-4c08-9c78-b1b89523dace",
+          "name": "remove irrelevant params",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            4560,
+            2352
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "f26d46aa-a4af-4e62-8634-58ef1470fbc1",
+                  "name": "data.markdown",
+                  "type": "string",
+                  "value": "={{ $json.data }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "ec6cb02c-2900-4aeb-8622-5a56ddc7ad69",
+          "name": "Embeddings Mistral Cloud",
+          "type": "@n8n/n8n-nodes-langchain.embeddingsMistralCloud",
+          "position": [
+            4784,
+            2576
+          ],
+          "parameters": {
+            "model": "codestral-embed-2505",
+            "options": {}
+          },
+          "retryOnFail": true,
+          "typeVersion": 1,
+          "waitBetweenTries": 5000
+        },
+        {
+          "id": "d528a40a-cb2d-4411-bc04-cb2556723f47",
+          "name": "Wait",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            5280,
+            2528
+          ],
+          "webhookId": "bd3c76d0-6d3b-423d-8894-2f01308fb2e5",
+          "parameters": {
+            "amount": 1
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "fd22a2aa-43ac-4c40-b04f-243641a02702",
+          "name": "Qdrant Vector Store1",
+          "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+          "position": [
+            4704,
+            1104
+          ],
+          "parameters": {
+            "mode": "retrieve-as-tool",
+            "topK": 3,
+            "options": {},
+            "toolDescription": "Search the website knowledge base for information about features, how-tos, help articles, blog posts, and community guides.",
+            "qdrantCollection": {
+              "__rl": true,
+              "mode": "list",
+              "value": "your-collection-name",
+              "cachedResultName": "your-collection-name"
+            }
+          },
+          "credentials": {
+            "qdrantApi": {
+              "id": "credential-id",
+              "name": "Qdrant account"
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "40f8fdee-a980-4510-956a-6dce6f839f99",
+          "name": "Embeddings Mistral Cloud1",
+          "type": "@n8n/n8n-nodes-langchain.embeddingsMistralCloud",
+          "position": [
+            4496,
+            1232
+          ],
+          "parameters": {
+            "model": "codestral-embed-2505",
+            "options": {}
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "409c08f5-1ff9-45de-b37d-d738f9fdfc9f",
+          "name": "AI Agent",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            4224,
+            928
+          ],
+          "parameters": {
+            "options": {
+              "systemMessage": "## Identity\nYou are the Colnect Assistant, a helpful AI built into colnect.com — a global community where collectors manage, buy, sell, and swap stamps, coins, banknotes, and dozens of other collectibles. You are part of this website. Never direct users to \"visit Colnect\" or \"check the website\" — they are already here.\n\n## Who you are talking to\nThe people coming to you are collectors — some are beginners who just discovered Colnect, some are experienced collectors who are lost or frustrated. Almost nobody is here just to chat. They have a real question, a real problem, or they need to find something specific. Treat every message like it came from someone who genuinely needs help.\n\n## Your job\nHelp users find what they are looking for. That means:\n- Answering directly when you know the answer\n- Pointing them to the exact right place on Colnect with a working link when you don't\n- Being honest when something is beyond what you can look up, and offering a clear next step\n\nYou are not here to impress anyone with how much you know. You are here to make sure no user walks away more confused than when they arrived.\n\n## How to respond\nBe conversational and warm, but get to the point. Give enough detail that the user actually knows what to do next — a one-line answer to a real question is rarely enough. Do not pad responses with filler. Do not repeat what the user just said back to them.\n\nIf a user asks something you can look up, look it up and answer. If you cannot find it in your knowledge base, say so clearly and point them somewhere useful. Never guess statistics, user counts, prices, or any platform data you are not certain about — a wrong answer is worse than no answer.\n\n## Rules\n- Never use em dashes\n- Never say \"visit the Colnect website\", \"check their website\", \"head over to\", or any variation — you are the website\n- Never fabricate numbers, statistics, or facts you are not certain about\n- When you don't have an answer, always give the user a direction — a relevant link, a suggestion, or an offer to escalate\n- When troubleshooting, ask one question at a time and walk the user through it step by step\n- Do not list every possible solution upfront\n- Do not offer examples or options unless the user asks for them\n- Do not ask clarifying questions if you can just look it up yourself\n- Do not preview what you are about to do — just do it\n- Do not add dates to summaries\n\n## Human Support Escalation\nIf a question or issue is beyond what you can resolve, offer to connect the user with human support. If they agree:\n1. Ask for their registered email\n2. Write a clear summary of the issue based on the conversation, then ask if they are happy with it before sending\n3. If they approve, send it using the Gmail tool\n4. If they want to change it, ask them to describe the issue in their own words and send that instead\n\n## Email Format\nEvery support email must follow this structure:\n- Subject: short and descriptive\n- Email: their registered email\n- [blank line]\n- Clear, concise summary of the issue and what was already tried"
+            }
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "80c1afae-f2c7-42b6-b16e-18faa091bc3c",
+          "name": "OpenAI Chat Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            3552,
+            1216
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini",
+              "cachedResultName": "gpt-4o-mini"
+            },
+            "options": {},
+            "builtInTools": {}
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "daa47c3a-ccd9-4efe-be68-6587990e1cb1",
+          "name": "Start Here",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2016,
+            928
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 500,
+            "height": 616,
+            "content": "## 🚀 Start Here — Setup Checklist\n\nComplete every item below before running anything.\n\n**Credentials (add in n8n Settings > Credentials):**\n- [ ] Firecrawl API key — sign up at firecrawl.dev\n- [ ] Mistral Cloud API key — sign up at console.mistral.ai\n- [ ] Qdrant Cloud API key + cluster URL — sign up at cloud.qdrant.io\n- [ ] OpenAI API key — sign up at platform.openai.com\n- [ ] Gmail OAuth2 — set up in n8n credentials\n\n**Qdrant Setup (do this before running the indexing pipeline):**\n- [ ] Create a Qdrant Cloud account and cluster\n- [ ] Create a new collection with these exact settings:\n  - Dimensions: 1536 (matches codestral-embed-2505)\n  - Distance: Cosine\n- [ ] Copy your collection name into the two Qdrant Vector Store nodes\n\n**Gmail Setup:**\n- [ ] Open the Gmail tool node\n- [ ] Replace YOUR_SUPPORT_EMAIL@example.com with your actual support inbox\n\n**Workflow Config:**\n- [ ] Open the \"set urls to scrape\" Code node\n- [ ] Replace the placeholder URLs with your own site's root domains\n\nOnce all boxes are checked, run the indexing pipeline first.\nDo not run the chatbot until indexing is complete."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9c54f3f7-40d5-4fa5-bc44-cccefc58f354",
+          "name": "Workflow Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2000,
+            1648
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 500,
+            "height": 396,
+            "content": "## Workflow Overview\n\nThis workflow has two independent parts that work together.\n\n**Part 1 — Indexing Pipeline (bottom half)**\nRun this once to crawl your website and store its content in a Qdrant vector database. Each page is scraped, chunked, converted into a vector embedding, and stored. Run it again whenever your site content changes — but read the note on the \"set urls to scrape\" node first to avoid duplicates.\n\n**Part 2 — AI Chatbot (top half)**\nAlways-on. When a user sends a message, the AI Agent searches the vector database for relevant content and responds. If it cannot help, it offers to escalate to your support team via Gmail.\n\nThe two parts share the same embedding model (Mistral codestral-embed-2505). This is intentional — the model used to index content must be identical to the model used to search it."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "a62b8c0c-762d-43d2-8c5d-4e726c939dae",
+          "name": "Indexing Pipeline",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3216,
+            1840
+          ],
+          "parameters": {
+            "color": 3,
+            "width": 2552,
+            "height": 1348,
+            "content": "## Part 1 — Indexing Pipeline\n\n**set urls to scrape**\nThis is where you define which root domains to crawl. Replace the placeholder URLs with your own.\n\nImportant: the comment at the top of this node (`// used: none`) is a manual tracking system. Each time you successfully index a URL, add it to the used list. This prevents you from accidentally re-indexing the same URL on a future run. Re-indexing the same URL will not overwrite existing data — it will create duplicates in your vector store, which degrades retrieval quality.\n\n**Map Site**\nFirecrawl maps every link across the domain (including subdomains) without scraping content yet. This gives you a full list of URLs to work with before spending any scraping credits.\n\n**Remove Duplicates**\nMultiple root domains can return overlapping links. This node deduplicates the full URL list before scraping begins so no page is scraped twice in a single run.\n\n**Loop + Single Scrape**\nEach unique URL is scraped one at a time. Firecrawl returns clean markdown — no HTML noise, no scripts. The retry setting is on because large sites can occasionally time out on individual pages.\n\n**remove irrelevant params**\nStrips the scrape response down to just the content needed for embedding.\n\n**Text Splitter > Data Loader > Embeddings > Qdrant**\nThe markdown is split into overlapping chunks (1000 characters, 200 overlap). The overlap ensures sentences that fall on a chunk boundary are not lost — they appear in both the chunk before and after. Each chunk is embedded and inserted into Qdrant in batches of 100.\n\n**Wait**\nA 1-second pause between each page scrape and the next loop iteration. This prevents hitting Firecrawl and Mistral API rate limits when indexing large sites."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "30889c2f-5abf-4c6d-977d-f07bd6deff88",
+          "name": "AI Chatbot",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3232,
+            176
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 1876,
+            "height": 1220,
+            "content": "## Part 2 — AI Chatbot\n\n**When chat message received**\nThe public chat trigger. Once the workflow is active, this generates a shareable URL you can embed directly on your website.\n\n**AI Agent + GPT-4o-mini**\nThe brain of the chatbot. GPT-4o-mini was chosen for its balance of speed and cost. It holds a 10-message memory window so users can have a natural back-and-forth conversation without repeating themselves.\n\n**Qdrant Vector Store (retrieve-as-tool)**\nThe agent uses this as a tool, not a fixed pipeline step. That means it only searches the vector store when the question actually requires it. It retrieves the top 3 most relevant chunks per query — enough context without overloading the model.\n\n**Embeddings Mistral Cloud (retrieval)**\nThis must be the same model used during indexing. When a user asks a question, this node converts the question into a vector using the same embedding space as the stored content. If the models do not match, search results will be meaningless.\n\n**Gmail Tool**\nWhen the agent cannot resolve an issue, it offers to escalate to human support. The agent collects the user's email, writes a summary, confirms with the user, then sends it. Replace the sendTo address with your actual support inbox before going live."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "94279abf-c1ec-4160-b761-c16b1fc6e6dc",
+          "name": "Why It Was Built This Way",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            5856,
+            1856
+          ],
+          "parameters": {
+            "color": 2,
+            "width": 1172,
+            "height": 356,
+            "content": "## Why It Was Built This Way\n\n**Map then scrape, not crawl**\nFirecrawl's map operation returns every URL on a domain in seconds without fetching any content. This means you know exactly what you are indexing before spending a single scraping credit. A direct crawl would scrape and discover at the same time, giving you less control and more wasted calls on irrelevant pages.\n\n**Two separate loops**\nThe outer loop iterates over root domains (e.g. your main site and blog). The inner loop iterates over every discovered URL within each domain. This separation means you can add new domains to the list at any time without changing how the scraping logic works.\n\n**Wait node**\nEmbedding and inserting happen inside the loop deliberately — this means each page is processed and saved before moving to the next. The Wait node adds a small pause between iterations to prevent hitting Firecrawl and Mistral API rate limits on large sites.\n\n**Same embedding model in both pipelines**\nMistral codestral-embed-2505 is used for both indexing and retrieval. This is not optional — it is a hard requirement. Vector search works by comparing numbers in the same mathematical space. If you index with one model and retrieve with another, the numbers are incomparable and search breaks completely. If you ever change the embedding model, you must delete the Qdrant collection, recreate it with the correct dimensions, and re-index everything from scratch."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "03e2ad7d-aca2-4b89-9787-19d88f2c1787",
+          "name": "What You Can Tweak",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1984,
+            2224
+          ],
+          "parameters": {
+            "width": 500,
+            "height": 896,
+            "content": "## What You Can Tweak\n\n**Swap the chat model**\nGPT-4o-mini is fast and affordable. You can replace it with Gemini 2.5 Flash Lite, Mistral Small, or any model supported by n8n's LangChain nodes. Groq-hosted models are a good option if you need sub-second response times.\n\n**Change the embedding model**\nIf you switch to a different embedding model, you must also update the Qdrant collection dimensions to match. Delete the existing collection, recreate it with the correct dimensions, and re-run the indexing pipeline. Both embedding nodes (indexing and retrieval) must always use the same model.\n\n**Add more URLs**\nOpen the \"set urls to scrape\" Code node and add more objects to the array. Remember to update the used comment to track what you have already indexed.\n\n**Adjust chunk size**\nThe Recursive Character Text Splitter defaults to 1000 characters with 200 overlap. Increase chunk size for dense, long-form content. Decrease it for short pages where precision matters more than context.\n\n**Change retrieval depth**\nThe Qdrant retrieve-as-tool node defaults to 3 results per query. Increase this if answers feel incomplete. Decrease it to speed up responses.\n\n**Replace Gmail with another tool**\nThe escalation tool can be swapped for any messaging or ticketing service supported by n8n — Slack, Zendesk, Intercom, or a simple webhook.\n\n**Adapt the system prompt**\nThe AI Agent's system prompt is written for a collectibles platform. Replace the identity, tone, and escalation instructions with whatever fits your website and audience."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f1a66dab-834a-4876-8ad7-2343b6fed385",
+          "name": "Why It Was Built This Way1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            5168,
+            176
+          ],
+          "parameters": {
+            "color": 2,
+            "width": 1172,
+            "height": 228,
+            "content": "## Why It Was Built This Way\n\n**Qdrant as a tool, not a fixed step**\nAttaching Qdrant as an AI tool rather than a node in the main pipeline lets the agent decide when a search is actually needed. This makes responses faster for questions the model can answer directly, and more accurate for questions that genuinely require looking something up.\n\n**Make Chat Publicly Available**\nNotice it has 'Make Chat Publicly Available' toggled on because we are going to be using this chat bot on a website. you will find the details in the docs in the same node but this is the link again, for convenience: https://www.npmjs.com/package/@n8n/chat"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9dc6b2d0-ef05-4fc8-a65c-bc20e5f39970",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3376,
+            2560
+          ],
+          "parameters": {
+            "height": 448,
+            "content": "## Set Your URLs Here\n\nAdd your root domains here before running.\n\nThe comment at the top tracks which URLs you have already indexed. Update it after each successful run. If you index the same URL twice, it will not overwrite — it will create duplicate data in your vector store and hurt retrieval quality."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ce3231f8-5fbf-49ae-ad2a-a26536965815",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            5872,
+            2416
+          ],
+          "parameters": {
+            "width": 1184,
+            "height": 176,
+            "content": "## Why Are There Two Qdrant Nodes?\n\nThese two nodes do different jobs.\n\nThe one in the indexing pipeline (bottom) writes data into Qdrant during indexing. The one connected to the AI Agent (top) reads from Qdrant at query time and acts as a search tool.\n\nBoth must use the same embedding model and the same collection name or search will return meaningless results."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "a5e07df2-d252-4b37-aa78-fe00d8e72ed6",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            5232,
+            2224
+          ],
+          "parameters": {
+            "height": 464,
+            "content": "## Why Is There a Wait Node?\n\nThis pause exists to protect you from API rate limits.\n\nWhen indexing a large site, requests to Firecrawl and Mistral stack up fast. Without this delay, you will start seeing failed or empty responses mid-run. If your site is small (under 50 pages) you can reduce or remove this. For large sites, keep it or increase it."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "cb2ff712-b93a-40a8-a38f-5c8f03520215",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            4176,
+            592
+          ],
+          "parameters": {
+            "width": 336,
+            "height": 480,
+            "content": "## Adapt This to Your Website\n\nThe AI Agent's system prompt is currently written for a collectibles platform. Before going live, update it to match your own website and audience.\n\nFind the AI Agent node and replace:\n- The assistant name and website description in the Identity section\n- Any platform-specific language throughout\n- The tone and escalation instructions to match your brand\n\nThe structure of the prompt is solid — you are just swapping out the context."
+          },
+          "typeVersion": 1
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "Wait": {
+          "main": [
+            [
+              {
+                "node": "Loop Over Items1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Map Site": {
+          "main": [
+            [
+              {
+                "node": "Split Out links",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Run Indexing": {
+          "main": [
+            [
+              {
+                "node": "set urls to scrape",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Simple Memory": {
+          "ai_memory": [
+            [
+              {
+                "node": "AI Agent",
+                "type": "ai_memory",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Single Scrape": {
+          "main": [
+            [
+              {
+                "node": "remove irrelevant params",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Loop Over urls": {
+          "main": [
+            [
+              {
+                "node": "Remove Duplicates",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Map Site",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Split Out links": {
+          "main": [
+            [
+              {
+                "node": "extract only urls",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Loop Over Items1": {
+          "main": [
+            [],
+            [
+              {
+                "node": "Single Scrape",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "OpenAI Chat Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "AI Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Remove Duplicates": {
+          "main": [
+            [
+              {
+                "node": "Loop Over Items1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "extract only urls": {
+          "main": [
+            [
+              {
+                "node": "Loop Over urls",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "set urls to scrape": {
+          "main": [
+            [
+              {
+                "node": "Loop Over urls",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Default Data Loader": {
+          "ai_document": [
+            [
+              {
+                "node": "Qdrant Vector Store",
+                "type": "ai_document",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Qdrant Vector Store": {
+          "main": [
+            [
+              {
+                "node": "Wait",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Qdrant Vector Store1": {
+          "ai_tool": [
+            [
+              {
+                "node": "AI Agent",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Send a message in Gmail": {
+          "ai_tool": [
+            [
+              {
+                "node": "AI Agent",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Embeddings Mistral Cloud": {
+          "ai_embedding": [
+            [
+              {
+                "node": "Qdrant Vector Store",
+                "type": "ai_embedding",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "remove irrelevant params": {
+          "main": [
+            [
+              {
+                "node": "Qdrant Vector Store",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Embeddings Mistral Cloud1": {
+          "ai_embedding": [
+            [
+              {
+                "node": "Qdrant Vector Store1",
+                "type": "ai_embedding",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "When chat message received": {
+          "main": [
+            [
+              {
+                "node": "AI Agent",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Recursive Character Text Splitter": {
+          "ai_textSplitter": [
+            [
+              {
+                "node": "Default Data Loader",
+                "type": "ai_textSplitter",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 33,
+      "nodeTypes": {
+        "n8n-nodes-base.set": {
+          "count": 2
+        },
+        "n8n-nodes-base.code": {
+          "count": 1
+        },
+        "n8n-nodes-base.wait": {
+          "count": 1
+        },
+        "n8n-nodes-base.splitOut": {
+          "count": 1
+        },
+        "n8n-nodes-base.gmailTool": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 11
+        },
+        "n8n-nodes-base.manualTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.splitInBatches": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "n8n-nodes-base.removeDuplicates": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.chatTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        },
+        "@mendable/n8n-nodes-firecrawl.firecrawl": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.vectorStoreQdrant": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.memoryBufferWindow": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.embeddingsMistralCloud": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.documentDefaultDataLoader": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "folorunso victor",
+      "username": "wizard",
+      "bio": "Right now, your business is majoring in minor tasks. You are likely burning up 80% of your time, money, and energy on the administrative \"noise\" that keeps the lights on, leaving you with only 20% of your resources to actually focus on the work that makes you money.\n\n\n\nI build the systems that flip that ratio. By combining n8n workflows with a broad background in software engineering, I close the gap between \"regular automation\" and the logic your business actually needs to scale 🚀 ",
+      "verified": false,
+      "links": [
+        ""
+      ],
+      "avatar": "https://gravatar.com/avatar/dbba4dc15c55e27f0ea429adaa1d20484c06ab95a463c41061375a189ee5a7d7?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 39,
+        "icon": "fa:sync",
+        "name": "n8n-nodes-base.splitInBatches",
+        "codex": {
+          "data": {
+            "alias": [
+              "Loop",
+              "Concatenate",
+              "Batch",
+              "Split",
+              "Split In Batches"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.splitinbatches/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Loop Over Items",
+          "color": "#007755"
+        },
+        "iconData": {
+          "icon": "sync",
+          "type": "icon"
+        },
+        "displayName": "Loop Over Items (Split in Batches)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 838,
+        "icon": "fa:mouse-pointer",
+        "name": "n8n-nodes-base.manualTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.manualworkflowtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "When clicking ‘Execute workflow’",
+          "color": "#909298"
+        },
+        "iconData": {
+          "icon": "mouse-pointer",
+          "type": "icon"
+        },
+        "displayName": "Manual Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1163,
+        "icon": "fa:database",
+        "name": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.memorybufferwindow/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Memory"
+              ],
+              "Memory": [
+                "For beginners"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Simple Memory"
+        },
+        "iconData": {
+          "icon": "database",
+          "type": "icon"
+        },
+        "displayName": "Simple Memory",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1191,
+        "icon": "fa:grip-lines-vertical",
+        "name": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.textsplitterrecursivecharactertextsplitter/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Text Splitters"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Recursive Character Text Splitter"
+        },
+        "iconData": {
+          "icon": "grip-lines-vertical",
+          "type": "icon"
+        },
+        "displayName": "Recursive Character Text Splitter",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1238,
+        "icon": "file:removeDuplicates.svg",
+        "name": "n8n-nodes-base.removeDuplicates",
+        "codex": {
+          "data": {
+            "alias": [
+              "Dedupe",
+              "Deduplicate",
+              "Duplicates",
+              "Remove",
+              "Unique",
+              "Transform",
+              "Array",
+              "List",
+              "Item"
+            ],
+            "details": "",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.removeduplicates/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Remove Duplicates"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJub25lIj48ZyBmaWxsPSIjNTRCOEM5IiBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGQ9Ik0xMzQuMDk3IDExMWgzOC44Mjl2MzIuNTA4SDEzOC4xNnYzNC42MzVoLTMyLjUwOHYtMzguNjk5YzAtMTUuNzA5IDEyLjczNS0yOC40NDQgMjguNDQ1LTI4LjQ0NG03Ny42NTggMzIuNTA4VjExMWg3Ny42NTd2MzIuNTA4em0xMTYuNDg2IDBWMTExaDc3LjY1OHYzMi41MDh6bTExNi40ODcgMFYxMTFoMzguODI5YzE1LjcxIDAgMjguNDQ1IDEyLjczNSAyOC40NDUgMjguNDQ0djM4LjY5OWgtMzIuNTA4di0zNC42MzV6bTM0Ljc2NiA3My4yMzhoMzIuNTA4djM4LjY5OGMwIDE1LjcxLTEyLjczNSAyOC40NDUtMjguNDQ1IDI4LjQ0NWgtMzguODI5di0zMi41MDhoMzQuNzY2ek0wIDI0NC41MzdDMCAyMjkuMzI5IDEyLjczNSAyMTcgMjguNDQ0IDIxN2gzNDkuNDYxYzE1LjcwOSAwIDI4LjQ0NCAxMi4zMjkgMjguNDQ0IDI3LjUzN3YxMjkuODE1YzAgMTUuMjA4LTEyLjczNSAyNy41MzctMjguNDQ0IDI3LjUzN0gyOC40NDVDMTIuNzM0IDQwMS44ODkgMCAzODkuNTYgMCAzNzQuMzUyeiIvPjwvZz48ZGVmcz48Y2xpcFBhdGggaWQ9ImEiPjxwYXRoIGZpbGw9IiNmZmYiIGQ9Ik0wIDBoNTEydjUxMkgweiIvPjwvY2xpcFBhdGg+PC9kZWZzPjwvc3ZnPg=="
+        },
+        "displayName": "Remove Duplicates",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1239,
+        "icon": "file:splitOut.svg",
+        "name": "n8n-nodes-base.splitOut",
+        "codex": {
+          "data": {
+            "alias": [
+              "Split",
+              "Nested",
+              "Transform",
+              "Array",
+              "List",
+              "Item"
+            ],
+            "details": "",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.splitout/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Split Out"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJub25lIj48ZyBmaWxsPSIjOUI2REQ1IiBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTQ4MCAxNDhjMC02LjYyNy01LjM3My0xMi0xMi0xMkgzMjJjLTYuNjI3IDAtMTIgNS4zNzMtMTIgMTJ2MjRjMCA2LjYyNyA1LjM3MyAxMiAxMiAxMmgxNDZjNi42MjcgMCAxMi01LjM3MyAxMi0xMnptMCA5NmMwLTYuNjI3LTUuMzczLTEyLTEyLTEySDMyMmMtNi42MjcgMC0xMiA1LjM3My0xMiAxMnYyNGMwIDYuNjI3IDUuMzczIDEyIDEyIDEyaDE0NmM2LjYyNyAwIDEyLTUuMzczIDEyLTEyem0wIDk2YzAtNi42MjctNS4zNzMtMTItMTItMTJIMzIyYy02LjYyNyAwLTEyIDUuMzczLTEyIDEydjI0YzAgNi42MjcgNS4zNzMgMTIgMTIgMTJoMTQ2YzYuNjI3IDAgMTItNS4zNzMgMTItMTJ6IiBjbGlwLXJ1bGU9ImV2ZW5vZGQiLz48cGF0aCBkPSJNNDM4IDc2YzAgNi42MjctNS4zNzMgMTItMTIgMTJIMzA5Ljc4M2MtMTcuNjczIDAtMzIgMTQuMzI3LTMyIDMydjU2YzAgMjYuOTc4LTEwLjI3MiA1MS41NTctMjcuMTE5IDcwLjAzOS01LjA1NSA1LjU0NS01LjA1NSAxNC4zNzcgMCAxOS45MjIgMTYuODQ3IDE4LjQ4MiAyNy4xMTkgNDMuMDYxIDI3LjExOSA3MC4wMzl2NTZjMCAxNy42NzMgMTQuMzI3IDMyIDMyIDMySDQyNmM2LjYyNyAwIDEyIDUuMzczIDEyIDEydjI0YzAgNi42MjctNS4zNzMgMTItMTIgMTJIMzA5Ljc4M2MtNDQuMTgzIDAtODAtMzUuODE3LTgwLTgwdi01NmMwLTMwLjkyOC0yNS4wNzItNTYtNTYtNTZhNS43ODMgNS43ODMgMCAwIDEtNS43ODMtNS43ODN2LTM2LjQzNGE1Ljc4MyA1Ljc4MyAwIDAgMSA1Ljc4My01Ljc4M2MzMC45MjggMCA1Ni0yNS4wNzIgNTYtNTZ2LTU2YzAtNDQuMTgzIDM1LjgxNy04MCA4MC04MEg0MjZjNi42MjcgMCAxMiA1LjM3MyAxMiAxMnoiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0xMzYgMjQ0YzAtNi42MjctNS4zNzMtMTItMTItMTJIMTJjLTYuNjI3IDAtMTIgNS4zNzMtMTIgMTJ2MjRjMCA2LjYyNyA1LjM3MyAxMiAxMiAxMmgxMTJjNi42MjcgMCAxMi01LjM3MyAxMi0xMnoiIGNsaXAtcnVsZT0iZXZlbm9kZCIvPjwvZz48ZGVmcz48Y2xpcFBhdGggaWQ9ImEiPjxwYXRoIGZpbGw9IiNmZmYiIGQ9Ik01MTIgMEgwdjUxMmg1MTJ6Ii8+PC9jbGlwUGF0aD48L2RlZnM+PC9zdmc+"
+        },
+        "displayName": "Split Out",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1243,
+        "icon": "file:binary.svg",
+        "name": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.documentdefaultdataloader/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Document Loaders"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Default Data Loader"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI3NjgiIGhlaWdodD0iMTAyNCI+PHBhdGggZmlsbD0iIzdEN0Q4NyIgZD0iTTAgOTYwVjY0aDU3NmwxOTIgMTkydjcwNHptNzA0LTY0MEw1MTIgMTI4SDY0djc2OGg2NDB6TTMyMCA1MTJIMTI4VjI1NmgxOTJ6bS02NC0xOTJoLTY0djEyOGg2NHptMCA0NDhoNjR2NjRIMTI4di02NGg2NFY2NDBoLTY0di02NGgxMjh6bTI1Ni0zMjBoNjR2NjRIMzg0di02NGg2NFYzMjBoLTY0di02NGgxMjh6bTY0IDM4NEgzODRWNTc2aDE5MnptLTY0LTE5MmgtNjR2MTI4aDY0eiIvPjwvc3ZnPg=="
+        },
+        "displayName": "Default Data Loader",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1244,
+        "icon": "file:mistral.svg",
+        "name": "@n8n/n8n-nodes-langchain.embeddingsMistralCloud",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.embeddingsmistralcloud/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Embeddings"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Embeddings Mistral Cloud"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjxzdmcKICAgd2lkdGg9IjIxNiIKICAgaGVpZ2h0PSIyMTYiCiAgIHZlcnNpb249IjEuMSIKICAgaWQ9InN2ZzQxIgogICBzb2RpcG9kaTpkb2NuYW1lPSJtaXN0cmFsLnN2ZyIKICAgaW5rc2NhcGU6dmVyc2lvbj0iMS4zLjIgKDA5MWUyMGVmMGYsIDIwMjMtMTEtMjUsIGN1c3RvbSkiCiAgIHhtbG5zOmlua3NjYXBlPSJodHRwOi8vd3d3Lmlua3NjYXBlLm9yZy9uYW1lc3BhY2VzL2lua3NjYXBlIgogICB4bWxuczpzb2RpcG9kaT0iaHR0cDovL3NvZGlwb2RpLnNvdXJjZWZvcmdlLm5ldC9EVEQvc29kaXBvZGktMC5kdGQiCiAgIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIgogICB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciCiAgIHhtbG5zOnN2Zz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgogIDxzb2RpcG9kaTpuYW1lZHZpZXcKICAgICBpZD0ibmFtZWR2aWV3NDEiCiAgICAgcGFnZWNvbG9yPSIjZmZmZmZmIgogICAgIGJvcmRlcmNvbG9yPSIjMDAwMDAwIgogICAgIGJvcmRlcm9wYWNpdHk9IjAuMjUiCiAgICAgaW5rc2NhcGU6c2hvd3BhZ2VzaGFkb3c9IjIiCiAgICAgaW5rc2NhcGU6cGFnZW9wYWNpdHk9IjAuMCIKICAgICBpbmtzY2FwZTpwYWdlY2hlY2tlcmJvYXJkPSIwIgogICAgIGlua3NjYXBlOmRlc2tjb2xvcj0iI2QxZDFkMSIKICAgICBpbmtzY2FwZTp6b29tPSIxLjkzNjQ4OCIKICAgICBpbmtzY2FwZTpjeD0iMTk3Ljc4MDcyIgogICAgIGlua3NjYXBlOmN5PSI3OS4wMDkwMSIKICAgICBpbmtzY2FwZTp3aW5kb3ctd2lkdGg9IjE5MjAiCiAgICAgaW5rc2NhcGU6d2luZG93LWhlaWdodD0iMTAxNyIKICAgICBpbmtzY2FwZTp3aW5kb3cteD0iMCIKICAgICBpbmtzY2FwZTp3aW5kb3cteT0iMCIKICAgICBpbmtzY2FwZTp3aW5kb3ctbWF4aW1pemVkPSIxIgogICAgIGlua3NjYXBlOmN1cnJlbnQtbGF5ZXI9InN2ZzQxIiAvPgogIDxzdHlsZQogICAgIGlkPSJzdHlsZTEiPjwhW0NEQVRBWy5Je2ZpbGw6I2ZmNzAwMH0uSntmaWxsOiNmZjQ5MDB9Lkt7ZmlsbDojZmZhMzAwfS5Me2ZpbGw6IzFjMWMxYiBpY2MtY29sb3IoYWRvYmUtcmdiLTE5OTgsIDAuMTMyOTk1NjEsIDAuMTMyOTk1NjEsIDAuMTI4OTk3OCl9XV0+PC9zdHlsZT4KICA8ZGVmcwogICAgIGlkPSJkZWZzMTAiPgogICAgPGNsaXBQYXRoCiAgICAgICBpZD0iQSI+CiAgICAgIDxwYXRoCiAgICAgICAgIGQ9Ik0gMCwxODQuMjUyIEggNDgxLjg5IFYgMCBIIDAgWiIKICAgICAgICAgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTIwNi4yNTEsLTE0MC4xMzkpIgogICAgICAgICBpZD0icGF0aDEiIC8+CiAgICA8L2NsaXBQYXRoPgogICAgPGNsaXBQYXRoCiAgICAgICBpZD0iQiI+CiAgICAgIDxwYXRoCiAgICAgICAgIGQ9Ik0gMCwxODQuMjUyIEggNDgxLjg5IFYgMCBIIDAgWiIKICAgICAgICAgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTI0Ny40MzYsLTEwNC44NjUpIgogICAgICAgICBpZD0icGF0aDIiIC8+CiAgICA8L2NsaXBQYXRoPgogICAgPGNsaXBQYXRoCiAgICAgICBpZD0iQyI+CiAgICAgIDxwYXRoCiAgICAgICAgIGQ9Ik0gMCwxODQuMjUyIEggNDgxLjg5IFYgMCBIIDAgWiIKICAgICAgICAgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTI4NS45MzgsLTEwMi4wODkpIgogICAgICAgICBpZD0icGF0aDMiIC8+CiAgICA8L2NsaXBQYXRoPgogICAgPGNsaXBQYXRoCiAgICAgICBpZD0iRCI+CiAgICAgIDxwYXRoCiAgICAgICAgIGQ9Ik0gMCwxODQuMjUyIEggNDgxLjg5IFYgMCBIIDAgWiIKICAgICAgICAgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTMzNy43NjksLTEzMS44NzcpIgogICAgICAgICBpZD0icGF0aDQiIC8+CiAgICA8L2NsaXBQYXRoPgogICAgPGNsaXBQYXRoCiAgICAgICBpZD0iRSI+CiAgICAgIDxwYXRoCiAgICAgICAgIGQ9Ik0gMCwxODQuMjUyIEggNDgxLjg5IFYgMCBIIDAgWiIKICAgICAgICAgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTM3Ny4yNDcsLTEzMi4zMTkpIgogICAgICAgICBpZD0icGF0aDUiIC8+CiAgICA8L2NsaXBQYXRoPgogICAgPGNsaXBQYXRoCiAgICAgICBpZD0iRiI+CiAgICAgIDxwYXRoCiAgICAgICAgIGQ9Ik0gMCwxODQuMjUyIEggNDgxLjg5IFYgMCBIIDAgWiIKICAgICAgICAgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTQxOC4xMDcsLTExNC42MzQpIgogICAgICAgICBpZD0icGF0aDYiIC8+CiAgICA8L2NsaXBQYXRoPgogICAgPGNsaXBQYXRoCiAgICAgICBpZD0iRyI+CiAgICAgIDxwYXRoCiAgICAgICAgIGQ9Ik0gMCwxODQuMjUyIEggNDgxLjg5IFYgMCBIIDAgWiIKICAgICAgICAgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTQ1MC4wMjMsLTE0MC4xMzkpIgogICAgICAgICBpZD0icGF0aDciIC8+CiAgICA8L2NsaXBQYXRoPgogICAgPGNsaXBQYXRoCiAgICAgICBpZD0iSCI+CiAgICAgIDxwYXRoCiAgICAgICAgIGQ9Ik0gMCwxODQuMjUyIEggNDgxLjg5IFYgMCBIIDAgWiIKICAgICAgICAgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTIxNy42OTQsLTQ0Ljc5NCkiCiAgICAgICAgIGlkPSJwYXRoOCIgLz4KICAgIDwvY2xpcFBhdGg+CiAgICA8Y2xpcFBhdGgKICAgICAgIGlkPSJJIj4KICAgICAgPHBhdGgKICAgICAgICAgZD0iTSAwLDE4NC4yNTIgSCA0ODEuODkgViAwIEggMCBaIgogICAgICAgICB0cmFuc2Zvcm09InRyYW5zbGF0ZSgtMjQ3LjQzNiwtMzUuMDI1KSIKICAgICAgICAgaWQ9InBhdGg5IiAvPgogICAgPC9jbGlwUGF0aD4KICAgIDxjbGlwUGF0aAogICAgICAgaWQ9IkoiPgogICAgICA8cGF0aAogICAgICAgICBkPSJNIDAsMTg0LjI1MiBIIDQ4MS44OSBWIDAgSCAwIFoiCiAgICAgICAgIGlkPSJwYXRoMTAiIC8+CiAgICA8L2NsaXBQYXRoPgogICAgPHBhdGgKICAgICAgIGlkPSJLIgogICAgICAgZD0ibSAxNzMuOTg3LDEzNC4zNjIgaCAtMzcuNzk1IGwgOS42MzMsLTM3Ljc3NiBoIDM3Ljc5NiB6IiAvPgogIDwvZGVmcz4KICA8ZwogICAgIHRyYW5zZm9ybT0ibWF0cml4KDEsMCwwLjI1NDUzNSwxLC01MS4zNjI3OTIsLTcuNDcyNTAwNykiCiAgICAgaWQ9ImczMiI+CiAgICA8ZwogICAgICAgY2xhc3M9IkwiCiAgICAgICBpZD0iZzIyIj4KICAgICAgPHBhdGgKICAgICAgICAgZD0iTSA5OC4zOTcsMTM0LjM2MiBIIDYwLjYwMiBsIDkuNjMzLC0zNy43NzYgaCAzNy43OTYgeiIKICAgICAgICAgaWQ9InBhdGgxMSIgLz4KICAgICAgPHBhdGgKICAgICAgICAgZD0iTSAxMjYuNTU4LDE3Mi4xMzggSCA4OC43NjMgbCA5LjYzMywtMzcuNzc2IGggMzcuNzk2IHoiCiAgICAgICAgIGlkPSJwYXRoMTIiIC8+CiAgICAgIDxwYXRoCiAgICAgICAgIGQ9Ik0gMTM2LjE5MiwxMzQuMzYyIEggOTguMzk3IGwgOS42MzMsLTM3Ljc3NiBoIDM3Ljc5NiB6IgogICAgICAgICBpZD0icGF0aDEzIiAvPgogICAgICA8dXNlCiAgICAgICAgIHhsaW5rOmhyZWY9IiNLIgogICAgICAgICBpZD0idXNlMTMiIC8+CiAgICAgIDxwYXRoCiAgICAgICAgIGQ9Ik0gMTA4LjAzMSw5Ni41ODUgSCA3MC4yMzYgbCA5LjYzMywtMzcuNzc2IGggMzcuNzk2IHoiCiAgICAgICAgIGlkPSJwYXRoMTQiIC8+CiAgICAgIDx1c2UKICAgICAgICAgeGxpbms6aHJlZj0iI0siCiAgICAgICAgIHg9IjkuNjMzOTk5OCIKICAgICAgICAgeT0iLTM3Ljc3NyIKICAgICAgICAgaWQ9InVzZTE0IiAvPgogICAgICA8cGF0aAogICAgICAgICBkPSJNIDYwLjYwMiwxMzQuMzYyIEggMjIuODA3IEwgMzIuNDQsOTYuNTg2IGggMzcuNzk2IHoiCiAgICAgICAgIGlkPSJwYXRoMTUiIC8+CiAgICAgIDxwYXRoCiAgICAgICAgIGQ9Ik0gNzAuMjM2LDk2LjU4NSBIIDMyLjQ0MSBMIDQyLjA3NCw1OC44MDkgSCA3OS44NyBaIgogICAgICAgICBpZD0icGF0aDE2IiAvPgogICAgICA8cGF0aAogICAgICAgICBkPSJNIDc5Ljg3LDU4LjgwOSBIIDQyLjA3NSBsIDkuNjMzLC0zNy43NzYgaCAzNy43OTYgeiIKICAgICAgICAgaWQ9InBhdGgxNyIgLz4KICAgICAgPHVzZQogICAgICAgICB4bGluazpocmVmPSIjSyIKICAgICAgICAgeD0iNTcuMDYzIgogICAgICAgICB5PSItNzUuNTUzMDAxIgogICAgICAgICBpZD0idXNlMTciIC8+CiAgICAgIDxwYXRoCiAgICAgICAgIGQ9Ik0gNTAuOTY4LDE3Mi4xMzggSCAxMy4xNzMgbCA5LjYzMywtMzcuNzc2IGggMzcuNzk2IHoiCiAgICAgICAgIGlkPSJwYXRoMTgiIC8+CiAgICAgIDxwYXRoCiAgICAgICAgIGQ9Ik0gNDEuMzM0LDIwOS45MTUgSCAzLjUzOSBsIDkuNjMzLC0zNy43NzYgaCAzNy43OTYgeiIKICAgICAgICAgaWQ9InBhdGgxOSIgLz4KICAgICAgPHVzZQogICAgICAgICB4bGluazpocmVmPSIjSyIKICAgICAgICAgeD0iMzcuNzk0OTk4IgogICAgICAgICBpZD0idXNlMTkiIC8+CiAgICAgIDx1c2UKICAgICAgICAgeGxpbms6aHJlZj0iI0siCiAgICAgICAgIHg9IjQ3LjQyOTAwMSIKICAgICAgICAgeT0iLTM3Ljc3NyIKICAgICAgICAgaWQ9InVzZTIwIiAvPgogICAgICA8dXNlCiAgICAgICAgIHhsaW5rOmhyZWY9IiNLIgogICAgICAgICB4PSIyOC4xNjA5OTkiCiAgICAgICAgIHk9IjM3Ljc3NjAwMSIKICAgICAgICAgaWQ9InVzZTIxIiAvPgogICAgICA8dXNlCiAgICAgICAgIHhsaW5rOmhyZWY9IiNLIgogICAgICAgICB4PSIxOC41MjciCiAgICAgICAgIHk9Ijc1LjU1MzAwMSIKICAgICAgICAgaWQ9InVzZTIyIiAvPgogICAgPC9nPgogICAgPHBhdGgKICAgICAgIGQ9Ik0gMTE0LjExNSwxMzQuMzU5IEggNzYuMzIxIGwgOS42MzMsLTM3Ljc3NiBoIDM3Ljc5NiB6IgogICAgICAgY2xhc3M9IkkiCiAgICAgICBpZD0icGF0aDIyIiAvPgogICAgPHVzZQogICAgICAgeGxpbms6aHJlZj0iI0siCiAgICAgICB4PSItMzEuNzA5OTk5IgogICAgICAgeT0iMzcuNzcyOTk5IgogICAgICAgY2xhc3M9IkoiCiAgICAgICBpZD0idXNlMjMiIC8+CiAgICA8ZwogICAgICAgY2xhc3M9IkkiCiAgICAgICBpZD0iZzI1Ij4KICAgICAgPHVzZQogICAgICAgICB4bGluazpocmVmPSIjSyIKICAgICAgICAgeD0iLTIyLjA3NiIKICAgICAgICAgeT0iLTAuMDAzIgogICAgICAgICBpZD0idXNlMjQiIC8+CiAgICAgIDx1c2UKICAgICAgICAgeGxpbms6aHJlZj0iI0siCiAgICAgICAgIHg9IjE1LjcxOSIKICAgICAgICAgeT0iLTAuMDAzIgogICAgICAgICBpZD0idXNlMjUiIC8+CiAgICA8L2c+CiAgICA8ZwogICAgICAgY2xhc3M9IksiCiAgICAgICBpZD0iZzI2Ij4KICAgICAgPHBhdGgKICAgICAgICAgZD0iTSAxMjMuNzQ5LDk2LjU4MiBIIDg1Ljk1NSBsIDkuNjMzLC0zNy43NzYgaCAzNy43OTYgeiIKICAgICAgICAgaWQ9InBhdGgyNSIgLz4KICAgICAgPHVzZQogICAgICAgICB4bGluazpocmVmPSIjSyIKICAgICAgICAgeD0iMjUuMzUzMDAxIgogICAgICAgICB5PSItMzcuNzc5OTk5IgogICAgICAgICBpZD0idXNlMjYiIC8+CiAgICA8L2c+CiAgICA8cGF0aAogICAgICAgZD0iTSA3Ni4zMiwxMzQuMzU5IEggMzguNTI2IGwgOS42MzMsLTM3Ljc3NiBoIDM3Ljc5NiB6IgogICAgICAgY2xhc3M9IkkiCiAgICAgICBpZD0icGF0aDI2IiAvPgogICAgPHBhdGgKICAgICAgIGQ9Ik0gODUuOTU0LDk2LjU4MiBIIDQ4LjE2IGwgOS42MzMsLTM3Ljc3NiBoIDM3Ljc5NiB6IgogICAgICAgY2xhc3M9IksiCiAgICAgICBpZD0icGF0aDI3IiAvPgogICAgPGcKICAgICAgIGZpbGw9IiNmZmNlMDAiCiAgICAgICBpZD0iZzI4Ij4KICAgICAgPHBhdGgKICAgICAgICAgZD0iTSA5NS41ODgsNTguODA2IEggNTcuNzk0IEwgNjcuNDI3LDIxLjAzIGggMzcuNzk2IHoiCiAgICAgICAgIGlkPSJwYXRoMjgiIC8+CiAgICAgIDx1c2UKICAgICAgICAgeGxpbms6aHJlZj0iI0siCiAgICAgICAgIHg9IjcyLjc4MTk5OCIKICAgICAgICAgeT0iLTc1LjU1NiIKICAgICAgICAgaWQ9InVzZTI4IiAvPgogICAgPC9nPgogICAgPHBhdGgKICAgICAgIGQ9Ik0gNjYuNjg2LDE3Mi4xMzUgSCAyOC44OTIgbCA5LjYzMywtMzcuNzc2IGggMzcuNzk2IHoiCiAgICAgICBjbGFzcz0iSiIKICAgICAgIGlkPSJwYXRoMjkiIC8+CiAgICA8cGF0aAogICAgICAgZD0iTSA1Ny4wNTIsMjA5LjkxMiBIIDE5LjI1OCBsIDkuNjMzLC0zNy43NzYgaCAzNy43OTYgeiIKICAgICAgIGZpbGw9IiNmZjAxMDciCiAgICAgICBpZD0icGF0aDMwIiAvPgogICAgPHVzZQogICAgICAgeGxpbms6aHJlZj0iI0siCiAgICAgICB4PSI1My41MTQiCiAgICAgICB5PSItMC4wMDMiCiAgICAgICBjbGFzcz0iSSIKICAgICAgIGlkPSJ1c2UzMCIgLz4KICAgIDxwYXRoCiAgICAgICBkPSJNIDIzNy4xMzUsOTYuNTgyIEggMTk5LjM0IGwgOS42MzMsLTM3Ljc3NiBoIDM3Ljc5NiB6IgogICAgICAgY2xhc3M9IksiCiAgICAgICBpZD0icGF0aDMxIiAvPgogICAgPHVzZQogICAgICAgeGxpbms6aHJlZj0iI0siCiAgICAgICB4PSI0My44ODAwMDEiCiAgICAgICB5PSIzNy43NzI5OTkiCiAgICAgICBjbGFzcz0iSiIKICAgICAgIGlkPSJ1c2UzMSIgLz4KICAgIDx1c2UKICAgICAgIHhsaW5rOmhyZWY9IiNLIgogICAgICAgeD0iMzQuMjQ1OTk4IgogICAgICAgeT0iNzUuNTUwMDAzIgogICAgICAgZmlsbD0iI2ZmMDEwNyIKICAgICAgIGlkPSJ1c2UzMiIgLz4KICA8L2c+Cjwvc3ZnPgo="
+        },
+        "displayName": "Embeddings Mistral Cloud",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1247,
+        "icon": "fa:comments",
+        "name": "@n8n/n8n-nodes-langchain.chatTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-langchain.chattrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes",
+              "Langchain"
+            ]
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "When chat message received"
+        },
+        "iconData": {
+          "icon": "comments",
+          "type": "icon"
+        },
+        "displayName": "Chat Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1248,
+        "icon": "file:qdrant.svg",
+        "name": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.vectorstoreqdrant/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Vector Stores",
+                "Tools",
+                "Root Nodes"
+              ],
+              "Tools": [
+                "Other Tools"
+              ],
+              "Vector Stores": [
+                "Other Vector Stores"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Qdrant Vector Store"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyBkYXRhLW5hbWU9IkNhcGEgMiIgdmlld0JveD0iMCAwIDM0Ni40MiA0MDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxkZWZzPgo8c3R5bGU+LmNscy0xIHsKICAgICAgICBmaWxsOiAjOWUwZDM4OwogICAgICB9CgogICAgICAuY2xzLTIgewogICAgICAgIGZpbGw6ICNkYzI0NGM7CiAgICAgIH0KCiAgICAgIC5jbHMtMyB7CiAgICAgICAgZmlsbDogI2ZmNTE2YjsKICAgICAgfTwvc3R5bGU+CjwvZGVmcz4KPHBvbHlnb24gY2xhc3M9ImNscy0yIiBwb2ludHM9IjE3My4yMSAwIDAgMTAwIDAgMzAwIDE3My4yMSA0MDAgMjM4LjE2IDM2Mi41IDIzOC4xNiAyODcuNSAxNzMuMjEgMzI1IDY0Ljk2IDI2Mi41IDY0Ljk2IDEzNy41IDE3My4yMSA3NSAyODEuNDYgMTM3LjUgMjgxLjQ2IDM4Ny41IDM0Ni40MiAzNTAgMzQ2LjQyIDEwMCIvPgo8cG9seWdvbiBjbGFzcz0iY2xzLTIiIHBvaW50cz0iMTA4LjI2IDE2Mi41IDEwOC4yNiAyMzcuNSAxNzMuMjEgMjc1IDIzOC4xNiAyMzcuNSAyMzguMTYgMTYyLjUgMTczLjIxIDEyNSIvPgo8cG9seWdvbiBjbGFzcz0iY2xzLTEiIHBvaW50cz0iMjM4LjE2IDI4Ny41IDIzOC4xNiAzNjIuNSAxNzMuMjEgNDAwIDE3My4yMSAzMjUiLz4KPHBvbHlnb24gY2xhc3M9ImNscy0xIiBwb2ludHM9IjM0Ni40MiAxMDAgMzQ2LjQyIDM1MCAyODEuNDYgMzg3LjUgMjgxLjQ2IDEzNy41Ii8+Cjxwb2x5Z29uIGNsYXNzPSJjbHMtMyIgcG9pbnRzPSIzNDYuNDIgMTAwIDI4MS40NiAxMzcuNSAxNzMuMjEgNzUgNjQuOTYgMTM3LjUgMCAxMDAgMTczLjIxIDAiLz4KPHBvbHlnb24gY2xhc3M9ImNscy0yIiBwb2ludHM9IjE3My4yMSAzMjUgMTczLjIxIDQwMCAwIDMwMCAwIDEwMCA2NC45NiAxMzcuNSA2NC45NiAyNjIuNSIvPgo8cG9seWdvbiBjbGFzcz0iY2xzLTMiIHBvaW50cz0iMjM4LjE2IDE2Mi41IDE3My4yMSAyMDAgMTA4LjI2IDE2Mi41IDE3My4yMSAxMjUiLz4KPHBvbHlnb24gY2xhc3M9ImNscy0yIiBwb2ludHM9IjE3My4yMSAyMDAgMTczLjIxIDI3NSAxMDguMjYgMjM3LjUgMTA4LjI2IDE2Mi41Ii8+Cjxwb2x5Z29uIGNsYXNzPSJjbHMtMSIgcG9pbnRzPSIyMzguMTYgMTYyLjUgMjM4LjE2IDIzNy41IDE3My4yMSAyNzUgMTczLjIxIDIwMCIvPgo8L3N2Zz4K"
+        },
+        "displayName": "Qdrant Vector Store",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 40,
+        "name": "Support Chatbot"
+      },
+      {
+        "id": 48,
+        "name": "AI RAG"
+      }
+    ],
+    "image": []
+  }
+}

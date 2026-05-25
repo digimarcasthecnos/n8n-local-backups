@@ -1,0 +1,756 @@
+{
+  "workflow": {
+    "id": 14218,
+    "name": "Reconnect migrated workflows and datatables between n8n instances",
+    "views": 3,
+    "recentViews": 0,
+    "totalViews": 3,
+    "createdAt": "2026-03-21T15:09:30.709Z",
+    "description": "**Purpose**\nThis workflow is designed to automate the re-wiring of all your subworkflows and datatable actions after migrating them to a new n8n instance.\n\n**What it does**\n\n- **Recursive ID Swapping**: \nTakes a master dictionary of your old IDs -&gt; new IDs, loops through your workflow JSONs, and recursively hunts down and replaces the node parameters. (Saves you from having to know if the ID is nested in an options object or at the root).\n\n- **Bypasses the strict API schema**: \nIf you've ever tried to push an updated workflow back to n8n via the API and hit the dreaded request/body/settings must NOT have additional properties error, this script fixes that. It strips out the legacy settings, id, and createdAt properties before sending the PUT request, so the new instance accepts the payload cleanly.\n\n- **Fixes the stringification bug:** \nWraps the payload properly so you don't accidentally send [object Object] to the API.\n\n**Instructions**\nBasically you just need to define the relevant URL's and setup your n8n API credentials - then VERY CAREFULLY select the right credentials in the right nodes.  Full instructions can be found in the sticky notes.",
+    "workflow": {
+      "id": "2FTV8hcwvH5owM2J",
+      "meta": {
+        "instanceId": "7642d248c22fdc2c5ae1b4e8cbd5f72a2b716b8d3e5545a8c95dc8637e272e89"
+      },
+      "name": "util.UpdateMigratedWorkflows",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "ccdf19d1-7ec6-4577-9677-14276b5ffef4",
+          "name": "When clicking ‘Execute workflow’",
+          "type": "n8n-nodes-base.manualTrigger",
+          "position": [
+            -128,
+            -256
+          ],
+          "parameters": {},
+          "typeVersion": 1
+        },
+        {
+          "id": "a24c2a20-d203-4207-9257-e08794aac97c",
+          "name": "orig datatables",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            352,
+            -256
+          ],
+          "parameters": {
+            "url": "={{ $(\"config\").item.json.orig_url }}/api/v1/data-tables",
+            "options": {},
+            "authentication": "predefinedCredentialType",
+            "nodeCredentialType": "n8nApi"
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "06d29ada-aa31-4208-82c1-a6edcc20319c",
+          "name": "orig workflows",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            544,
+            -256
+          ],
+          "parameters": {
+            "url": "={{ $(\"config\").item.json.orig_url }}/api/v1/workflows",
+            "options": {},
+            "authentication": "predefinedCredentialType",
+            "nodeCredentialType": "n8nApi"
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "830b73ef-e4ab-4449-afe8-2c2518e8d864",
+          "name": "new datatables",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            768,
+            -256
+          ],
+          "parameters": {
+            "url": "={{ $(\"config\").item.json.new_url }}/api/v1/data-tables",
+            "options": {},
+            "authentication": "predefinedCredentialType",
+            "nodeCredentialType": "n8nApi"
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "cc90dbab-a7ed-4ee4-b1e4-625b8a17f663",
+          "name": "new workflows",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            992,
+            -256
+          ],
+          "parameters": {
+            "url": "={{ $(\"config\").item.json.new_url }}/api/v1/workflows",
+            "options": {},
+            "authentication": "predefinedCredentialType",
+            "nodeCredentialType": "n8nApi"
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "67d139dc-a09b-4f98-ae18-6c71081b32eb",
+          "name": "config",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            96,
+            -256
+          ],
+          "parameters": {
+            "jsCode": "\nconst orig_url = \"\"; //eg. https://your-url.app.n8n.cloud\nconst new_url = \"\";  //eg. https://n8n.other-url.hstgr.cloud\n\nreturn {\n  json: {\n    orig_url: orig_url,\n    new_url: new_url\n  }\n};"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "5152b84d-c7ea-4f39-aa3f-61d525fdb92e",
+          "name": "map",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1216,
+            -256
+          ],
+          "parameters": {
+            "jsCode": "// 1. Get the array of objects from the previous node\nconst originalData = $('orig datatables').first().json.data;\nconst newData = $('new datatables').first().json.data;\nconst originalFlows = $('orig workflows').first().json.data;\nconst newFlows = $('new workflows').first().json.data;\n\n// 1. Grab the existing map from your previous node \n// (Replace 'First Map Node' with the actual name of your node)\nconst existingMap = {};\n\noriginalData.forEach(item => {\n  const entityName = item.name;\n  const new_vars = {\n    orig_id: item.id\n  }\n\n  if (entityName) {\n    if (existingMap[entityName]) {      \n      existingMap[entityName] = {\n        ...existingMap[entityName], \n        ...new_vars                  \n      };\n    } else {\n      existingMap[entityName] = new_vars;\n    }\n  }\n});\n\nnewData.forEach(item => {\n  const entityName = item.name;\n  const new_vars = {\n    new_id: item.id\n  }\n\n  if (entityName) {\n    if (existingMap[entityName]) {      \n      existingMap[entityName] = {\n        ...existingMap[entityName], \n        ...new_vars                  \n      };\n    } else {\n      existingMap[entityName] = new_vars;\n    }\n  }\n});\n\noriginalFlows.forEach(item => {\n  const entityName = item.name;\n  const new_vars = {\n    orig_id: item.id\n  }\n\n  if (entityName) {\n    if (existingMap[entityName]) {      \n      existingMap[entityName] = {\n        ...existingMap[entityName], \n        ...new_vars                  \n      };\n    } else {\n      existingMap[entityName] = new_vars;\n    }\n  }\n});\n\nnewFlows.forEach(item => {\n  const entityName = item.name;\n  const new_vars = {\n    new_id: item.id,\n  }\n\n  if (entityName) {\n    if (existingMap[entityName]) {      \n      existingMap[entityName] = {\n        ...existingMap[entityName], \n        ...new_vars                  \n      };\n    } else {\n      existingMap[entityName] = new_vars;\n    }\n  }\n});\n\n// 4. Output the newly updated, enriched map\nreturn {\n  json: {\n    entity_map: existingMap\n  }\n};"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "9327e51c-6a05-4e9c-883a-d1a13250bea2",
+          "name": "update flow nodes",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1440,
+            -256
+          ],
+          "parameters": {
+            "jsCode": "// 1. Get the array of objects from the previous node\nconst entityMap = $(\"map\").first().json.entity_map;\nconst newFlows = $('new workflows').first().json.data;\n\n// 2. Create a reverse lookup dictionary: orig_id -> new_id\n// This makes swapping the IDs instantly fast and ignores the names entirely\nconst reverseIdMap = {};\nfor (const entityName in entityMap) {\n  const ids = entityMap[entityName];\n  if (ids.orig_id && ids.new_id) {\n    // Force strings just in case n8n handles the IDs as numbers\n    reverseIdMap[ids.orig_id.toString()] = ids.new_id.toString();\n  }\n}\n\n// 3. Define the specific nodes we want to target\nconst targetNodeTypes = [\n  'n8n-nodes-base.executeWorkflow',\n  'n8n-nodes-base.dataTable'\n];\n\n// 4. Helper Function: Recursively search parameters and swap IDs\n// This ensures we catch the ID even if n8n nests it inside an \"options\" object\nfunction replaceOldIds(parameters, idMap) {\n  for (const key in parameters) {\n    if (typeof parameters[key] === 'object' && parameters[key] !== null) {\n      replaceOldIds(parameters[key], idMap);\n    } else if (typeof parameters[key] === 'string' || typeof parameters[key] === 'number') {\n      const currentValue = parameters[key].toString();\n      // If the current parameter value is an old ID in our map, swap it!\n      if (idMap[currentValue]) {\n        parameters[key] = idMap[currentValue]; \n      }\n    }\n  }\n}\n\n// 5. Loop through the workflows and apply the updates\nvar jsonFlows = [];\nnewFlows.forEach(flow => {\n  // Ensure the flow actually has a nodes array\n  if (flow.nodes && Array.isArray(flow.nodes)) {\n    \n    flow.nodes.forEach(node => {\n      // If the node type matches our targets, scan its parameters\n      if (targetNodeTypes.includes(node.type) && node.parameters) {\n        replaceOldIds(node.parameters, reverseIdMap);\n      }\n    });\n    \n  }\n\n  const flow_json = {...flow};\n\n    // 2. THE FIX: Clean the payload for the strict API schema\n  // Reset settings to an empty object to clear out unrecognized legacy properties\n  flow_json.settings = {};\n  \n  // Delete read-only properties that the API will reject on a PUT request\n  delete flow_json.id;\n  delete flow_json.createdAt;\n  delete flow_json.updatedAt;\n  delete flow_json.versionId;\n  delete flow_json.active; // (Optional: safely prevents accidentally activating half-migrated flows)\n\n    jsonFlows.push({\n      id: flow.id,\n      workflow: JSON.stringify(flow_json)\n    })\n});\n\n\n// 6. Output the updated workflows\n// Returning it as 'updatedFlows' attached to the JSON\nreturn jsonFlows;"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "11f2f9e7-4a81-4339-af52-2e8d6493f2fd",
+          "name": "update new workflows",
+          "type": "n8n-nodes-base.n8n",
+          "position": [
+            1712,
+            -256
+          ],
+          "parameters": {
+            "operation": "update",
+            "workflowId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $json.id }}"
+            },
+            "requestOptions": {},
+            "workflowObject": "={{ $json.workflow }}"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "06dc6231-33ae-4ab7-861d-278b3272a6b7",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            16,
+            -544
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 256,
+            "height": 464,
+            "content": "## Config\nThis node just stores the urls as variables so you only have to update them once.\n\n**Instructions**\n- Set the orig_url to be the path to your original n8n install\n- Set the new_url to be the path to your new n8n install"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "6bb19ec8-241a-45d1-8078-5f4084549b28",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            304,
+            -544
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 384,
+            "height": 464,
+            "content": "## Get Originals\nThese nodes grab all datatables and workflows from the original n8n install via the n8n API.\n\n**Instructions**\n- You'll need to create an n8n credential for your **original** n8n instance and select that in these 2 nodes."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "334b94ce-ded5-429e-b62e-c1cd4c38428f",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            736,
+            -544
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 384,
+            "height": 464,
+            "content": "## Get New\nThese nodes grab all datatables and workflows from the new n8n install via the n8n API.\n\n**Instructions**\n- You'll need to create an n8n credential for your **new** n8n instance and select that in these 2 nodes."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "87dfee3f-3ebe-4f87-9cb6-40f14505a2b7",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1184,
+            -544
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 384,
+            "height": 464,
+            "content": "## The Magic\n1. First node creates an entity map of all the datatables and workflows from both instances and stores the original and new ID.\n2. Second node then goes through all your new workflows looking for any datatable or sub-workflow executions and then rewrites the original ID to be the new ID."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "108df2be-66c4-45f8-852b-6bc7afa019de",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1616,
+            -544
+          ],
+          "parameters": {
+            "color": 3,
+            "width": 272,
+            "height": 464,
+            "content": "## Update\nThis node will now update each of the new workflows with the updated JSON.\n\n**Instructions**\n- You'll need to select the n8n credential for you **NEW** n8n instance.  ***BE CAREFUL!!!***"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "799578e4-b44f-42ee-b0ec-aeeafe6b8fbe",
+          "name": "Sticky Note5",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -704,
+            -544
+          ],
+          "parameters": {
+            "width": 496,
+            "height": 464,
+            "content": "## Migration Helper - Automated Reconnection for Workflows + Datatables\n**Purpose**\nThis workflow is designed to automate the re-wiring of all your subworkflows and datatable actions after migrating them to a new n8n instance.\n\n**What it does**\n- **Recursive ID Swapping:**\nTakes a master dictionary of your old IDs -> new IDs, loops through your workflow JSONs, and recursively hunts down and replaces the node parameters. (Saves you from having to know if the ID is nested in an options object or at the root).\n\n---\n\n**Instructions**\nBasically you just need to define the relevant URL’s and setup your n8n API credentials - then VERY CAREFULLY select the right credentials in the right nodes. Full instructions can be found in the sticky notes."
+          },
+          "typeVersion": 1
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "binaryMode": "separate",
+        "availableInMCP": false,
+        "executionOrder": "v1"
+      },
+      "versionId": "cab8bf33-dc87-42d3-bf29-0595d299357f",
+      "connections": {
+        "map": {
+          "main": [
+            [
+              {
+                "node": "update flow nodes",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "config": {
+          "main": [
+            [
+              {
+                "node": "orig datatables",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "new workflows": {
+          "main": [
+            [
+              {
+                "node": "map",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "new datatables": {
+          "main": [
+            [
+              {
+                "node": "new workflows",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "orig workflows": {
+          "main": [
+            [
+              {
+                "node": "new datatables",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "orig datatables": {
+          "main": [
+            [
+              {
+                "node": "orig workflows",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "update flow nodes": {
+          "main": [
+            [
+              {
+                "node": "update new workflows",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "When clicking ‘Execute workflow’": {
+          "main": [
+            [
+              {
+                "node": "config",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 15,
+      "nodeTypes": {
+        "n8n-nodes-base.n8n": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 3
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 4
+        },
+        "n8n-nodes-base.manualTrigger": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Joe",
+      "username": "joe73k",
+      "bio": "",
+      "verified": false,
+      "links": [
+        ""
+      ],
+      "avatar": "https://gravatar.com/avatar/1b58bb601b1a46c02b8f0475d9cc5b1fb4cb1da685fab8df67896d4e8da08401?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 826,
+        "icon": "file:n8n.svg",
+        "name": "n8n-nodes-base.n8n",
+        "codex": {
+          "data": {
+            "alias": [
+              "Workflow",
+              "Execution"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.n8n/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/api/authentication/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Other Trigger Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "n8n"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHZpZXdCb3g9IjAgMCAyMzAgMTIwIj48cGF0aCBmaWxsPSIjRUE0QjcxIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0yMDQgNDhjLTExLjE4MyAwLTIwLjU4LTcuNjQ5LTIzLjI0NC0xOGgtMjcuNTA4YTEyIDEyIDAgMCAwLTExLjgzNiAxMC4wMjdsLS45ODcgNS45MTlBMjMuOTQgMjMuOTQgMCAwIDEgMTMyLjYyNiA2MGEyMy45NCAyMy45NCAwIDAgMSA3Ljc5OSAxNC4wNTRsLjk4NyA1LjkxOUExMiAxMiAwIDAgMCAxNTMuMjQ4IDkwaDMuNTA4QzE1OS40MiA3OS42NDkgMTY4LjgxNyA3MiAxODAgNzJjMTMuMjU1IDAgMjQgMTAuNzQ1IDI0IDI0cy0xMC43NDUgMjQtMjQgMjRjLTExLjE4MyAwLTIwLjU4LTcuNjQ5LTIzLjI0NC0xOGgtMy41MDhjLTExLjczMiAwLTIxLjc0NC04LjQ4Mi0yMy42NzMtMjAuMDU0bC0uOTg3LTUuOTE5QTEyIDEyIDAgMCAwIDExNi43NTIgNjZoLTkuNTA4QzEwNC41OCA3Ni4zNTEgOTUuMTgzIDg0IDg0IDg0cy0yMC41OC03LjY0OS0yMy4yNDQtMThINDcuMjQ0QzQ0LjU4IDc2LjM1MSAzNS4xODMgODQgMjQgODQgMTAuNzQ1IDg0IDAgNzMuMjU1IDAgNjBzMTAuNzQ1LTI0IDI0LTI0YzExLjE4MyAwIDIwLjU4IDcuNjQ5IDIzLjI0NCAxOGgxMy41MTJDNjMuNDIgNDMuNjQ5IDcyLjgxNyAzNiA4NCAzNnMyMC41OCA3LjY0OSAyMy4yNDQgMThoOS41MDhhMTIgMTIgMCAwIDAgMTEuODM2LTEwLjAyN2wuOTg3LTUuOTE5QzEzMS41MDQgMjYuNDgyIDE0MS41MTYgMTggMTUzLjI0OCAxOGgyNy41MDhDMTgzLjQyIDcuNjQ5IDE5Mi44MTcgMCAyMDQgMGMxMy4yNTUgMCAyNCAxMC43NDUgMjQgMjRzLTEwLjc0NSAyNC0yNCAyNG0wLTEyYzYuNjI3IDAgMTItNS4zNzMgMTItMTJzLTUuMzczLTEyLTEyLTEyLTEyIDUuMzczLTEyIDEyIDUuMzczIDEyIDEyIDEyTTI0IDcyYzYuNjI3IDAgMTItNS4zNzMgMTItMTJzLTUuMzczLTEyLTEyLTEyLTEyIDUuMzczLTEyIDEyIDUuMzczIDEyIDEyIDEybTcyLTEyYzAgNi42MjctNS4zNzMgMTItMTIgMTJzLTEyLTUuMzczLTEyLTEyIDUuMzczLTEyIDEyLTEyIDEyIDUuMzczIDEyIDEybTk2IDM2YzAgNi42MjctNS4zNzMgMTItMTIgMTJzLTEyLTUuMzczLTEyLTEyIDUuMzczLTEyIDEyLTEyIDEyIDUuMzczIDEyIDEyIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiLz48L3N2Zz4="
+        },
+        "displayName": "n8n",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 838,
+        "icon": "fa:mouse-pointer",
+        "name": "n8n-nodes-base.manualTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.manualworkflowtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "When clicking ‘Execute workflow’",
+          "color": "#909298"
+        },
+        "iconData": {
+          "icon": "mouse-pointer",
+          "type": "icon"
+        },
+        "displayName": "Manual Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 16,
+        "name": "DevOps"
+      }
+    ],
+    "image": []
+  }
+}

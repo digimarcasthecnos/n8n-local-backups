@@ -1,0 +1,2477 @@
+{
+  "workflow": {
+    "id": 14721,
+    "name": "Sync Meta Ads insights to Google Sheets with backfill and weekly ETL",
+    "views": 16,
+    "recentViews": 3,
+    "totalViews": 16,
+    "createdAt": "2026-04-04T22:09:19.458Z",
+    "description": "# Meta Ads Insights to Google Sheets (Backfill & Weekly Sync ETL)\n\nThis workflow provides a structured way to extract Meta Ads performance data and store it in Google Sheets for reporting, dashboarding, or further analysis.\n\nIt is designed as a lightweight, reliable ETL pipeline focused on stability, clarity, and ease of use, rather than building a full data warehouse solution.\n\n## What This Workflow Does\n\nAt a high level, the system:\n\n- Pulls Meta Ads Insights data via API\n- Supports both historical backfill and automated incremental sync\n- Splits large date ranges into manageable weekly chunks\n- Handles pagination and retries automatically\n- Filters out zero-spend records before storage\n- Stores clean, structured data in Google Sheets\n- Logs skipped or empty responses for traceability\n\n## Architecture Overview\n### Core Components\n- n8n\n- Meta Ads API\n- Google Sheets\n\n### Primary Data Outputs\n- Account_A → Campaign-level data (weekly)\n- Account_B → Ad-level data (daily breakdown)\n- Account_A_Log / Account_B_Log → Logging for skipped or empty responses\n\n## End-to-End Flow\n### A) Dual Entry Points\n\nThe workflow supports two execution modes:\n\n1. Historical Backfill (Manual Trigger)\nUsed to populate past data.\n\n- Define start_date and end_date\n- Workflow generates 7-day chunks\n- Each chunk is processed sequentially\n\n2. Incremental Sync (Scheduled Trigger)\nRuns automatically every 7 days.\n\n- Dynamically pulls last 7 days\n- No manual input required\n\n### B) Period Chunking\n\nLarge date ranges are split into weekly intervals.\n\n- Prevents API overload\n- Reduces risk of timeouts\n- Ensures consistent data retrieval\n\n### C) Data Extraction (Per Account)\n\nEach period is processed for two separate data streams:\n\n#### Account A\n- Level: campaign\n- Granularity: weekly\n\n#### Account B\n- Level: ad\n- Granularity: daily (time_increment=1)\n\nBoth using pagination handling & fail-safe response handling\n\n### D) Response Validation\n\nEach API response is validated:\n\n- Must contain a non-empty data array\n- Invalid or empty responses are redirected to logging\n\nThis prevents corrupted or empty data from entering the dataset.\n\n### E) Data Transformation\n\nAPI responses are:\n\n- Split into individual rows\n- Normalized (numeric fields converted properly)\n- Preserved in full structure (no schema trimming)\n\n### F) Filtering Logic\n\nOnly meaningful data is stored:\n\n- Records where spend != 0 are allowed\n- Zero-spend rows are discarded\n\nThis keeps the dataset lean and relevant for reporting.\n\n### G) Data Loading\n\nValid records are appended into Google Sheets:\n\n- Account A → campaign-level table\n- Account B → ad-level table\n\nEach run adds new rows without overwriting previous data.\n\n### H) Logging & Traceability\n\nIf a period returns:\n\n- empty data\n- or API anomaly\n\nThe workflow logs:\n\n- status\n- reason\n- account\n- date range\n- execution ID\n- timestamp\n\nThis creates a lightweight audit trail for debugging and monitoring.\n\n## Safeguards Built In\n- Pagination handling (auto-follow next page)\n- Fail-safe handling for unstable API responses\n- Execution-level traceability via logs\n- Separation between transformation and filtering logic\n\n## Google Sheets Schema\n#### Account_A / Account_B\n\nIncludes:\n- date range (start & stop)\n- account, campaign, adset, and ad identifiers\n- performance metrics (spend, impressions, clicks, etc.)\n- action arrays and ranking fields\n\n#### Log Sheets\n\nColumns:\n\n- status\n- reason\n- account\n- since\n- until\n- execution_id\n- timestamp\n\n## Limitations (By Design)\n- Append-only system (no deduplication)\n- Re-running the same period will create duplicate rows\n- No transactional guarantees (Google Sheets limitation)\n- No concurrency control for parallel executions\n- Not designed for real-time reporting\n\nThese constraints are intentional to keep the workflow simple and portable.\n\n## When This Design Works Well\n- Marketing reporting pipelines\n- Looker Studio / dashboard data sources\n- Small to medium datasets\n- Teams without a data warehouse\n- Lightweight ETL needs\n\n## Setup Requirements\n- Meta Ads API access (ads_read permission)\n- Google Sheets (with required tabs)\n- n8n instance (cloud or self-hosted)\n\n## Summary\n### This workflow focuses on:\n\n- clarity over complexity\n- reliability over completeness\n- practical ETL over perfect data modeling\n\nIt is a solid foundation for building marketing data pipelines without heavy infrastructure.",
+    "workflow": {
+      "id": "xxxxxxxxx",
+      "meta": {
+        "instanceId": "xxxxxxxxxxfe1a738977763ace73f653481d5b110774239c2",
+        "templateCredsSetupCompleted": true
+      },
+      "name": "Meta Ads Insights to Google Sheets (Backfill & Weekly Sync ETL)",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "a0e731a9-5868-4143-a057-134d5815f13e",
+          "name": "Manual Trigger (Historical Backfill)",
+          "type": "n8n-nodes-base.manualTrigger",
+          "position": [
+            -1312,
+            5728
+          ],
+          "parameters": {},
+          "typeVersion": 1
+        },
+        {
+          "id": "43c27e49-8444-493a-8bcb-c8f720e613b2",
+          "name": "Append to Log Sheet (Account B)",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            496,
+            6016
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "since": "={{ $json.since }}",
+                "until": "={{ $json.until }}",
+                "reason": "={{ $json.reason }}",
+                "status": "={{ $json.status }}",
+                "account": "={{ $json.account }}",
+                "timestamp": "={{ $json.timestamp }}",
+                "execution_id": "={{ $json.execution_id }}"
+              },
+              "schema": [
+                {
+                  "id": "status",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "reason",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "reason",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "account",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "account",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "since",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "since",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "until",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "until",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "execution_id",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "execution_id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "timestamp",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "timestamp",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Account_B_Log"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "YOUR_SPREADSHEET_ID",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit",
+              "cachedResultName": "Meta Ads Report"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "id": "a76c2362-6495-4c2b-91d6-92bc08f99159",
+          "name": "Workflow Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2560,
+            5008
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 1100,
+            "height": 516,
+            "content": "## Meta Ads Insights to Google Sheets (Backfill & Weekly Sync ETL)\n\nThis workflow extracts Meta Ads performance data and loads it into Google Sheets for reporting or use as a BI source such as Looker Studio. It supports two operating modes in a single workflow.\n\n---\n\n### Two Paths, One Workflow\n\n**Path 1 — Historical Backfill (Manual Trigger)**  \nRun once to populate past data. Set `start_date` and `end_date` in the *Set Date Range* node. The *Generate Weekly Periods* node splits the range into 7-day chunks and processes them one by one to reduce the chance of API throttling.\n\n**Path 2 — Incremental Sync (Schedule Trigger, every 7 days)**  \nRuns automatically and pulls the last 7 days. The date range is calculated dynamically, so no manual input is needed.\n\n---\n\n### Granularity Per Account\n- **Account A** — `level=campaign`, weekly\n- **Account B** — `level=ad` + `time_increment=1`, daily per ad\n\n---\n\n### Known Limitation\nThis template uses append-only writes. Re-running over the same date range will produce duplicate rows. Manual deduplication or a cleanup step may be needed.\n\n---\n\n### Setup\na) **Meta credential** — Configure an HTTP Header Auth credential with a long-lived Meta User Access Token that has `ads_read` permission.  \nb) **Ad Account IDs** — Replace `act_XXXXXXXXXXXXXXXXX` in both HTTP Request nodes.  \nc) **Google Sheets** — Configure a Google Sheets OAuth2 credential and prepare tabs `Account_A`, `Account_B`, `Account_A_Log`, and `Account_B_Log`.  \nd) **Historical range** — Update `start_date` and `end_date` in *Set Date Range* before running the Manual Trigger."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "e961643f-78b9-4a2a-90fa-33ec5b37aa0a",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -544,
+            4928
+          ],
+          "parameters": {
+            "color": 3,
+            "width": 1332,
+            "height": 604,
+            "content": "## Ad Account A — Campaign Level\n\nFetches weekly campaign-level insights from the Meta Ads API.\n\n**Setup:**\n- Replace `act_XXXXXXXXXXXXXXXXX` in the HTTP node URL with your Meta Ad Account ID.\n- Target sheet tab: **Account_A**\n- Granularity: `level=campaign` (one row per campaign per week)."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "31355294-6709-4e6a-8b1a-8eb48dd9ccf4",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -544,
+            5648
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 1332,
+            "height": 604,
+            "content": "## Ad Account B — Ad Level (Daily Breakdown)\n\nFetches weekly ad-level insights with a daily breakdown from the Meta Ads API.\n\n**Setup:**\n- Replace `act_XXXXXXXXXXXXXXXXX` in the HTTP node URL with your Meta Ad Account ID.\n- Target sheet tab: **Account_B**\n- Granularity: `level=ad` + `time_increment=1` (one row per ad per day)."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "5bbd4115-daba-4bba-84a6-d7439d628b14",
+          "name": "Split API Response (Account A)",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            256,
+            5088
+          ],
+          "parameters": {
+            "jsCode": "return items.flatMap(item => {\n  const rows = item.json.data || [];\n\n  return rows.map(row => ({\n    json: {\n      date_start: row.date_start,\n      date_stop: row.date_stop,\n      account_id: row.account_id,\n      account_name: row.account_name,\n      campaign_id: row.campaign_id,\n      campaign_name: row.campaign_name,\n      adset_id: row.adset_id,\n      adset_name: row.adset_name,\n      ad_id: row.ad_id,\n      ad_name: row.ad_name,\n      objective: row.objective,\n      buying_type: row.buying_type,\n\n      spend: Number(row.spend || 0),\n      impressions: Number(row.impressions || 0),\n      reach: Number(row.reach || 0),\n      frequency: Number(row.frequency || 0),\n      clicks: Number(row.clicks || 0),\n      unique_clicks: Number(row.unique_clicks || 0),\n      ctr: Number(row.ctr || 0),\n      cpc: Number(row.cpc || 0),\n      cpm: Number(row.cpm || 0),\n\n      actions: row.actions || [],\n      cost_per_action_type: row.cost_per_action_type || [],\n      action_values: row.action_values || [],\n      quality_ranking: row.quality_ranking || '',\n      engagement_rate_ranking: row.engagement_rate_ranking || '',\n      conversion_rate_ranking: row.conversion_rate_ranking || ''\n    }\n  }));\n});"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "6956d380-dfdd-4caa-81f2-b1b4b0ef1734",
+          "name": "Append to Sheet (Account A)",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            640,
+            5088
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "cpc": "={{ $json.cpc }}",
+                "cpm": "={{ $json.cpm }}",
+                "ctr": "={{ $json.ctr }}",
+                "ad_id": "={{ $json.ad_id }}",
+                "reach": "={{ $json.reach }}",
+                "spend": "={{ $json.spend }}",
+                "clicks": "={{ $json.clicks }}",
+                "actions": "={{ $json.actions }}",
+                "ad_name": "={{ $json.ad_name }}",
+                "adset_id": "={{ $json.adset_id }}",
+                "date_stop": "={{ $json.date_stop }}",
+                "frequency": "={{ $json.frequency }}",
+                "objective": "={{ $json.objective }}",
+                "account_id": "={{ $json.account_id }}",
+                "adset_name": "={{ $json.adset_name }}",
+                "date_start": "={{ $json.date_start }}",
+                "buying_type": "={{ $json.buying_type }}",
+                "campaign_id": "={{ $json.campaign_id }}",
+                "impressions": "={{ $json.impressions }}",
+                "account_name": "={{ $json.account_name }}",
+                "action_values": "={{ $json.action_values }}",
+                "campaign_name": "={{ $json.campaign_name }}",
+                "unique_clicks": "={{ $json.unique_clicks }}",
+                "quality_ranking": "={{ $json.quality_ranking }}",
+                "cost_per_action_type": "={{ $json.cost_per_action_type }}",
+                "conversion_rate_ranking": "={{ $json.conversion_rate_ranking }}",
+                "engagement_rate_ranking": "={{ $json.engagement_rate_ranking }}"
+              },
+              "schema": [
+                {
+                  "id": "date_start",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "date_start",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "date_stop",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "date_stop",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "account_id",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "account_id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "account_name",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "account_name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "campaign_id",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "campaign_id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "campaign_name",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "campaign_name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "adset_id",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "adset_id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "adset_name",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "adset_name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "ad_id",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "ad_id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "ad_name",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "ad_name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "objective",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "objective",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "buying_type",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "buying_type",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "spend",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "spend",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "impressions",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "impressions",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "reach",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "reach",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "frequency",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "frequency",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "clicks",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "clicks",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "unique_clicks",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "unique_clicks",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "ctr",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "ctr",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "cpc",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "cpc",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "cpm",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "cpm",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "actions",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "actions",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "cost_per_action_type",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "cost_per_action_type",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "action_values",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "action_values",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "quality_ranking",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "quality_ranking",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "engagement_rate_ranking",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "engagement_rate_ranking",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "conversion_rate_ranking",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "conversion_rate_ranking",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gid=0",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=0",
+              "cachedResultName": "Account_A"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "YOUR_SPREADSHEET_ID",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit",
+              "cachedResultName": "Meta Ads Report"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "id": "a7e0dc63-3014-4ba6-b2a3-ebb8231f2560",
+          "name": "Fetch Meta Insights (Account A)",
+          "type": "n8n-nodes-base.httpRequest",
+          "maxTries": 5,
+          "position": [
+            -224,
+            5168
+          ],
+          "parameters": {
+            "url": "https://graph.facebook.com/v24.0/act_XXXXXXXXXXXXXXXXX/insights",
+            "options": {
+              "response": {
+                "response": {
+                  "neverError": true
+                }
+              },
+              "pagination": {
+                "pagination": {
+                  "nextURL": "={{ $response.body.paging.next }}",
+                  "paginationMode": "responseContainsNextURL",
+                  "requestInterval": 3000,
+                  "completeExpression": "={{ !$response.body.paging?.next }}",
+                  "paginationCompleteWhen": "other"
+                }
+              }
+            },
+            "sendQuery": true,
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth",
+            "queryParameters": {
+              "parameters": [
+                {
+                  "name": "fields",
+                  "value": "date_start,date_stop,account_id,account_name,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,objective,buying_type,spend,impressions,reach,frequency,clicks,unique_clicks,ctr,cpc,cpm,actions,cost_per_action_type,action_values,quality_ranking,engagement_rate_ranking,conversion_rate_ranking"
+                },
+                {
+                  "name": "level",
+                  "value": "campaign"
+                },
+                {
+                  "name": "time_range[since]",
+                  "value": "={{ $json.since }}"
+                },
+                {
+                  "name": "time_range[until]",
+                  "value": "={{ $json.until }}"
+                }
+              ]
+            }
+          },
+          "retryOnFail": true,
+          "typeVersion": 4.3,
+          "continueOnFail": true,
+          "waitBetweenTries": 3000
+        },
+        {
+          "id": "b511f5f0-2958-4587-83df-8f3def77e9d0",
+          "name": "Loop Over Periods (Account A)",
+          "type": "n8n-nodes-base.splitInBatches",
+          "position": [
+            -464,
+            5168
+          ],
+          "parameters": {
+            "options": {}
+          },
+          "typeVersion": 3,
+          "alwaysOutputData": false
+        },
+        {
+          "id": "0cc3675f-73a2-42ba-b28b-36eb70862328",
+          "name": "Valid Response? (Account A)",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            16,
+            5168
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 1,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "0433ddac-c3db-4463-a06d-c0a4ecb09210",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ Array.isArray($json.data) && $json.data.length > 0 }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "cf7c2e06-7e5f-42c3-a0e8-ea9e903b2fe7",
+          "name": "Log Skipped Period (Account A)",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            256,
+            5296
+          ],
+          "parameters": {
+            "mode": "raw",
+            "options": {},
+            "jsonOutput": "{\n  \"status\": \"skipped\",\n  \"reason\": \"Meta API returned no data or an error for this period\",\n  \"account\": \"Account A\",\n  \"since\": \"={{ $('Loop Over Periods (Account A)').item.json.since }}\",\n  \"until\": \"={{ $('Loop Over Periods (Account A)').item.json.until }}\",\n  \"execution_id\": \"={{ $execution.id }}\",\n  \"timestamp\": \"={{ new Date().toISOString() }}\"\n}"
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "db2400d2-3ac1-405b-bdd0-cf7768b0be4a",
+          "name": "Append to Log Sheet (Account A)",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            496,
+            5296
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "since": "={{ $json.since }}",
+                "until": "={{ $json.until }}",
+                "reason": "={{ $json.reason }}",
+                "status": "={{ $json.status }}",
+                "account": "={{ $json.account }}",
+                "timestamp": "={{ $json.timestamp }}",
+                "execution_id": "={{ $json.execution_id }}"
+              },
+              "schema": [
+                {
+                  "id": "status",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "reason",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "reason",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "account",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "account",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "since",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "since",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "until",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "until",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "execution_id",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "execution_id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "timestamp",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "timestamp",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Account_A_Log"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "YOUR_SPREADSHEET_ID",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit",
+              "cachedResultName": "Meta Ads Report"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "id": "73bb5e27-b475-429b-8cdd-a6db1dae3900",
+          "name": "Loop Over Periods (Account B)",
+          "type": "n8n-nodes-base.splitInBatches",
+          "position": [
+            -464,
+            5888
+          ],
+          "parameters": {
+            "options": {}
+          },
+          "typeVersion": 3,
+          "alwaysOutputData": false
+        },
+        {
+          "id": "e9473c81-f8b9-4ab6-8fef-2835df2a1f42",
+          "name": "Fetch Meta Insights (Account B)",
+          "type": "n8n-nodes-base.httpRequest",
+          "maxTries": 5,
+          "position": [
+            -224,
+            5888
+          ],
+          "parameters": {
+            "url": "https://graph.facebook.com/v24.0/act_XXXXXXXXXXXXXXXXX/insights",
+            "options": {
+              "response": {
+                "response": {
+                  "neverError": true
+                }
+              },
+              "pagination": {
+                "pagination": {
+                  "nextURL": "={{ $response.body.paging.next }}",
+                  "paginationMode": "responseContainsNextURL",
+                  "requestInterval": 3000,
+                  "completeExpression": "={{ !$response.body.paging?.next }}",
+                  "paginationCompleteWhen": "other"
+                }
+              }
+            },
+            "sendQuery": true,
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth",
+            "queryParameters": {
+              "parameters": [
+                {
+                  "name": "fields",
+                  "value": "date_start,date_stop,account_id,account_name,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,objective,buying_type,spend,impressions,reach,frequency,clicks,unique_clicks,ctr,cpc,cpm,actions,cost_per_action_type,action_values,quality_ranking,engagement_rate_ranking,conversion_rate_ranking"
+                },
+                {
+                  "name": "level",
+                  "value": "ad"
+                },
+                {
+                  "name": "time_range[since]",
+                  "value": "={{ $json.since }}"
+                },
+                {
+                  "name": "time_increment",
+                  "value": "1"
+                },
+                {
+                  "name": "time_range[until]",
+                  "value": "={{ $json.until }}"
+                }
+              ]
+            }
+          },
+          "retryOnFail": true,
+          "typeVersion": 4.3,
+          "continueOnFail": true,
+          "waitBetweenTries": 3000
+        },
+        {
+          "id": "fa27b4f8-139a-4d31-bcef-204e70e3f7b6",
+          "name": "Valid Response? (Account B)",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            16,
+            5888
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 1,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "df38f124-c4f4-4a0b-a375-858436180d5b",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ Array.isArray($json.data) && $json.data.length > 0 }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "558675fc-af90-4ef3-b567-d835b650d5d2",
+          "name": "Split API Response (Account B)",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            256,
+            5808
+          ],
+          "parameters": {
+            "jsCode": "return items.flatMap(item => {\n  const rows = item.json.data || [];\n\n  return rows.map(row => ({\n    json: {\n      date_start: row.date_start,\n      date_stop: row.date_stop,\n      account_id: row.account_id,\n      account_name: row.account_name,\n      campaign_id: row.campaign_id,\n      campaign_name: row.campaign_name,\n      adset_id: row.adset_id,\n      adset_name: row.adset_name,\n      ad_id: row.ad_id,\n      ad_name: row.ad_name,\n      objective: row.objective,\n      buying_type: row.buying_type,\n\n      spend: Number(row.spend || 0),\n      impressions: Number(row.impressions || 0),\n      reach: Number(row.reach || 0),\n      frequency: Number(row.frequency || 0),\n      clicks: Number(row.clicks || 0),\n      unique_clicks: Number(row.unique_clicks || 0),\n      ctr: Number(row.ctr || 0),\n      cpc: Number(row.cpc || 0),\n      cpm: Number(row.cpm || 0),\n\n      actions: row.actions || [],\n      cost_per_action_type: row.cost_per_action_type || [],\n      action_values: row.action_values || [],\n      quality_ranking: row.quality_ranking || '',\n      engagement_rate_ranking: row.engagement_rate_ranking || '',\n      conversion_rate_ranking: row.conversion_rate_ranking || ''\n    }\n  }));\n});"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "46f44c50-d25d-44bb-9215-5fbeab7165a8",
+          "name": "Append to Sheet (Account B)",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            608,
+            5808
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "cpc": "={{ $json.cpc }}",
+                "cpm": "={{ $json.cpm }}",
+                "ctr": "={{ $json.ctr }}",
+                "ad_id": "={{ $json.ad_id }}",
+                "reach": "={{ $json.reach }}",
+                "spend": "={{ $json.spend }}",
+                "clicks": "={{ $json.clicks }}",
+                "actions": "={{ $json.actions }}",
+                "ad_name": "={{ $json.ad_name }}",
+                "adset_id": "={{ $json.adset_id }}",
+                "date_stop": "={{ $json.date_stop }}",
+                "frequency": "={{ $json.frequency }}",
+                "objective": "={{ $json.objective }}",
+                "account_id": "={{ $json.account_id }}",
+                "adset_name": "={{ $json.adset_name }}",
+                "date_start": "={{ $json.date_start }}",
+                "buying_type": "={{ $json.buying_type }}",
+                "campaign_id": "={{ $json.campaign_id }}",
+                "impressions": "={{ $json.impressions }}",
+                "account_name": "={{ $json.account_name }}",
+                "action_values": "={{ $json.action_values }}",
+                "campaign_name": "={{ $json.campaign_name }}",
+                "unique_clicks": "={{ $json.unique_clicks }}",
+                "quality_ranking": "={{ $json.quality_ranking }}",
+                "cost_per_action_type": "={{ $json.cost_per_action_type }}",
+                "conversion_rate_ranking": "={{ $json.conversion_rate_ranking }}",
+                "engagement_rate_ranking": "={{ $json.engagement_rate_ranking }}"
+              },
+              "schema": [
+                {
+                  "id": "date_start",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "date_start",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "date_stop",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "date_stop",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "account_id",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "account_id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "account_name",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "account_name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "campaign_id",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "campaign_id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "campaign_name",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "campaign_name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "adset_id",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "adset_id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "adset_name",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "adset_name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "ad_id",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "ad_id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "ad_name",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "ad_name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "objective",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "objective",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "buying_type",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "buying_type",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "spend",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "spend",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "impressions",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "impressions",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "reach",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "reach",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "frequency",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "frequency",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "clicks",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "clicks",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "unique_clicks",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "unique_clicks",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "ctr",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "ctr",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "cpc",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "cpc",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "cpm",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "cpm",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "actions",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "actions",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "cost_per_action_type",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "cost_per_action_type",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "action_values",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "action_values",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "quality_ranking",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "quality_ranking",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "engagement_rate_ranking",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "engagement_rate_ranking",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "conversion_rate_ranking",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "conversion_rate_ranking",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gid=XXXXXXXXXX",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=XXXXXXXXXX",
+              "cachedResultName": "Account_B"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "YOUR_SPREADSHEET_ID",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit",
+              "cachedResultName": "Meta Ads Report"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "id": "2e9f737a-5e02-4b94-ad1b-fa5a3690790e",
+          "name": "If Spend not 0 (Account A)",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            448,
+            5088
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 2,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "b51d8946-3d1d-4ec3-8c7d-75cb05824fb7",
+                  "operator": {
+                    "type": "number",
+                    "operation": "notEquals"
+                  },
+                  "leftValue": "={{ $json.spend }}",
+                  "rightValue": 0
+                }
+              ]
+            },
+            "looseTypeValidation": true
+          },
+          "typeVersion": 2.2,
+          "alwaysOutputData": false
+        },
+        {
+          "id": "8cf7699d-cdbf-4895-8d46-8c7ddea3a274",
+          "name": "If Spend not 0 (Account B)",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            432,
+            5808
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 2,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "b51d8946-3d1d-4ec3-8c7d-75cb05824fb7",
+                  "operator": {
+                    "type": "number",
+                    "operation": "notEquals"
+                  },
+                  "leftValue": "={{ $json.spend }}",
+                  "rightValue": 0
+                }
+              ]
+            },
+            "looseTypeValidation": true
+          },
+          "typeVersion": 2.2,
+          "alwaysOutputData": false
+        },
+        {
+          "id": "dbe8e070-b975-4ff8-9186-01993d48219a",
+          "name": "Set Incremental Range (Last 7 Days)",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -1088,
+            5168
+          ],
+          "parameters": {
+            "mode": "raw",
+            "options": {},
+            "jsonOutput": "{\n  \"since\": \"={{ $now.minus(7, 'days').toISODate() }}\",\n  \"until\": \"={{ $now.toISODate() }}\"\n}"
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "f3c9c2f9-626f-42fc-8308-def370158e13",
+          "name": "Schedule Trigger (Incremental)",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            -1312,
+            5168
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "daysInterval": 7
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "8509aa01-3574-459a-a965-fcd12804cd3b",
+          "name": "Generate Weekly Periods",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -928,
+            5728
+          ],
+          "parameters": {
+            "jsCode": "let start = new Date($input.first().json.start_date);\nconst end = new Date($input.first().json.end_date);\n\nlet output = [];\n\nwhile (start <= end) {\n  let until = new Date(start);\n  until.setDate(until.getDate() + 6);\n\n  // Fix: clamp until so last chunk never exceeds end_date\n  if (until > end) until = new Date(end);\n\n  output.push({\n    since: start.toISOString().split(\"T\")[0],\n    until: until.toISOString().split(\"T\")[0]\n  });\n\n  start.setDate(start.getDate() + 7);\n}\n\nreturn output.map(d => ({ json: d }));\n"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "bd4e94e1-fba0-439d-b70f-cca3cec34d32",
+          "name": "Set Date Range (Historical Backfill)",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -1120,
+            5728
+          ],
+          "parameters": {
+            "mode": "raw",
+            "options": {},
+            "jsonOutput": "{\n  \"start_date\": \"2024-01-01\",\n  \"end_date\": \"2024-12-31\"\n}"
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "49204618-70fc-415d-b1cc-5f87510e60d0",
+          "name": "Log Skipped Period (Account B)",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            256,
+            6016
+          ],
+          "parameters": {
+            "mode": "raw",
+            "options": {},
+            "jsonOutput": "{\n  \"status\": \"skipped\",\n  \"reason\": \"Meta API returned no data or an error for this period\",\n  \"account\": \"Account B\",\n  \"since\": \"={{ $('Loop Over Periods (Account B)').item.json.since }}\",\n  \"until\": \"={{ $('Loop Over Periods (Account B)').item.json.until }}\",\n  \"execution_id\": \"={{ $execution.id }}\",\n  \"timestamp\": \"={{ new Date().toISOString() }}\"\n}"
+          },
+          "typeVersion": 3.4
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "binaryMode": "separate",
+        "executionOrder": "v1"
+      },
+      "versionId": "a282ce38-448e-4fe4-ba6d-66d9d9a53739",
+      "connections": {
+        "Generate Weekly Periods": {
+          "main": [
+            [
+              {
+                "node": "Loop Over Periods (Account A)",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Loop Over Periods (Account B)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "If Spend not 0 (Account A)": {
+          "main": [
+            [
+              {
+                "node": "Append to Sheet (Account A)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "If Spend not 0 (Account B)": {
+          "main": [
+            [
+              {
+                "node": "Append to Sheet (Account B)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Append to Sheet (Account A)": {
+          "main": [
+            [
+              {
+                "node": "Loop Over Periods (Account A)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Append to Sheet (Account B)": {
+          "main": [
+            [
+              {
+                "node": "Loop Over Periods (Account B)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Valid Response? (Account A)": {
+          "main": [
+            [
+              {
+                "node": "Split API Response (Account A)",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Log Skipped Period (Account A)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Valid Response? (Account B)": {
+          "main": [
+            [
+              {
+                "node": "Split API Response (Account B)",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Log Skipped Period (Account B)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Loop Over Periods (Account A)": {
+          "main": [
+            [],
+            [
+              {
+                "node": "Fetch Meta Insights (Account A)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Loop Over Periods (Account B)": {
+          "main": [
+            [],
+            [
+              {
+                "node": "Fetch Meta Insights (Account B)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Log Skipped Period (Account A)": {
+          "main": [
+            [
+              {
+                "node": "Append to Log Sheet (Account A)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Log Skipped Period (Account B)": {
+          "main": [
+            [
+              {
+                "node": "Append to Log Sheet (Account B)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Schedule Trigger (Incremental)": {
+          "main": [
+            [
+              {
+                "node": "Set Incremental Range (Last 7 Days)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Split API Response (Account A)": {
+          "main": [
+            [
+              {
+                "node": "If Spend not 0 (Account A)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Split API Response (Account B)": {
+          "main": [
+            [
+              {
+                "node": "If Spend not 0 (Account B)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Append to Log Sheet (Account A)": {
+          "main": [
+            [
+              {
+                "node": "Loop Over Periods (Account A)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Append to Log Sheet (Account B)": {
+          "main": [
+            [
+              {
+                "node": "Loop Over Periods (Account B)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Fetch Meta Insights (Account A)": {
+          "main": [
+            [
+              {
+                "node": "Valid Response? (Account A)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Fetch Meta Insights (Account B)": {
+          "main": [
+            [
+              {
+                "node": "Valid Response? (Account B)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Set Incremental Range (Last 7 Days)": {
+          "main": [
+            [
+              {
+                "node": "Loop Over Periods (Account A)",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Loop Over Periods (Account B)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Manual Trigger (Historical Backfill)": {
+          "main": [
+            [
+              {
+                "node": "Set Date Range (Historical Backfill)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Set Date Range (Historical Backfill)": {
+          "main": [
+            [
+              {
+                "node": "Generate Weekly Periods",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 24,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 4
+        },
+        "n8n-nodes-base.set": {
+          "count": 4
+        },
+        "n8n-nodes-base.code": {
+          "count": 3
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 3
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 2
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 4
+        },
+        "n8n-nodes-base.manualTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.splitInBatches": {
+          "count": 2
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Muh Resky Adiansyah",
+      "username": "adiardian",
+      "bio": "",
+      "verified": true,
+      "links": [
+        "https://github.com/muhreskyadi"
+      ],
+      "avatar": "https://gravatar.com/avatar/7d35fbff6b35655f66a6ba80ad5fc659d4b26fc94cfa09f9be5c9adef2e66d61?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 39,
+        "icon": "fa:sync",
+        "name": "n8n-nodes-base.splitInBatches",
+        "codex": {
+          "data": {
+            "alias": [
+              "Loop",
+              "Concatenate",
+              "Batch",
+              "Split",
+              "Split In Batches"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.splitinbatches/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Loop Over Items",
+          "color": "#007755"
+        },
+        "iconData": {
+          "icon": "sync",
+          "type": "icon"
+        },
+        "displayName": "Loop Over Items (Split in Batches)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 838,
+        "icon": "fa:mouse-pointer",
+        "name": "n8n-nodes-base.manualTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.manualworkflowtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "When clicking ‘Execute workflow’",
+          "color": "#909298"
+        },
+        "iconData": {
+          "icon": "mouse-pointer",
+          "type": "icon"
+        },
+        "displayName": "Manual Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 32,
+        "name": "Market Research"
+      }
+    ],
+    "image": []
+  }
+}

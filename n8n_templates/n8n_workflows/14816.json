@@ -1,0 +1,2072 @@
+{
+  "workflow": {
+    "id": 14816,
+    "name": "Handle Vietnamese SME customer care on Zalo Bot with Gemini and Google Sheets",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-06T15:35:54.765Z",
+    "description": "# AI customer care chatbot for Vietnamese SMEs with Zalo Bot, Gemini and Google Sheets CRM\n\nA production ready Zalo Bot chatbot that handles the full customer journey for Vietnamese small and medium businesses: greeting new customers with a sticker, listening for their first reply, routing the message to the right handler, generating AI fallback answers in Vietnamese, escalating to a human agent when needed, and logging every conversation to Google Sheets as a lightweight CRM.\n\nThis template uses **every operation** of the `n8n-nodes-zalo-platform` community node (`zaloBotTrigger`, `sendMessage`, `sendPhoto`, `sendSticker`, `getUpdates`) combined with Google Gemini and Google Sheets to deliver a real conversational flow, not a one shot reply.\n\n## Who is this for\n\nVietnamese SMEs, e-commerce shops, restaurants, clinics, real estate brokers, training centers, and any business already using Zalo Bot Platform that wants to:\n\n- Reply 24/7 in natural Vietnamese without hiring more staff\n- Track every customer in a free Google Sheets CRM\n- Showcase products and pricing on demand\n- Escalate complex requests to a human agent\n- Use AI to handle long tail questions\n\n## How it works\n\n1. **Receive Zalo Message** triggers on every text message sent to your bot.\n2. **Set Configuration** holds your business name, hotline, product photo URL, pricing, sheet ID, and admin Zalo ID (plug and play).\n3. **Extract Customer Info** parses the Zalo payload (`message.from.id`, `message.chat.id`, `message.from.display_name`, `message.text`, `message.message_id`) into clean fields.\n4. **Lookup Customer in CRM** reads the Google Sheets `Customers` tab and filters by `senderId` to detect new vs returning customers.\n5. **Is New Customer?** branches the flow:\n   - **New customer:** append a row to `Customers`, send a welcome sticker (`sendSticker`), send a Vietnamese welcome message (`sendMessage`), then **Listen Welcome Reply** uses `getUpdates` to wait for the user's first response.\n   - **Returning customer:** route directly to intent detection.\n6. **Normalize After Listen** and **Normalize Returning** unify both paths into a single `messageText` and `messageOriginal` field, so downstream nodes work regardless of source.\n7. **Detect Intent** is a Switch node with 4 keyword rules plus an AI fallback. Each rule matches both Vietnamese with diacritics and unaccented variants:\n   - `menu` (menu, dịch vụ)\n   - `products` (sản phẩm, demo, giải pháp)\n   - `pricing` (giá, báo giá, chi phí)\n   - `human` (người thật, tư vấn, liên hệ, hỗ trợ)\n   - **default** routes to Gemini AI reply\n8. **Send Menu**, **Send Product Photo**, and **Send Pricing** handle the matched intents using `sendMessage` and `sendPhoto`.\n9. **Log Escalation** writes a row to `Conversations` and **Acknowledge Escalation** confirms receipt to the customer.\n10. **Gemini AI Reply** generates a friendly Vietnamese reply using Google Gemini 2.0 Flash with full business context.\n11. **Send AI Reply** delivers the response back via Zalo Bot.\n12. **Log Conversation** appends every message and reply to the `Conversations` sheet so you can review chats and improve the bot.\n\n## What makes this template different\n\n- **Full conversational flow**, not just a one shot auto reply\n- **Two path normalization**: the welcome reply path and the returning customer path converge into a single intent router\n- **Vietnamese first**: keyword matching, AI prompts, and replies all handle Vietnamese with diacritics natively\n- **Free CRM**: ready to copy Google Sheets template included, no database setup required\n- **Uses every operation** of the Zalo Bot community node\n- **Production patterns**: customer state tracking, conversation logging, human escalation, and AI fallback, all in one workflow\n\n## Requirements\n\n- Self hosted n8n (community nodes are not available on n8n Cloud)\n- Community node: `n8n-nodes-zalo-platform`\n- A Zalo Bot created via **Zalo Bot Manager** inside the Zalo app (gives you a Bot Token in the format `bot_id:secret_key`). This is **not** Zalo Official Account.\n- Google account with access to Google Sheets and Google Gemini (free tier from Google AI Studio)\n\n## How to set up\n\n1. Install the community node via **Settings &gt; Community Nodes**: `n8n-nodes-zalo-platform`\n2. Create credentials for Zalo Bot, Google Sheets OAuth2, and Google Gemini\n3. **Get the Google Sheets CRM template** (ready to copy):\n   - Open: [Google Sheets CRM template](https://docs.google.com/spreadsheets/d/1e9155FKWikWTADXWssAdYvOq7g8l3N4NvhnxQXo9EFc/edit?usp=sharing)\n   - **File &gt; Make a copy**\n   - The template already contains both tabs:\n     - `Customers`: `senderId | name | firstSeen | lastSeen | messageCount`\n     - `Conversations`: `timestamp | senderId | name | messageId | message | intent | reply`\n4. Copy your new Sheet ID from the URL (between `/d/` and `/edit`) and paste it into the **Set Configuration** node `googleSheetId` field\n5. Edit **Set Configuration** with your business name, hotline, product photo URL, and pricing text\n6. Activate the workflow. The webhook is auto registered with Zalo Bot Platform.\n7. Send a message to your bot to test. Try keywords: `menu`, `sản phẩm`, `giá`, `người thật`, or any free form question.\n\n## How to customize\n\n- Add more intents to the Switch node (booking, refund, shipping, address lookup)\n- Replace Google Sheets with Airtable, Notion, Postgres, or Supabase for a real database\n- Send order confirmations with `sendPhoto` (QR code, invoice image)\n- Send promotional stickers on Tet, Black Friday, or seasonal events\n- Add a Schedule Trigger to broadcast daily promotions to all customers in the CRM\n- Plug in your website knowledge base via Retrieval Augmented Generation\n- Switch Gemini for OpenAI, Claude, or a self hosted local model\n- Add an Hours Of Operation check to send a different reply outside business hours\n\n## Need help\n\n- [Zalo Bot node setup guide](https://thenexova.com/n8n-zalo-bot-node-complete-setup-and-operations-guide/)\n- Email: `contact@thenexova.com`\n- Built by **THE NEXOVA**, automation and AI partner for Vietnamese businesses\n",
+    "workflow": {
+      "id": "zalo-customer-care-001",
+      "meta": {
+        "instanceId": "650d5f838c2a9abfc6003a60630a0c8fab222d5c4f08e874fc1f3ac7931f2416",
+        "templateCredsSetupCompleted": true
+      },
+      "name": "AI customer care chatbot for Vietnamese SMEs with Zalo Bot, Gemini and Google Sheets CRM",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "sticky-main",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1328,
+            -256
+          ],
+          "parameters": {
+            "width": 520,
+            "height": 920,
+            "content": "## AI customer care chatbot for Vietnamese SMEs with Zalo Bot, Gemini and Google Sheets CRM\n\n### How it works\n1. The Zalo Bot Trigger receives every text message sent to your bot.\n2. The customer is looked up in Google Sheets CRM; new customers get a welcome sticker and greeting.\n3. A Switch node detects intent by keyword: menu, products, pricing, or human escalation.\n4. Known intents trigger specific handlers (text menu, product photo, pricing list, or escalation log).\n5. Unrecognized messages go to Google Gemini for a context-aware Vietnamese AI reply.\n6. Every conversation is logged to Google Sheets for review and training.\n\n### Setup steps\n- [ ] Self-hosted n8n required (community nodes cannot be installed on n8n Cloud)\n- [ ] Install community node `n8n-nodes-zalo-platform` via **Settings > Community Nodes**\n- [ ] Create a Zalo Bot via **Zalo Bot Manager** in the Zalo app to get the Bot Token\n- [ ] Create a Google Gemini credential (free tier from [Google AI Studio](https://aistudio.google.com))\n- [ ] Copy the [Google Sheets CRM template](https://docs.google.com/spreadsheets/d/1e9155FKWikWTADXWssAdYvOq7g8l3N4NvhnxQXo9EFc/edit?usp=sharing) via **File > Make a copy**\n- [ ] Create a Google Sheets credential and assign it to all Sheets nodes\n- [ ] Paste your Sheet ID into the **Set Configuration** node `googleSheetId` field\n- [ ] Update **Set Configuration** with your business name, product photo URL, pricing, and hotline\n- [ ] Activate the workflow\n\n### Customization\n- Add more intents to the Switch node (booking, refund, shipping)\n- Replace Google Sheets with Airtable, Notion, or Postgres\n- Send promotional stickers on seasonal events\n- Add business-hours check for different out-of-office replies\n- Switch Gemini for OpenAI, Claude, or a self-hosted model\n\n### Need help?\n- [Zalo Bot node setup guide](https://thenexova.com/n8n-zalo-bot-node-complete-setup-and-operations-guide/)"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "sticky-step1",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -768,
+            -256
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 360,
+            "height": 240,
+            "content": "## Receive and configure\n\nThe Zalo Bot Trigger listens for incoming text messages. The Set Configuration node holds your business name, product photo, pricing, hotline, and Google Sheet ID."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "sticky-step2",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -384,
+            -256
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 360,
+            "height": 240,
+            "content": "## Identify customer\n\nExtracts sender ID, name, and message text from the Zalo payload, then looks up the customer in the Google Sheets CRM by sender ID."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "sticky-step3",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            0,
+            -256
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 360,
+            "height": 240,
+            "content": "## Welcome new customers\n\nIf the sender is not in the CRM yet: append a new row, send a welcome sticker, then greet with the menu options. Returning customers skip directly to intent detection."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "sticky-step4",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            384,
+            -256
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 360,
+            "height": 240,
+            "content": "## Detect intent by keyword\n\nThe Switch node routes messages by Vietnamese keywords: `menu`, `san pham`, `gia`, `nguoi that`. Anything else falls through to the AI reply."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "sticky-step5",
+          "name": "Sticky Note5",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            768,
+            -256
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 380,
+            "height": 240,
+            "content": "## Handle known intents\n\nEach intent demonstrates a different Zalo Bot operation: `sendMessage` for menu and pricing, `sendPhoto` for product showcase, and escalation logging with acknowledgment."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "sticky-step6",
+          "name": "Sticky Note6",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1168,
+            -256
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 380,
+            "height": 240,
+            "content": "## AI fallback with Gemini\n\nFor unrecognized messages, Google Gemini 2.0 Flash generates a friendly Vietnamese reply using your business context. Gemini has excellent Vietnamese support and a generous free tier."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "sticky-step7",
+          "name": "Sticky Note7",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1568,
+            -256
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 380,
+            "height": 240,
+            "content": "## Reply and log conversation\n\nThe AI reply is sent back via Zalo Bot, then the full exchange is appended to the Conversations tab in Google Sheets with timestamp, intent, and reply text for later review."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "sticky-sheet-template",
+          "name": "Sticky Note9",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -256,
+            912
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 760,
+            "height": 320,
+            "content": "## Google Sheets CRM template\n\n**Template URL:** https://docs.google.com/spreadsheets/d/1e9155FKWikWTADXWssAdYvOq7g8l3N4NvhnxQXo9EFc/edit?usp=sharing\n\n### Setup\n- [ ] Open the link above and **File > Make a copy**\n- [ ] Copy the Sheet ID from the URL (between `/d/` and `/edit`)\n- [ ] Paste it into the **Set Configuration** node `googleSheetId` field\n- [ ] Create a Google Sheets credential and assign it to all 4 Sheets nodes\n\n### Tabs and columns (already in the template)\n\n**Customers** tab: `senderId | name | firstSeen | lastSeen | messageCount`\n\n**Conversations** tab: `timestamp | senderId | name | messageId | message | intent | reply`\n\nThe `intent` column will be either `ai_reply` or `human_escalation` for easy filtering."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "sticky-disclaimer",
+          "name": "Sticky Note8",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1328,
+            1104
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 520,
+            "content": "### Community Node - Self-hosted only\nThis template uses the `n8n-nodes-zalo-platform` community node which requires self-hosted n8n. It cannot be installed on n8n Cloud. The Zalo Bot is created via **Zalo Bot Manager** inside the Zalo app."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "trigger-zalo",
+          "name": "Receive Zalo Message",
+          "type": "n8n-nodes-zalo-platform.zaloBotTrigger",
+          "position": [
+            -720,
+            208
+          ],
+          "webhookId": "zalo-customer-care-trigger",
+          "parameters": {
+            "event": "message.text.received"
+          },
+          "credentials": {
+            "zaloBotApi": {
+              "id": "credential-id",
+              "name": "Zalo Bot account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "set-config",
+          "name": "Set Configuration",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -480,
+            208
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "business-name",
+                  "name": "businessName",
+                  "type": "string",
+                  "value": "THE NEXOVA"
+                },
+                {
+                  "id": "hotline",
+                  "name": "hotline",
+                  "type": "string",
+                  "value": "https://thenexova.com/contact"
+                },
+                {
+                  "id": "product-photo",
+                  "name": "productPhotoUrl",
+                  "type": "string",
+                  "value": "https://placehold.co/1200x630/2563eb/ffffff/png?text=THE+NEXOVA%0AAI+Chatbot+Zalo"
+                },
+                {
+                  "id": "pricing-text",
+                  "name": "pricingText",
+                  "type": "string",
+                  "value": "BAO GIA THAM KHAO THE NEXOVA\n\nGoi Khoi Dau\nTu van n8n va setup co ban, phu hop shop nho va freelancer.\n\nGoi Tang Truong\nAI Chatbot tieng Viet, CRM tu dong, workflow da kenh, phu hop SME 10 den 50 nhan vien.\n\nGoi Doanh Nghiep\nTich hop ERP/CRM, custom n8n node, SLA va ho tro uu tien, phu hop doanh nghiep lon.\n\nBao gia chi tiet tuy quy mo va nghiep vu. Vui long:\nhttps://thenexova.com/contact\nuser@example.com\nHoac go 'nguoi that' de duoc tu van ngay"
+                },
+                {
+                  "id": "welcome-sticker",
+                  "name": "welcomeStickerId",
+                  "type": "string",
+                  "value": "e0279194add1448f1dc0"
+                },
+                {
+                  "id": "sheet-id",
+                  "name": "googleSheetId",
+                  "type": "string",
+                  "value": "1e9155FKWikWTADXWssAdYvOq7g8l3N4NvhnxQXo9EFc"
+                },
+                {
+                  "id": "admin-zalo-id",
+                  "name": "adminZaloId",
+                  "type": "string",
+                  "value": "YOUR_ADMIN_ZALO_ID"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "extract-info",
+          "name": "Extract Customer Info",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -272,
+            208
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "sender-id",
+                  "name": "senderId",
+                  "type": "string",
+                  "value": "={{ $('Receive Zalo Message').item.json.message.from.id }}"
+                },
+                {
+                  "id": "chat-id",
+                  "name": "chatId",
+                  "type": "string",
+                  "value": "={{ $('Receive Zalo Message').item.json.message.chat.id }}"
+                },
+                {
+                  "id": "sender-name",
+                  "name": "senderName",
+                  "type": "string",
+                  "value": "={{ $('Receive Zalo Message').item.json.message.from.display_name || 'Khach hang' }}"
+                },
+                {
+                  "id": "message-text",
+                  "name": "messageText",
+                  "type": "string",
+                  "value": "={{ ($('Receive Zalo Message').item.json.message.text || '').toLowerCase().trim() }}"
+                },
+                {
+                  "id": "message-original",
+                  "name": "messageOriginal",
+                  "type": "string",
+                  "value": "={{ $('Receive Zalo Message').item.json.message.text }}"
+                },
+                {
+                  "id": "message-id",
+                  "name": "messageId",
+                  "type": "string",
+                  "value": "={{ $('Receive Zalo Message').item.json.message.message_id }}"
+                },
+                {
+                  "id": "ts",
+                  "name": "timestamp",
+                  "type": "string",
+                  "value": "={{ $now.toISO() }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "lookup-customer",
+          "name": "Lookup Customer in CRM",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            48,
+            208
+          ],
+          "parameters": {
+            "options": {
+              "returnFirstMatch": true
+            },
+            "filtersUI": {
+              "values": [
+                {
+                  "lookupValue": "={{ $json.senderId }}",
+                  "lookupColumn": "senderId"
+                }
+              ]
+            },
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Customers"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $('Set Configuration').item.json.googleSheetId }}"
+            },
+            "authentication": "serviceAccount"
+          },
+          "credentials": {
+            "googleApi": {
+              "id": "credential-id",
+              "name": "Google Sheets nexova-reader"
+            }
+          },
+          "typeVersion": 4.5,
+          "alwaysOutputData": true
+        },
+        {
+          "id": "if-new-customer",
+          "name": "Is New Customer?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            432,
+            208
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 2,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "is-new",
+                  "operator": {
+                    "type": "string",
+                    "operation": "empty",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json.senderId }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "append-customer",
+          "name": "Append New Customer",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            800,
+            64
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "name": "={{ $('Extract Customer Info').item.json.senderName }}",
+                "lastSeen": "={{ $('Extract Customer Info').item.json.timestamp }}",
+                "senderId": "={{ $('Extract Customer Info').item.json.senderId }}",
+                "firstSeen": "={{ $('Extract Customer Info').item.json.timestamp }}",
+                "messageCount": 1
+              },
+              "schema": [
+                {
+                  "id": "senderId",
+                  "type": "string",
+                  "displayName": "senderId"
+                },
+                {
+                  "id": "name",
+                  "type": "string",
+                  "displayName": "name"
+                },
+                {
+                  "id": "firstSeen",
+                  "type": "string",
+                  "displayName": "firstSeen"
+                },
+                {
+                  "id": "lastSeen",
+                  "type": "string",
+                  "displayName": "lastSeen"
+                },
+                {
+                  "id": "messageCount",
+                  "type": "number",
+                  "displayName": "messageCount"
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": []
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Customers"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $('Set Configuration').item.json.googleSheetId }}"
+            },
+            "authentication": "serviceAccount"
+          },
+          "credentials": {
+            "googleApi": {
+              "id": "credential-id",
+              "name": "Google Sheets nexova-reader"
+            }
+          },
+          "typeVersion": 4.5
+        },
+        {
+          "id": "send-welcome-sticker",
+          "name": "Send Welcome Sticker",
+          "type": "n8n-nodes-zalo-platform.zaloBot",
+          "position": [
+            1104,
+            64
+          ],
+          "parameters": {
+            "chatId": "={{ $('Extract Customer Info').item.json.chatId }}",
+            "operation": "sendSticker",
+            "stickerId": "={{ $('Set Configuration').item.json.welcomeStickerId }}"
+          },
+          "credentials": {
+            "zaloBotApi": {
+              "id": "credential-id",
+              "name": "Zalo Bot account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "send-welcome-message",
+          "name": "Send Welcome Message",
+          "type": "n8n-nodes-zalo-platform.zaloBot",
+          "position": [
+            1520,
+            32
+          ],
+          "parameters": {
+            "text": "=Xin chao {{ $('Extract Customer Info').item.json.senderName }}!\n\nCam on ban da lien he THE NEXOVA, doi tac tu dong hoa va AI cho doanh nghiep Viet.\n\nBan co the chon:\n- Go 'menu' de xem dich vu chinh\n- Go 'san pham' de xem giai phap tieu bieu\n- Go 'gia' de xem bao gia tham khao\n- Go 'nguoi that' de gap tu van vien\n\nHoac cu hoi tu nhien, tro ly AI cua THE NEXOVA se tra loi ngay bang tieng Viet!\n\nhttps://thenexova.com",
+            "chatId": "={{ $('Extract Customer Info').item.json.chatId }}"
+          },
+          "credentials": {
+            "zaloBotApi": {
+              "id": "credential-id",
+              "name": "Zalo Bot account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "switch-intent",
+          "name": "Detect Intent",
+          "type": "n8n-nodes-base.switch",
+          "position": [
+            800,
+            624
+          ],
+          "parameters": {
+            "rules": {
+              "values": [
+                {
+                  "outputKey": "menu",
+                  "conditions": {
+                    "options": {
+                      "version": 2,
+                      "leftValue": "",
+                      "caseSensitive": false,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "or",
+                    "conditions": [
+                      {
+                        "id": "menu-0",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "menu"
+                      },
+                      {
+                        "id": "menu-1",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "menu chinh"
+                      },
+                      {
+                        "id": "menu-2",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "dich vu"
+                      },
+                      {
+                        "id": "menu-3",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "dich vu"
+                      }
+                    ]
+                  },
+                  "renameOutput": true
+                },
+                {
+                  "outputKey": "products",
+                  "conditions": {
+                    "options": {
+                      "version": 2,
+                      "leftValue": "",
+                      "caseSensitive": false,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "or",
+                    "conditions": [
+                      {
+                        "id": "products-0",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "san pham"
+                      },
+                      {
+                        "id": "products-1",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "product"
+                      },
+                      {
+                        "id": "products-2",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "san pham"
+                      },
+                      {
+                        "id": "products-3",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "demo"
+                      },
+                      {
+                        "id": "products-4",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "giai phap"
+                      }
+                    ]
+                  },
+                  "renameOutput": true
+                },
+                {
+                  "outputKey": "pricing",
+                  "conditions": {
+                    "options": {
+                      "version": 2,
+                      "leftValue": "",
+                      "caseSensitive": false,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "or",
+                    "conditions": [
+                      {
+                        "id": "pricing-0",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "gia"
+                      },
+                      {
+                        "id": "pricing-1",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "price"
+                      },
+                      {
+                        "id": "pricing-2",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "gia"
+                      },
+                      {
+                        "id": "pricing-3",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "bao gia"
+                      },
+                      {
+                        "id": "pricing-4",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "bao gia"
+                      },
+                      {
+                        "id": "pricing-5",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "chi phi"
+                      }
+                    ]
+                  },
+                  "renameOutput": true
+                },
+                {
+                  "outputKey": "human",
+                  "conditions": {
+                    "options": {
+                      "version": 2,
+                      "leftValue": "",
+                      "caseSensitive": false,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "or",
+                    "conditions": [
+                      {
+                        "id": "human-0",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "nguoi that"
+                      },
+                      {
+                        "id": "human-1",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "human"
+                      },
+                      {
+                        "id": "human-2",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "nguoi that"
+                      },
+                      {
+                        "id": "human-3",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "tu van"
+                      },
+                      {
+                        "id": "human-4",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "lien he"
+                      },
+                      {
+                        "id": "human-5",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "lien he"
+                      },
+                      {
+                        "id": "human-6",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "hotro"
+                      },
+                      {
+                        "id": "human-7",
+                        "operator": {
+                          "type": "string",
+                          "operation": "contains"
+                        },
+                        "leftValue": "={{ $json.messageText }}",
+                        "rightValue": "ho tro"
+                      }
+                    ]
+                  },
+                  "renameOutput": true
+                }
+              ]
+            },
+            "options": {
+              "fallbackOutput": "extra",
+              "renameFallbackOutput": "ai"
+            }
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "send-menu",
+          "name": "Send Menu",
+          "type": "n8n-nodes-zalo-platform.zaloBot",
+          "position": [
+            1184,
+            224
+          ],
+          "parameters": {
+            "text": "=DICH VU THE NEXOVA\n\nTHE NEXOVA giup doanh nghiep Viet tiet kiem 40 den 80% thoi gian van hanh nho tu dong hoa va AI.\n\nDich vu tieu bieu:\n1. Tu van va trien khai n8n\n2. AI Chatbot tieng Viet cho Zalo, Messenger, Web\n3. Phat trien n8n community node theo yeu cau (Firecrawl, Zalo Bot, OpenRouter...)\n4. Tu dong hoa CRM, marketing, thuong mai dien tu\n5. Giam sat doi thu va phan tich canh tranh\n\nTiep theo:\n- Go 'san pham' de xem giai phap chi tiet\n- Go 'gia' de nhan bao gia tham khao\n- Go 'nguoi that' de duoc tu van mien phi\n\nhttps://thenexova.com/contact",
+            "chatId": "={{ $('Extract Customer Info').item.json.chatId }}"
+          },
+          "credentials": {
+            "zaloBotApi": {
+              "id": "credential-id",
+              "name": "Zalo Bot account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "send-product-photo",
+          "name": "Send Product Photo",
+          "type": "n8n-nodes-zalo-platform.zaloBot",
+          "position": [
+            1184,
+            384
+          ],
+          "parameters": {
+            "photo": "={{ $('Set Configuration').item.json.productPhotoUrl }}",
+            "chatId": "={{ $('Extract Customer Info').item.json.chatId }}",
+            "caption": "=Giai phap AI Chatbot Zalo cua THE NEXOVA\n\nCham soc khach hang 24/7 bang tieng Viet tu nhien. Tich hop CRM Google Sheets, phat hien y dinh, leo thang sang nhan vien that khi can.\n\nDay cung chinh la chatbot ban dang tro chuyen cung!\n\nTinh nang chinh:\n- Hieu tieng Viet co dau\n- Luu lich su khach hang tu dong\n- Bao gia, demo san pham, gui sticker\n- Mo rong de dang cho Web, Messenger, Telegram\n\nBao gia: go 'gia'\nTu van: go 'nguoi that'\n\nhttps://thenexova.com",
+            "operation": "sendPhoto"
+          },
+          "credentials": {
+            "zaloBotApi": {
+              "id": "credential-id",
+              "name": "Zalo Bot account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "send-pricing",
+          "name": "Send Pricing",
+          "type": "n8n-nodes-zalo-platform.zaloBot",
+          "position": [
+            1184,
+            544
+          ],
+          "parameters": {
+            "text": "={{ $('Set Configuration').item.json.pricingText }}",
+            "chatId": "={{ $('Extract Customer Info').item.json.chatId }}"
+          },
+          "credentials": {
+            "zaloBotApi": {
+              "id": "credential-id",
+              "name": "Zalo Bot account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "log-escalation",
+          "name": "Log Escalation",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            1184,
+            704
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "name": "={{ $('Extract Customer Info').item.json.senderName }}",
+                "reply": "Da chuyen cho nhan vien",
+                "intent": "human_escalation",
+                "message": "={{ $('Extract Customer Info').item.json.messageOriginal }}",
+                "senderId": "={{ $('Extract Customer Info').item.json.senderId }}",
+                "messageId": "={{ $('Extract Customer Info').item.json.messageId }}",
+                "timestamp": "={{ $('Extract Customer Info').item.json.timestamp }}"
+              },
+              "schema": [
+                {
+                  "id": "timestamp",
+                  "type": "string",
+                  "displayName": "timestamp"
+                },
+                {
+                  "id": "senderId",
+                  "type": "string",
+                  "displayName": "senderId"
+                },
+                {
+                  "id": "name",
+                  "type": "string",
+                  "displayName": "name"
+                },
+                {
+                  "id": "messageId",
+                  "type": "string",
+                  "displayName": "messageId"
+                },
+                {
+                  "id": "message",
+                  "type": "string",
+                  "displayName": "message"
+                },
+                {
+                  "id": "intent",
+                  "type": "string",
+                  "displayName": "intent"
+                },
+                {
+                  "id": "reply",
+                  "type": "string",
+                  "displayName": "reply"
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": []
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Conversations"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $('Set Configuration').item.json.googleSheetId }}"
+            },
+            "authentication": "serviceAccount"
+          },
+          "credentials": {
+            "googleApi": {
+              "id": "credential-id",
+              "name": "Google Sheets nexova-reader"
+            }
+          },
+          "typeVersion": 4.5
+        },
+        {
+          "id": "send-escalation-ack",
+          "name": "Acknowledge Escalation",
+          "type": "n8n-nodes-zalo-platform.zaloBot",
+          "position": [
+            1488,
+            704
+          ],
+          "parameters": {
+            "text": "=Cam on {{ $('Extract Customer Info').item.json.senderName }}!\n\nYeu cau cua ban da duoc chuyen den doi ngu THE NEXOVA. Tu van vien se lien he trong vong 15 phut (gio lam viec 8h den 18h, T2 den T6).\n\nTrong luc cho, ban co the tham khao:\nWebsite: https://thenexova.com\nEmail: contact@thenexova.com\nForm lien he: https://thenexova.com/contact\n\nTHE NEXOVA, dong hanh tu dong hoa cho doanh nghiep Viet",
+            "chatId": "={{ $('Extract Customer Info').item.json.chatId }}"
+          },
+          "credentials": {
+            "zaloBotApi": {
+              "id": "credential-id",
+              "name": "Zalo Bot account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ai-reply",
+          "name": "Gemini AI Reply",
+          "type": "@n8n/n8n-nodes-langchain.googleGemini",
+          "position": [
+            1184,
+            880
+          ],
+          "parameters": {
+            "modelId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "models/gemini-2.0-flash"
+            },
+            "options": {},
+            "messages": {
+              "values": [
+                {
+                  "content": "=Ban la tro ly cham soc khach hang chuyen nghiep cua THE NEXOVA, doi tac tu dong hoa va AI cho doanh nghiep Viet Nam.\n\nQuy tac tra loi:\n1. Bang tieng Viet co dau, than thien, ngan gon (toi da 150 tu)\n2. Khi phu hop, goi y dich vu THE NEXOVA: tu van n8n, AI Chatbot tieng Viet, tu dong hoa quy trinh, custom n8n community node\n3. Neu khach hoi ve gia, goi y go 'gia'\n4. Neu khach muon xem demo san pham, goi y go 'san pham'\n5. Neu khong chac cau tra loi, huong dan khach:\n   - Website: https://thenexova.com\n   - Email: contact@thenexova.com\n   - Form lien he: https://thenexova.com/contact\n   - Hoac go 'nguoi that' de gap tu van vien\n\nCau hoi tu khach hang ten {{ $('Extract Customer Info').item.json.senderName }}:\n{{ $json.messageOriginal }}"
+                }
+              ]
+            }
+          },
+          "credentials": {
+            "googlePalmApi": {
+              "id": "credential-id",
+              "name": "Google Gemini Pro Key"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "send-ai-reply",
+          "name": "Send AI Reply",
+          "type": "n8n-nodes-zalo-platform.zaloBot",
+          "position": [
+            1488,
+            880
+          ],
+          "parameters": {
+            "text": "={{ $json.content.parts[0].text }}",
+            "chatId": "={{ $('Extract Customer Info').item.json.chatId }}"
+          },
+          "credentials": {
+            "zaloBotApi": {
+              "id": "credential-id",
+              "name": "Zalo Bot account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "log-conversation",
+          "name": "Log Conversation",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            1792,
+            880
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "name": "={{ $('Extract Customer Info').item.json.senderName }}",
+                "reply": "={{ $('Gemini AI Reply').item.json.content.parts[0].text }}",
+                "intent": "ai_reply",
+                "message": "={{ $('Extract Customer Info').item.json.messageOriginal }}",
+                "senderId": "={{ $('Extract Customer Info').item.json.senderId }}",
+                "messageId": "={{ $('Extract Customer Info').item.json.messageId }}",
+                "timestamp": "={{ $('Extract Customer Info').item.json.timestamp }}"
+              },
+              "schema": [
+                {
+                  "id": "timestamp",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "timestamp",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "senderId",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "senderId",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "name",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "messageId",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "messageId",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "message",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "message",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "intent",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "intent",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "reply",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "reply",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Conversations"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $('Set Configuration').item.json.googleSheetId }}"
+            },
+            "authentication": "serviceAccount"
+          },
+          "credentials": {
+            "googleApi": {
+              "id": "credential-id",
+              "name": "Google Sheets nexova-reader"
+            }
+          },
+          "typeVersion": 4.5
+        },
+        {
+          "id": "b38fdc25-3e79-43d7-97b2-5ccc921eb680",
+          "name": "Listen Welcome Reply",
+          "type": "n8n-nodes-zalo-platform.zaloBot",
+          "position": [
+            1712,
+            64
+          ],
+          "parameters": {
+            "operation": "getUpdates"
+          },
+          "credentials": {
+            "zaloBotApi": {
+              "id": "credential-id",
+              "name": "Zalo Bot account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "normalize-listen",
+          "name": "Normalize After Listen",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            1984,
+            64
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "msg-text",
+                  "name": "messageText",
+                  "type": "string",
+                  "value": "={{ ($json.message?.text || $json.result?.[0]?.message?.text || '').toLowerCase().trim() }}"
+                },
+                {
+                  "id": "msg-orig",
+                  "name": "messageOriginal",
+                  "type": "string",
+                  "value": "={{ $json.message?.text || $json.result?.[0]?.message?.text || '' }}"
+                },
+                {
+                  "id": "msg-source",
+                  "name": "messageSource",
+                  "type": "string",
+                  "value": "welcome_reply"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "normalize-return",
+          "name": "Normalize Returning",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            800,
+            464
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "msg-text",
+                  "name": "messageText",
+                  "type": "string",
+                  "value": "={{ $('Extract Customer Info').item.json.messageText }}"
+                },
+                {
+                  "id": "msg-orig",
+                  "name": "messageOriginal",
+                  "type": "string",
+                  "value": "={{ $('Extract Customer Info').item.json.messageOriginal }}"
+                },
+                {
+                  "id": "msg-source",
+                  "name": "messageSource",
+                  "type": "string",
+                  "value": "first_message"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "binaryMode": "separate",
+        "executionOrder": "v1"
+      },
+      "versionId": "a2c0b743-16ec-4f6f-97c5-5d85e74cc607",
+      "connections": {
+        "Detect Intent": {
+          "main": [
+            [
+              {
+                "node": "Send Menu",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Send Product Photo",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Send Pricing",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Log Escalation",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Gemini AI Reply",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Send AI Reply": {
+          "main": [
+            [
+              {
+                "node": "Log Conversation",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Log Escalation": {
+          "main": [
+            [
+              {
+                "node": "Acknowledge Escalation",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Gemini AI Reply": {
+          "main": [
+            [
+              {
+                "node": "Send AI Reply",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Is New Customer?": {
+          "main": [
+            [
+              {
+                "node": "Append New Customer",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Normalize Returning",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Set Configuration": {
+          "main": [
+            [
+              {
+                "node": "Extract Customer Info",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Append New Customer": {
+          "main": [
+            [
+              {
+                "node": "Send Welcome Sticker",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Normalize Returning": {
+          "main": [
+            [
+              {
+                "node": "Detect Intent",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Listen Welcome Reply": {
+          "main": [
+            [
+              {
+                "node": "Normalize After Listen",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Receive Zalo Message": {
+          "main": [
+            [
+              {
+                "node": "Set Configuration",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Send Welcome Message": {
+          "main": [
+            [
+              {
+                "node": "Listen Welcome Reply",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Send Welcome Sticker": {
+          "main": [
+            [
+              {
+                "node": "Send Welcome Message",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Extract Customer Info": {
+          "main": [
+            [
+              {
+                "node": "Lookup Customer in CRM",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Lookup Customer in CRM": {
+          "main": [
+            [
+              {
+                "node": "Is New Customer?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Normalize After Listen": {
+          "main": [
+            [
+              {
+                "node": "Detect Intent",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 30,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.set": {
+          "count": 4
+        },
+        "n8n-nodes-base.switch": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 10
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 4
+        },
+        "n8n-nodes-zalo-platform.zaloBot": {
+          "count": 8
+        },
+        "@n8n/n8n-nodes-langchain.googleGemini": {
+          "count": 1
+        },
+        "n8n-nodes-zalo-platform.zaloBotTrigger": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "THE NEXOVA",
+      "username": "thenexova",
+      "bio": "We're a Strategic Operations & Implementation Partner - bridging Strategy to Execution for SMEs and foreign investors in Vietnam - from digital operations architecture to process automation. Creator of Firecrawl v2 node and CI automation tools.",
+      "verified": true,
+      "links": [
+        "https://thenexova.com"
+      ],
+      "avatar": "https://gravatar.com/avatar/421e98e3bb880715e944137d5b7c43d35448d6ed39f91f5c11caf37896f92149?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 112,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.switch",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "If",
+              "Path",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Branch",
+              "Case"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.switch/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Switch",
+          "color": "#506000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "Switch",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1309,
+        "icon": "file:gemini.svg",
+        "name": "@n8n/n8n-nodes-langchain.googleGemini",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "video",
+              "document",
+              "audio",
+              "transcribe",
+              "assistant"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-langchain.googlegemini/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Miscellaneous",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Google Gemini"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyBjbGFzcz0iX2Zvb3RlclNwYXJrXzk4dWR0XzE1MSIgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiB2aWV3Qm94PSIwIDAgNjQgNjQiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTU3LjA2NjcgMjguNjEwM0M1Mi4xMzU5IDI2LjQ4NzggNDcuODIxNyAyMy41NzYgNDQuMTIyMyAxOS44Nzg0QzQwLjQyNDcgMTYuMTgwOCAzNy41MTI4IDExLjg2NDkgMzUuMzkwMiA2LjkzNDJDMzQuNTc1NCA1LjA0NDQ5IDMzLjkyMDYgMy4xMDIwNCAzMy40MTg2IDEuMTEwNDlDMzMuMjU0OSAwLjQ1OTM2OCAzMi42NzExIDAuMDAxMDM3NiAzMiAwLjAwMTAzNzZDMzEuMzI4OCAwLjAwMTAzNzYgMzAuNzQ1IDAuNDU5MzY4IDMwLjU4MTMgMS4xMTA0OUMzMC4wNzkzIDMuMTAyMDQgMjkuNDI0NiA1LjA0MjY3IDI4LjYwOTcgNi45MzQyQzI2LjQ4NzIgMTEuODY0OSAyMy41NzUzIDE2LjE4MDggMTkuODc3NyAxOS44Nzg0QzE2LjE4IDIzLjU3NiAxMS44NjQgMjYuNDg3OCA2LjkzMzI3IDI4LjYxMDNDNS4wNDM1MyAyOS40MjUxIDMuMTAxMDUgMzAuMDc5OSAxLjEwOTQ3IDMwLjU4MTlDMC40NTgzMzggMzAuNzQ1NiAwIDMxLjMyOTQgMCAzMi4wMDA1QzAgMzIuNjcxNiAwLjQ1ODMzOCAzMy4yNTU1IDEuMTA5NDcgMzMuNDE5MUMzLjEwMTA1IDMzLjkyMTEgNS4wNDE3MiAzNC41NzU5IDYuOTMzMjcgMzUuMzkwN0MxMS44NjQgMzcuNTEzMiAxNi4xNzgyIDQwLjQyNTEgMTkuODc3NyA0NC4xMjI2QzIzLjU3NzEgNDcuODIwMiAyNi40ODcyIDUyLjEzNjEgMjguNjA5NyA1Ny4wNjY4QzI5LjQyNDYgNTguOTU2NSAzMC4wNzkzIDYwLjg5OSAzMC41ODEzIDYyLjg5MDVDMzAuNzQ1IDYzLjU0MTYgMzEuMzI4OCA2NCAzMiA2NEMzMi42NzExIDY0IDMzLjI1NDkgNjMuNTQxNiAzMy40MTg2IDYyLjg5MDVDMzMuOTIwNiA2MC44OTkgMzQuNTc1NCA1OC45NTgzIDM1LjM5MDIgNTcuMDY2OEMzNy41MTI4IDUyLjEzNjEgNDAuNDI0NyA0Ny44MjIgNDQuMTIyMyA0NC4xMjI2QzQ3LjgxOTkgNDAuNDI1MSA1Mi4xMzU5IDM3LjUxMzIgNTcuMDY2NyAzNS4zOTA3QzU4Ljk1NjQgMzQuNTc1OSA2MC44OTg5IDMzLjkyMTEgNjIuODkwNSAzMy40MTkxQzYzLjU0MTYgMzMuMjU1NSA2NCAzMi42NzE2IDY0IDMyLjAwMDVDNjQgMzEuMzI5NCA2My41NDE2IDMwLjc0NTYgNjIuODkwNSAzMC41ODE5QzYwLjg5ODkgMzAuMDc5OSA1OC45NTgyIDI5LjQyNTEgNTcuMDY2NyAyOC42MTAzWiIgZmlsbD0id2hpdGUiPjwvcGF0aD48bWFzayBpZD0ibWFzazBfMTA4NTlfNDg5NCIgc3R5bGU9Im1hc2stdHlwZTphbHBoYSIgbWFza1VuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeD0iMCIgeT0iMCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0Ij48cGF0aCBkPSJNMzIgMEMzMi42NzExIDEuMTQ0ZS0wNSAzMy4yNTUzIDAuNDU4MjYzIDMzLjQxODkgMS4xMDkzOEMzMy45MjA5IDMuMTAwOTMgMzQuNTc1OCA1LjA0Mzg5IDM1LjM5MDYgNi45MzM1OUMzNy41MTMxIDExLjg2MzkgNDAuNDI0NyAxNi4xNzk2IDQ0LjEyMjEgMTkuODc3QzQ3LjgyMTUgMjMuNTc0NSA1Mi4xMzU3IDI2LjQ4NjkgNTcuMDY2NCAyOC42MDk0QzU4Ljk1OCAyOS40MjQyIDYwLjg5OSAzMC4wNzkxIDYyLjg5MDYgMzAuNTgxMUM2My41NDE1IDMwLjc0NDggNjMuOTk5OCAzMS4zMjgxIDY0IDMxLjk5OUM2NCAzMi42NzAxIDYzLjU0MTcgMzMuMjU0MiA2Mi44OTA2IDMzLjQxOEM2MC44OTkgMzMuOTE5OSA1OC45NTYxIDM0LjU3NDggNTcuMDY2NCAzNS4zODk2QzUyLjEzNTggMzcuNTEyMSA0Ny44MTk2IDQwLjQyMzcgNDQuMTIyMSA0NC4xMjExQzQwLjQyNDYgNDcuODIwNCAzNy41MTMxIDUyLjEzNDkgMzUuMzkwNiA1Ny4wNjU0QzM0LjU3NTggNTguOTU3IDMzLjkyMDkgNjAuODk4MSAzMy40MTg5IDYyLjg4OTZDMzMuMjU1MiA2My41NDA3IDMyLjY3MTEgNjMuOTk5IDMyIDYzLjk5OUMzMS4zMjg5IDYzLjk5OSAzMC43NDQ4IDYzLjU0MDcgMzAuNTgxMSA2Mi44ODk2QzMwLjA3OTEgNjAuODk4MSAyOS40MjQyIDU4Ljk1NTEgMjguNjA5NCA1Ny4wNjU0QzI2LjQ4NjkgNTIuMTM0OSAyMy41NzczIDQ3LjgxODYgMTkuODc3OSA0NC4xMjExQzE2LjE3ODYgNDAuNDIzNyAxMS44NjQyIDM3LjUxMjEgNi45MzM1OSAzNS4zODk2QzUuMDQyMDQgMzQuNTc0OCAzLjEwMDk2IDMzLjkxOTkgMS4xMDkzOCAzMy40MThDMC40NTgzMDkgMzMuMjU0MiAwIDMyLjY3MDEgMCAzMS45OTlDMC4wMDAyMDE1NDggMzEuMzI4MSAwLjQ1ODQ2MyAzMC43NDQ4IDEuMTA5MzggMzAuNTgxMUMzLjEwMDk2IDMwLjA3OTEgNS4wNDM4NiAyOS40MjQyIDYuOTMzNTkgMjguNjA5NEMxMS44NjQzIDI2LjQ4NjkgMTYuMTgwNCAyMy41NzQ1IDE5Ljg3NzkgMTkuODc3QzIzLjU3NTMgMTYuMTc5NiAyNi40ODY5IDExLjg2MzkgMjguNjA5NCA2LjkzMzU5QzI5LjQyNDIgNS4wNDIwNyAzMC4wNzkxIDMuMTAwOTMgMzAuNTgxMSAxLjEwOTM4QzMwLjc0NDggMC40NTgyNiAzMS4zMjg5IDAgMzIgMFoiIGZpbGw9ImJsYWNrIj48L3BhdGg+PHBhdGggZD0iTTMyIDBDMzIuNjcxMSAxLjE0NGUtMDUgMzMuMjU1MyAwLjQ1ODI2MyAzMy40MTg5IDEuMTA5MzhDMzMuOTIwOSAzLjEwMDkzIDM0LjU3NTggNS4wNDM4OSAzNS4zOTA2IDYuOTMzNTlDMzcuNTEzMSAxMS44NjM5IDQwLjQyNDcgMTYuMTc5NiA0NC4xMjIxIDE5Ljg3N0M0Ny44MjE1IDIzLjU3NDUgNTIuMTM1NyAyNi40ODY5IDU3LjA2NjQgMjguNjA5NEM1OC45NTggMjkuNDI0MiA2MC44OTkgMzAuMDc5MSA2Mi44OTA2IDMwLjU4MTFDNjMuNTQxNSAzMC43NDQ4IDYzLjk5OTggMzEuMzI4MSA2NCAzMS45OTlDNjQgMzIuNjcwMSA2My41NDE3IDMzLjI1NDIgNjIuODkwNiAzMy40MThDNjAuODk5IDMzLjkxOTkgNTguOTU2MSAzNC41NzQ4IDU3LjA2NjQgMzUuMzg5NkM1Mi4xMzU4IDM3LjUxMjEgNDcuODE5NiA0MC40MjM3IDQ0LjEyMjEgNDQuMTIxMUM0MC40MjQ2IDQ3LjgyMDQgMzcuNTEzMSA1Mi4xMzQ5IDM1LjM5MDYgNTcuMDY1NEMzNC41NzU4IDU4Ljk1NyAzMy45MjA5IDYwLjg5ODEgMzMuNDE4OSA2Mi44ODk2QzMzLjI1NTIgNjMuNTQwNyAzMi42NzExIDYzLjk5OSAzMiA2My45OTlDMzEuMzI4OSA2My45OTkgMzAuNzQ0OCA2My41NDA3IDMwLjU4MTEgNjIuODg5NkMzMC4wNzkxIDYwLjg5ODEgMjkuNDI0MiA1OC45NTUxIDI4LjYwOTQgNTcuMDY1NEMyNi40ODY5IDUyLjEzNDkgMjMuNTc3MyA0Ny44MTg2IDE5Ljg3NzkgNDQuMTIxMUMxNi4xNzg2IDQwLjQyMzcgMTEuODY0MiAzNy41MTIxIDYuOTMzNTkgMzUuMzg5NkM1LjA0MjA0IDM0LjU3NDggMy4xMDA5NiAzMy45MTk5IDEuMTA5MzggMzMuNDE4QzAuNDU4MzA5IDMzLjI1NDIgMCAzMi42NzAxIDAgMzEuOTk5QzAuMDAwMjAxNTQ4IDMxLjMyODEgMC40NTg0NjMgMzAuNzQ0OCAxLjEwOTM4IDMwLjU4MTFDMy4xMDA5NiAzMC4wNzkxIDUuMDQzODYgMjkuNDI0MiA2LjkzMzU5IDI4LjYwOTRDMTEuODY0MyAyNi40ODY5IDE2LjE4MDQgMjMuNTc0NSAxOS44Nzc5IDE5Ljg3N0MyMy41NzUzIDE2LjE3OTYgMjYuNDg2OSAxMS44NjM5IDI4LjYwOTQgNi45MzM1OUMyOS40MjQyIDUuMDQyMDcgMzAuMDc5MSAzLjEwMDkzIDMwLjU4MTEgMS4xMDkzOEMzMC43NDQ4IDAuNDU4MjYgMzEuMzI4OSAwIDMyIDBaIiBmaWxsPSJ1cmwoI3BhaW50MF9saW5lYXJfMTA4NTlfNDg5NCkiPjwvcGF0aD48L21hc2s+PGcgbWFzaz0idXJsKCNtYXNrMF8xMDg1OV80ODk0KSI+PGcgZmlsdGVyPSJ1cmwoI2ZpbHRlcjBfZl8xMDg1OV80ODk0KSI+PGVsbGlwc2UgY3g9IjE0LjIwODQiIGN5PSIxNi43MTY0IiByeD0iMTQuMjA4NCIgcnk9IjE2LjcxNjQiIHRyYW5zZm9ybT0ibWF0cml4KDAuOTQyMzQzIDAuMzM0NjQ5IC0wLjMzNDY1NiAwLjk0MjM0IC03Ljk3OSAxMy43NzM1KSIgZmlsbD0iI0ZGRTQzMiI+PC9lbGxpcHNlPjwvZz48ZyBmaWx0ZXI9InVybCgjZmlsdGVyMV9mXzEwODU5XzQ4OTQpIj48ZWxsaXBzZSBjeD0iMjcuMDU0MyIgY3k9IjIuNTUxMTQiIHJ4PSIxOC4zOTQ0IiByeT0iMTguNzk4NSIgZmlsbD0iI0ZDNDEzRCI+PC9lbGxpcHNlPjwvZz48ZyBmaWx0ZXI9InVybCgjZmlsdGVyMl9mXzEwODU5XzQ4OTQpIj48ZWxsaXBzZSBjeD0iMTkuMjI0NSIgY3k9IjI0LjkwNDIiIHJ4PSIxOS4yMjQ1IiByeT0iMjQuOTA0MiIgdHJhbnNmb3JtPSJtYXRyaXgoMC45OTg4MDcgLTAuMDQ4ODI1NCAwLjA0ODgyNjYgMC45OTg4MDcgLTEuNzI3NzggMzIuNjU3MykiIGZpbGw9IiMwMEI5NUMiPjwvZWxsaXBzZT48L2c+PGcgZmlsdGVyPSJ1cmwoI2ZpbHRlcjNfZl8xMDg1OV80ODk0KSI+PGVsbGlwc2UgY3g9IjE5LjIyNDUiIGN5PSIyNC45MDQyIiByeD0iMTkuMjI0NSIgcnk9IjI0LjkwNDIiIHRyYW5zZm9ybT0ibWF0cml4KDAuOTk4ODA3IC0wLjA0ODgyNTQgMC4wNDg4MjY2IDAuOTk4ODA3IC0xLjcyNzc4IDMyLjY1NzMpIiBmaWxsPSIjMDBCOTVDIj48L2VsbGlwc2U+PC9nPjxnIGZpbHRlcj0idXJsKCNmaWx0ZXI0X2ZfMTA4NTlfNDg5NCkiPjxlbGxpcHNlIGN4PSIxOC44NDI5IiBjeT0iMjAuNzQ0MSIgcng9IjE4Ljg0MjkiIHJ5PSIyMC43NDQxIiB0cmFuc2Zvcm09Im1hdHJpeCgwLjg1NDMwMSAtMC41MTk3NzkgMC41MTk3OSAwLjg1NDI5NCAtNy4xMzU3NCA0Ny41MDc4KSIgZmlsbD0iIzAwQjk1QyI+PC9lbGxpcHNlPjwvZz48ZyBmaWx0ZXI9InVybCgjZmlsdGVyNV9mXzEwODU5XzQ4OTQpIj48ZWxsaXBzZSBjeD0iNjYuNDYxNyIgY3k9IjI0Ljk3NyIgcng9IjE4LjA5MzMiIHJ5PSIxNy40MjI5IiBmaWxsPSIjMzE4NkZGIj48L2VsbGlwc2U+PC9nPjxnIGZpbHRlcj0idXJsKCNmaWx0ZXI2X2ZfMTA4NTlfNDg5NCkiPjxlbGxpcHNlIGN4PSIyMC45MjkyIiBjeT0iMjIuMDc1MiIgcng9IjIwLjkyOTIiIHJ5PSIyMi4wNzUyIiB0cmFuc2Zvcm09Im1hdHJpeCgwLjc5NTk5IDAuNjA1MzEgLTAuNjA1MzIgMC43OTU5ODIgLTIuODE4ODUgLTcuNDMzMjMpIiBmaWxsPSIjRkJCQzA0Ij48L2VsbGlwc2U+PC9nPjxnIGZpbHRlcj0idXJsKCNmaWx0ZXI3X2ZfMTA4NTlfNDg5NCkiPjxlbGxpcHNlIGN4PSIyNC4xMzExIiBjeT0iMjIuMjkxOSIgcng9IjI0LjEzMTEiIHJ5PSIyMi4yOTE5IiB0cmFuc2Zvcm09Im1hdHJpeCgwLjgyNDAzNyAwLjU2NjUzNiAtMC41NjY1NDYgMC44MjQwMyAzOS42MzM4IDAuMzEwNjA4KSIgZmlsbD0iIzMxODZGRiI+PC9lbGxpcHNlPjwvZz48ZyBmaWx0ZXI9InVybCgjZmlsdGVyOF9mXzEwODU5XzQ4OTQpIj48cGF0aCBkPSJNNTQuMjI1NSAtMi4zMDQwM0M1Ny4wMTk1IDEuNDk0NjIgNTMuNDI5NCA4Ljg4MDQgNDYuMjA2OCAxNC4xOTI2QzM4Ljk4NDIgMTkuNTA0OCAzMC44NjQyIDIwLjczMTggMjguMDcwMiAxNi45MzMxQzI1LjI3NjIgMTMuMTM0NSAyOC44NjYzIDUuNzQ4NjcgMzYuMDg4OSAwLjQzNjQ4NkM0My4zMTE1IC00Ljg3NTcgNTEuNDMxNSAtNi4xMDI2NyA1NC4yMjU1IC0yLjMwNDAzWiIgZmlsbD0iIzc0OUJGRiI+PC9wYXRoPjwvZz48ZyBmaWx0ZXI9InVybCgjZmlsdGVyOV9mXzEwODU5XzQ4OTQpIj48ZWxsaXBzZSBjeD0iMjcuNTg1MyIgY3k9IjE3LjE0NzgiIHJ4PSIyNy41ODUzIiByeT0iMTcuMTQ3OCIgdHJhbnNmb3JtPSJtYXRyaXgoMC43MzMxNjYgLTAuNjgwMDQ5IDAuNjgwMDYxIDAuNzMzMTU1IC0xMi4yNTgzIDkuNDk2OTUpIiBmaWxsPSIjRkM0MTNEIj48L2VsbGlwc2U+PC9nPjxnIGZpbHRlcj0idXJsKCNmaWx0ZXIxMF9mXzEwODU5XzQ4OTQpIj48ZWxsaXBzZSBjeD0iMTQuNzgxOSIgY3k9IjguNTk2MzciIHJ4PSIxNC43ODE5IiByeT0iOC41OTYzNyIgdHJhbnNmb3JtPSJtYXRyaXgoMC44MTMxODYgMC41ODIwMDQgLTAuNTgyMDE2IDAuODEzMTc3IDYuMzc4NDIgMzAuNTExKSIgZmlsbD0iI0ZGRUU0OCI+PC9lbGxpcHNlPjwvZz48L2c+PGRlZnM+PGZpbHRlciBpZD0iZmlsdGVyMF9mXzEwODU5XzQ4OTQiIHg9Ii0xOS42MTgiIHk9IjEyLjkwMjciIHdpZHRoPSIzOC44NjgxIiBoZWlnaHQ9IjQyLjc1NjIiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj48ZmVGbG9vZCBmbG9vZC1vcGFjaXR5PSIwIiByZXN1bHQ9IkJhY2tncm91bmRJbWFnZUZpeCI+PC9mZUZsb29kPjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW49IlNvdXJjZUdyYXBoaWMiIGluMj0iQmFja2dyb3VuZEltYWdlRml4IiByZXN1bHQ9InNoYXBlIj48L2ZlQmxlbmQ+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMi40NTk2NSIgcmVzdWx0PSJlZmZlY3QxX2ZvcmVncm91bmRCbHVyXzEwODU5XzQ4OTQiPjwvZmVHYXVzc2lhbkJsdXI+PC9maWx0ZXI+PGZpbHRlciBpZD0iZmlsdGVyMV9mXzEwODU5XzQ4OTQiIHg9Ii0xNS4xMjIzIiB5PSItNDAuMDI5NiIgd2lkdGg9Ijg0LjM1MzMiIGhlaWdodD0iODUuMTYxNSIgZmlsdGVyVW5pdHM9InVzZXJTcGFjZU9uVXNlIiBjb2xvci1pbnRlcnBvbGF0aW9uLWZpbHRlcnM9InNSR0IiPjxmZUZsb29kIGZsb29kLW9wYWNpdHk9IjAiIHJlc3VsdD0iQmFja2dyb3VuZEltYWdlRml4Ij48L2ZlRmxvb2Q+PGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbj0iU291cmNlR3JhcGhpYyIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0ic2hhcGUiPjwvZmVCbGVuZD48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPSIxMS44OTExIiByZXN1bHQ9ImVmZmVjdDFfZm9yZWdyb3VuZEJsdXJfMTA4NTlfNDg5NCI+PC9mZUdhdXNzaWFuQmx1cj48L2ZpbHRlcj48ZmlsdGVyIGlkPSJmaWx0ZXIyX2ZfMTA4NTlfNDg5NCIgeD0iLTIwLjc2ODIiIHk9IjExLjQ4MzUiIHdpZHRoPSI3OC45MTYxIiBoZWlnaHQ9IjkwLjIxOTYiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj48ZmVGbG9vZCBmbG9vZC1vcGFjaXR5PSIwIiByZXN1bHQ9IkJhY2tncm91bmRJbWFnZUZpeCI+PC9mZUZsb29kPjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW49IlNvdXJjZUdyYXBoaWMiIGluMj0iQmFja2dyb3VuZEltYWdlRml4IiByZXN1bHQ9InNoYXBlIj48L2ZlQmxlbmQ+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMTAuMTA4NiIgcmVzdWx0PSJlZmZlY3QxX2ZvcmVncm91bmRCbHVyXzEwODU5XzQ4OTQiPjwvZmVHYXVzc2lhbkJsdXI+PC9maWx0ZXI+PGZpbHRlciBpZD0iZmlsdGVyM19mXzEwODU5XzQ4OTQiIHg9Ii0yMC43NjgyIiB5PSIxMS40ODM1IiB3aWR0aD0iNzguOTE2MSIgaGVpZ2h0PSI5MC4yMTk2IiBmaWx0ZXJVbml0cz0idXNlclNwYWNlT25Vc2UiIGNvbG9yLWludGVycG9sYXRpb24tZmlsdGVycz0ic1JHQiI+PGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiPjwvZmVGbG9vZD48ZmVCbGVuZCBtb2RlPSJub3JtYWwiIGluPSJTb3VyY2VHcmFwaGljIiBpbjI9IkJhY2tncm91bmRJbWFnZUZpeCIgcmVzdWx0PSJzaGFwZSI+PC9mZUJsZW5kPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEwLjEwODYiIHJlc3VsdD0iZWZmZWN0MV9mb3JlZ3JvdW5kQmx1cl8xMDg1OV80ODk0Ij48L2ZlR2F1c3NpYW5CbHVyPjwvZmlsdGVyPjxmaWx0ZXIgaWQ9ImZpbHRlcjRfZl8xMDg1OV80ODk0IiB4PSItMTkuODUiIHk9IjE0Ljk2NjQiIHdpZHRoPSI3OS4xODg2IiBoZWlnaHQ9IjgwLjkzNzgiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj48ZmVGbG9vZCBmbG9vZC1vcGFjaXR5PSIwIiByZXN1bHQ9IkJhY2tncm91bmRJbWFnZUZpeCI+PC9mZUZsb29kPjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW49IlNvdXJjZUdyYXBoaWMiIGluMj0iQmFja2dyb3VuZEltYWdlRml4IiByZXN1bHQ9InNoYXBlIj48L2ZlQmxlbmQ+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMTAuMTA4NiIgcmVzdWx0PSJlZmZlY3QxX2ZvcmVncm91bmRCbHVyXzEwODU5XzQ4OTQiPjwvZmVHYXVzc2lhbkJsdXI+PC9maWx0ZXI+PGZpbHRlciBpZD0iZmlsdGVyNV9mXzEwODU5XzQ4OTQiIHg9IjI5LjE1NjEiIHk9Ii0xMS42NTgyIiB3aWR0aD0iNzQuNjExMSIgaGVpZ2h0PSI3My4yNzAzIiBmaWx0ZXJVbml0cz0idXNlclNwYWNlT25Vc2UiIGNvbG9yLWludGVycG9sYXRpb24tZmlsdGVycz0ic1JHQiI+PGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiPjwvZmVGbG9vZD48ZmVCbGVuZCBtb2RlPSJub3JtYWwiIGluPSJTb3VyY2VHcmFwaGljIiBpbjI9IkJhY2tncm91bmRJbWFnZUZpeCIgcmVzdWx0PSJzaGFwZSI+PC9mZUJsZW5kPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjkuNjA2MTMiIHJlc3VsdD0iZWZmZWN0MV9mb3JlZ3JvdW5kQmx1cl8xMDg1OV80ODk0Ij48L2ZlR2F1c3NpYW5CbHVyPjwvZmlsdGVyPjxmaWx0ZXIgaWQ9ImZpbHRlcjZfZl8xMDg1OV80ODk0IiB4PSItMzguMjkxIiB5PSItMTYuMjY4NyIgd2lkdGg9Ijc3LjUzOCIgaGVpZ2h0PSI3OC4xNTEzIiBmaWx0ZXJVbml0cz0idXNlclNwYWNlT25Vc2UiIGNvbG9yLWludGVycG9sYXRpb24tZmlsdGVycz0ic1JHQiI+PGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiPjwvZmVGbG9vZD48ZmVCbGVuZCBtb2RlPSJub3JtYWwiIGluPSJTb3VyY2VHcmFwaGljIiBpbjI9IkJhY2tncm91bmRJbWFnZUZpeCIgcmVzdWx0PSJzaGFwZSI+PC9mZUJsZW5kPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjguNzA1OTEiIHJlc3VsdD0iZWZmZWN0MV9mb3JlZ3JvdW5kQmx1cl8xMDg1OV80ODk0Ij48L2ZlR2F1c3NpYW5CbHVyPjwvZmlsdGVyPjxmaWx0ZXIgaWQ9ImZpbHRlcjdfZl8xMDg1OV80ODk0IiB4PSI3Ljc4MDM4IiB5PSItNi4wOTgxIiB3aWR0aD0iNzguMjE4MSIgaGVpZ2h0PSI3Ni44OTgyIiBmaWx0ZXJVbml0cz0idXNlclNwYWNlT25Vc2UiIGNvbG9yLWludGVycG9sYXRpb24tZmlsdGVycz0ic1JHQiI+PGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiPjwvZmVGbG9vZD48ZmVCbGVuZCBtb2RlPSJub3JtYWwiIGluPSJTb3VyY2VHcmFwaGljIiBpbjI9IkJhY2tncm91bmRJbWFnZUZpeCIgcmVzdWx0PSJzaGFwZSI+PC9mZUJsZW5kPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjcuNzc0NzMiIHJlc3VsdD0iZWZmZWN0MV9mb3JlZ3JvdW5kQmx1cl8xMDg1OV80ODk0Ij48L2ZlR2F1c3NpYW5CbHVyPjwvZmlsdGVyPjxmaWx0ZXIgaWQ9ImZpbHRlcjhfZl8xMDg1OV80ODk0IiB4PSIxMy4yMDgyIiB5PSItMTguNDI1IiB3aWR0aD0iNTUuODc5MyIgaGVpZ2h0PSI1MS40NzkxIiBmaWx0ZXJVbml0cz0idXNlclNwYWNlT25Vc2UiIGNvbG9yLWludGVycG9sYXRpb24tZmlsdGVycz0ic1JHQiI+PGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiPjwvZmVGbG9vZD48ZmVCbGVuZCBtb2RlPSJub3JtYWwiIGluPSJTb3VyY2VHcmFwaGljIiBpbjI9IkJhY2tncm91bmRJbWFnZUZpeCIgcmVzdWx0PSJzaGFwZSI+PC9mZUJsZW5kPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjYuOTU2OTQiIHJlc3VsdD0iZWZmZWN0MV9mb3JlZ3JvdW5kQmx1cl8xMDg1OV80ODk0Ij48L2ZlR2F1c3NpYW5CbHVyPjwvZmlsdGVyPjxmaWx0ZXIgaWQ9ImZpbHRlcjlfZl8xMDg1OV80ODk0IiB4PSItMTUuNDczOSIgeT0iLTMxLjAyNzIiIHdpZHRoPSI3MC4yMDM0IiBoZWlnaHQ9IjY4LjY3MzUiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj48ZmVGbG9vZCBmbG9vZC1vcGFjaXR5PSIwIiByZXN1bHQ9IkJhY2tncm91bmRJbWFnZUZpeCI+PC9mZUZsb29kPjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW49IlNvdXJjZUdyYXBoaWMiIGluMj0iQmFja2dyb3VuZEltYWdlRml4IiByZXN1bHQ9InNoYXBlIj48L2ZlQmxlbmQ+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iNS44NzU5OCIgcmVzdWx0PSJlZmZlY3QxX2ZvcmVncm91bmRCbHVyXzEwODU5XzQ4OTQiPjwvZmVHYXVzc2lhbkJsdXI+PC9maWx0ZXI+PGZpbHRlciBpZD0iZmlsdGVyMTBfZl8xMDg1OV80ODk0IiB4PSItMTQuMTczIiB5PSIyMC40NzQiIHdpZHRoPSI1NS4xMzczIiBoZWlnaHQ9IjUxLjI2MSIgZmlsdGVyVW5pdHM9InVzZXJTcGFjZU9uVXNlIiBjb2xvci1pbnRlcnBvbGF0aW9uLWZpbHRlcnM9InNSR0IiPjxmZUZsb29kIGZsb29kLW9wYWNpdHk9IjAiIHJlc3VsdD0iQmFja2dyb3VuZEltYWdlRml4Ij48L2ZlRmxvb2Q+PGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbj0iU291cmNlR3JhcGhpYyIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0ic2hhcGUiPjwvZmVCbGVuZD48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPSI3LjI3MjUzIiByZXN1bHQ9ImVmZmVjdDFfZm9yZWdyb3VuZEJsdXJfMTA4NTlfNDg5NCI+PC9mZUdhdXNzaWFuQmx1cj48L2ZpbHRlcj48bGluZWFyR3JhZGllbnQgaWQ9InBhaW50MF9saW5lYXJfMTA4NTlfNDg5NCIgeDE9IjE4LjE5MzEiIHkxPSI0Mi44MjEiIHgyPSI1MS40MzM1IiB5Mj0iMTQuNzk1OSIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPjxzdG9wIHN0b3AtY29sb3I9IiM0ODkzRkMiPjwvc3RvcD48c3RvcCBvZmZzZXQ9IjAuMjciIHN0b3AtY29sb3I9IiM0ODkzRkMiPjwvc3RvcD48c3RvcCBvZmZzZXQ9IjAuNzc2OTgxIiBzdG9wLWNvbG9yPSIjOTY5REZGIj48L3N0b3A+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjQkQ5OUZFIj48L3N0b3A+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PC9zdmc+Cg=="
+        },
+        "displayName": "Google Gemini",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 40,
+        "name": "Support Chatbot"
+      },
+      {
+        "id": 47,
+        "name": "AI Chatbot"
+      }
+    ],
+    "image": []
+  }
+}

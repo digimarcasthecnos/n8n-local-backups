@@ -1,0 +1,1544 @@
+{
+  "workflow": {
+    "id": 15061,
+    "name": "Reconcile cash balances in Google Sheets with OpenAI explanations",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-15T07:13:44.071Z",
+    "description": "# Cash Reconciliation Checker with Google Sheets, OpenAI & n8n\n\nThis workflow automatically compares **internal cash balances** with **custodian or bank balances** using **Google Sheets**, detects mismatches by `account_id`, calculates balance differences, logs matched records and sends mismatched records through **OpenAI** for a short explanation before saving them for exception review. It is designed to help teams reduce manual reconciliation work and quickly identify balance issues.\n\n\n### Quick Implementation Steps\n\n1. Import the workflow into **n8n**.\n2. Connect your **Google Sheets OAuth2** credentials.\n3. Point the three Google Sheets nodes to:\n   - Internal balances sheet\n   - Custodian balances sheet\n   - Reconciliation / exception log sheets\n4. Ensure both source sheets use the same `account_id` values.\n5. Make sure balance fields are numeric:\n   - `internal_balance`\n   - `custodian_balance`\n6. Connect your **OpenAI** credentials.\n7. Adjust the **Schedule Trigger** frequency if needed.\n8. Run the workflow once and verify:\n   - matched records are logged\n   - mismatched records are analyzed and appended correctly\n\n\n## What It Does\n\nThe **Cash Reconciliation Checker** automates a common finance operations task: comparing balances between two separate data sources. In this workflow, one Google Sheet holds **internal balances**, while another holds **custodian balances**. The workflow fetches both datasets, standardizes the required fields and matches records using the shared `account_id`.\n\nAfter matching the accounts, the workflow calculates the difference between internal and custodian balances and checks whether the difference exceeds a built-in tolerance. If the balances match, the record is written to a reconciliation log as a successful result. If they do not match, the workflow routes the record into an exception path.\n\nFor mismatches, the workflow uses **OpenAI (`gpt-4o-mini`)** to generate a short possible explanation based on the values in the record. That enriched mismatch record is then prepared and appended to a separate logging sheet for investigation and follow-up.\n\n\n## Who’s It For\n\nThis workflow is useful for teams and professionals who regularly compare balances across systems, such as:\n\n- Finance operations teams\n- Fund administration teams\n- Treasury teams\n- Accounting teams\n- Reconciliation analysts\n- Back-office operations teams\n- Internal controls and audit support teams\n\nIt is especially useful for organizations that currently reconcile balances manually in spreadsheets and want a faster, more consistent process.\n\n\n## Requirements to Use This Workflow\n\nBefore using this workflow, make sure you have the following:\n\n### Required Platforms & Accounts\n\n- **[n8n account](https://n8n.partnerlinks.io/om1efg2qgvwi)**\n- **Google Sheets**\n- **OpenAI API access**\n\n### Required n8n Credentials\n\nYou will need to configure:\n\n- **Google Sheets OAuth2 credentials**\n- **OpenAI credentials**\n\n### Required Google Sheets Structure\n\nThis workflow expects the following source data structure based on the JSON:\n\n#### 1) Internal Balance Sheet\nMust contain at least:\n\n- `account_id`\n- `currency`\n- `internal_balance`\n\n#### 2) Custodian Balance Sheet\nMust contain at least:\n\n- `account_id`\n- `currency`\n- `custodian_balance`\n\n#### 3) Reconciliation Log Sheet\nShould support these columns:\n\n- `account_id`\n- `currency`\n- `internal_balance`\n- `custodian_balance`\n- `difference`\n- `abs_difference`\n- `mismatch`\n- `checked_at`\n- `recon_status`\n\n#### 4) Exception / Alert Sheet\nShould support these columns:\n\n- `account_id`\n- `currency`\n- `internal_balance`\n- `custodian_balance`\n- `difference`\n- `abs_difference`\n- `mismatch`\n- `checked_at`\n- `ai_explanation`\n- `recon_status`\n\n### Data Expectations\n\nTo avoid processing issues:\n\n- `account_id` should be consistent across both source sheets\n- Balance fields should contain **numeric values only**\n- `currency` should be present where relevant\n- Empty or invalid balance values may be flagged as mismatches\n\n\n## How It Works & Set Up\n\n### Step 1 — Import the Workflow into n8n\n\nImport the provided JSON file into your n8n workspace.\n\nAfter import, you will see the workflow named:\n\n**Cash Reconciliation Checker**\n\n\n### Step 2 — Review the Flow\n\nThe workflow follows this sequence:\n\n```text\nSchedule Trigger\n→ Fetch Internal Balances\n→ Fetch Custodian Balances\n→ Edit Internal Fields / Edit Custodian Fields\n→ Match Accounts by Account ID\n→ Calculate Balance Difference\n→ Check for Balance Mismatch\n   ├── Matched → Log Matched Records\n   └── Mismatched → Generate AI Mismatch Explanation → Prepare Exception Record → Append The Data In The Sheet\n```\n\n### Step 3 — Configure the Schedule Trigger\n\n#### Node:\n`Run Reconciliation on Schedule`\n\nThis node starts the workflow automatically using a schedule interval.\n\n#### What to do:\n- Open the node\n- Set your preferred execution frequency\n\n#### Example options:\n- Every 15 minutes\n- Hourly\n- Daily\n- End-of-day reconciliation schedule\n\nUse a timing pattern that fits your reconciliation process.\n\n### Step 4 — Connect the Internal Balance Source\n\n#### Node:\n`Fetch Internal Balances`\n\nThis Google Sheets node pulls records from the internal balance sheet.\n\n#### What to do:\n- Connect your **Google Sheets OAuth2** account\n- Select the correct spreadsheet\n- Select the correct sheet tab\n\n#### Required fields expected from this source:\n- `account_id`\n- `currency`\n- `internal_balance`\n\n### Step 5 — Connect the Custodian Balance Source\n\n#### Node:\n`Fetch Custodian Balances`\n\nThis Google Sheets node pulls records from the custodian or bank balance sheet.\n\n#### What to do:\n- Connect your **Google Sheets OAuth2** account\n- Select the correct spreadsheet\n- Select the correct sheet tab\n\n#### Required fields expected from this source:\n- `account_id`\n- `currency`\n- `custodian_balance`\n\n### Step 6 — Standardize Both Datasets\n\nThe workflow uses two **Set** nodes to clean and normalize fields before matching.\n\n#### Node:\n`Edit Internal Fields`\n\nThis node maps and formats:\n\n- `account_id`\n- `currency`\n- `internal_balance`\n\nIt also converts `internal_balance` into a numeric value.\n\n#### Node:\n`Edit Custodian Fields`\n\nThis node maps and formats:\n\n- `account_id`\n- `currency`\n- `custodian_balance`\n\nIt also converts `custodian_balance` into a numeric value.\n\n#### Why this matters\n\nThis step helps ensure both datasets use a consistent field structure before comparison.\n\n### Step 7 — Match Records by Account ID\n\n#### Node:\n`Match Accounts by Account ID`\n\nThis **Merge** node combines both sources using:\n\n```text\naccount_id\n```\n\n#### What it does\n\nIt aligns internal and custodian records so each account can be compared side by side.\n\n#### Important setup note\n\nThis will only work properly if:\n\n- both sheets contain matching `account_id` values\n- the values are formatted consistently\n- there are no accidental extra spaces or mismatched IDs\n\n### Step 8 — Calculate the Balance Difference\n\n#### Node:\n`Calculate Balance Difference`\n\nThis **Code** node performs the main reconciliation logic.\n\n#### What it calculates\n\nFor each matched account, it creates:\n\n- `internal_balance`\n- `custodian_balance`\n- `difference`\n- `abs_difference`\n- `mismatch`\n- `checked_at`\n\n#### Logic used in this node\n\nThe workflow uses a built-in tolerance:\n\n```javascript\nconst TOLERANCE = 0.01;\n```\n\n#### Reconciliation rule\n\nA record is treated as a mismatch if:\n\n- either balance is invalid / not numeric, or\n- the absolute difference is greater than `0.01`\n\n#### Output fields created\n\n- `account_id`\n- `currency`\n- `internal_balance`\n- `custodian_balance`\n- `difference`\n- `abs_difference`\n- `mismatch`\n- `checked_at`\n\nThis is the core decision-making step in the workflow.\n\n### Step 9 — Route Matched vs Mismatched Records\n\n#### Node:\n`Check for Balance Mismatch`\n\nThis **IF** node checks:\n\n```text\nmismatch == true\n```\n\n#### Routing behavior\n\n##### If `mismatch = false`\nThe record is considered matched and goes to:\n\n- `Log Matched Records`\n\n##### If `mismatch = true`\nThe record is treated as an exception and goes to:\n\n- `Generate AI Mismatch Explanation`\n\nThis split keeps normal reconciliations separate from exception handling.\n\n### Step 10 — Log Matched Records\n\n#### Node:\n`Log Matched Records`\n\nThis Google Sheets node appends matched records to a reconciliation log sheet.\n\n#### Logged values include:\n\n- `account_id`\n- `currency`\n- `internal_balance`\n- `custodian_balance`\n- `difference`\n- `abs_difference`\n- `mismatch`\n- `checked_at`\n- `recon_status`\n\n#### Fixed value used\n\nMatched records are saved with:\n\n```text\nrecon_status = Matched\n```\n\nThis gives you a clean audit trail of successfully reconciled accounts.\n\n### Step 11 — Generate AI Explanation for Exceptions\n\n#### Node:\n`Generate AI Mismatch Explanation`\n\nThis node sends mismatch data to **OpenAI (`gpt-4o-mini`)** and asks for a short explanation.\n\n#### Prompt behavior in the workflow\n\nThe AI is instructed to review:\n\n- account ID\n- currency\n- internal balance\n- custodian balance\n- difference\n- check timestamp\n\nIt is then asked to provide the **most likely cause** of the mismatch from the following categories already defined in the workflow:\n\n- settlement delay (T+1/T+2)\n- pending fees or accrued interest\n- FX conversion timing\n- failed corporate actions\n- bank charges not yet booked\n- data entry error\n\nIt also ends with:\n\n- top 1–2 likely causes\n- one recommended next action\n\n#### Why this is useful\n\nThis adds context to exceptions and helps operations teams review mismatches faster.\n\n### Step 12 — Prepare the Exception Record\n\n#### Node:\n`Prepare Exception Record`\n\nThis **Code** node combines the AI output with the original mismatch data and formats it for logging.\n\n#### Fields included in the final exception record\n\n- `account_id`\n- `currency`\n- `internal_balance`\n- `custodian_balance`\n- `difference`\n- `abs_difference`\n- `mismatch`\n- `checked_at`\n- `ai_explanation`\n- `recon_status`\n\n#### Fixed value used\n\nMismatch records are saved with:\n\n```text\nrecon_status = Mismatch\n```\n\nThis creates a structured exception record ready for reporting or review.\n\n### Step 13 — Append Mismatch Records to the Exception Sheet\n\n#### Node:\n`Append The Data In The Sheet`\n\nThis Google Sheets node appends the prepared mismatch records into a separate sheet for follow-up.\n\n#### Logged values include:\n\n- `account_id`\n- `currency`\n- `internal_balance`\n- `custodian_balance`\n- `difference`\n- `abs_difference`\n- `mismatch`\n- `checked_at`\n- `ai_explanation`\n- `recon_status`\n\nThis acts as your exception register for unresolved or suspicious balance breaks.\n\n### Step 14 — Test Before Going Live\n\nBefore enabling the workflow, run a few controlled tests.\n\n#### Recommended test scenarios\n\n##### Test 1 — Perfect match\nUse the same values in both sheets for one account.\n\nExpected result:\n- record goes to **Log Matched Records**\n\n##### Test 2 — Small tolerance-safe difference\nUse a difference within `0.01`.\n\nExpected result:\n- record should still be treated as matched\n\n##### Test 3 — True mismatch\nUse a larger difference.\n\nExpected result:\n- record goes through AI explanation path\n- gets appended to exception sheet\n\n##### Test 4 — Invalid numeric value\nUse a blank or non-numeric balance.\n\nExpected result:\n- record should be flagged as mismatch\n\nOnce tests pass, you can safely activate the workflow.\n\n\n## How To Customize Nodes\n\nThis workflow is already useful as-is, but it can be adapted for different reconciliation processes.\n\n### 1) Customize the Schedule Trigger\n\n#### Node:\n`Run Reconciliation on Schedule`\n\nYou can change:\n\n- frequency\n- execution window\n- time of day\n- reconciliation cycle\n\nUseful if you want:\n- intraday reconciliation\n- end-of-day checks\n- batch finance controls\n\n\n### 2) Change Matching Logic\n\n#### Node:\n`Match Accounts by Account ID`\n\nCurrently matches on:\n\n```text\naccount_id\n```\n\nYou can modify your data model and workflow if you want to include additional matching dimensions such as:\n\n- account + currency\n- account + region\n- account + entity\n\nOnly do this if your sheet structure supports it.\n\n### 3) Adjust the Tolerance Threshold\n\n#### Node:\n`Calculate Balance Difference`\n\nCurrent tolerance:\n\n```javascript\nconst TOLERANCE = 0.01;\n```\n\nYou can change this if your business allows different variance thresholds.\n\n#### Example customizations\n\n- `0` → exact reconciliation only\n- `0.01` → cent-level tolerance\n- `1` → whole-unit tolerance\n- custom threshold based on asset class or currency\n\n\n### 4) Expand the AI Explanation Logic\n\n#### Node:\n`Generate AI Mismatch Explanation`\n\nYou can customize the prompt to include:\n\n- business rules\n- escalation notes\n- internal SOP references\n- suggested ownership routing\n- severity classification\n\nThis is helpful if you want the AI output to be more operationally specific.\n\n### 5) Add More Fields to Logging\n\n#### Nodes:\n- `Log Matched Records`\n- `Append The Data In The Sheet`\n\nYou can extend the output to include additional columns such as:\n\n- legal entity\n- desk\n- custodian name\n- region\n- portfolio ID\n- reviewer status\n- resolution notes\n\nOnly add fields that exist in your upstream data or are intentionally created in the workflow.\n\n### 6) Improve Exception Classification\n\n#### Node:\n`Prepare Exception Record`\n\nYou can enhance this node to add labels like:\n\n- low severity\n- medium severity\n- high severity\n- requires same-day review\n- possible FX issue\n- possible operational break\n\nThis can help organize exception handling more efficiently.\n\n\n## Add-ons\n\nThis workflow can be extended with additional automation features depending on your operational needs.\n\n### 1) Slack Alerts for Mismatches\n\nSend a real-time alert whenever a mismatch is detected.\n\nUseful for:\n- finance ops teams\n- treasury teams\n- urgent exception monitoring\n\n### 2) Email Notification Summary\n\nSend a daily or hourly summary of all mismatches to stakeholders.\n\nUseful for:\n- finance managers\n- controllers\n- operations leads\n\n### 3) Severity Scoring\n\nAdd logic to classify mismatches by size or business impact.\n\nUseful for:\n- prioritization\n- faster review queues\n- escalation workflows\n\n### 4) Auto-Assignment to Reviewers\n\nAutomatically assign mismatch cases to specific team members based on:\n\n- currency\n- entity\n- account range\n- custodian\n\nUseful for structured exception management.\n\n### 5) Dashboard Reporting\n\nPush matched and mismatched records into a reporting dashboard.\n\nUseful for:\n- reconciliation KPIs\n- trend monitoring\n- operational oversight\n\n### 6) Multi-Currency or Multi-Entity Expansion\n\nExtend the workflow to support more entities, accounts or balance sources.\n\nUseful for:\n- growing operations teams\n- fund administrators\n- larger finance environments\n\n\n## Use Case Examples\n\nBelow are some of the main ways this workflow can be used. There can absolutely be **many more use cases** depending on how your reconciliation process is structured.\n\n### 1) Daily Internal vs Custodian Cash Reconciliation\n\nAutomatically compare daily internal records against custodian balances and flag any balance breaks for investigation.\n\n### 2) End-of-Day Treasury Balance Checks\n\nRun the workflow at the end of each business day to ensure treasury balances match external sources before close.\n\n### 3) Exception Monitoring for Fund Operations\n\nIdentify mismatched fund cash balances and create a structured exception sheet with AI-generated review notes.\n\n### 4) Reconciliation Logging for Audit Trail\n\nMaintain a consistent log of matched and mismatched records for reporting, controls and audit readiness.\n\n### 5) Early Warning for Data Quality Issues\n\nUse mismatches to spot operational problems such as missing values, incorrect balances or inconsistent source data.\n\n### 6) Lightweight Finance Automation for Spreadsheet-Based Teams\n\nSupport teams that still work mainly in spreadsheets but want to reduce repetitive reconciliation effort using automation.\n\n\n## Troubleshooting Guide\n\n| Issue | Possible Cause | Solution |\n|---|---|---|\n| No records are being compared | One or both Google Sheets nodes are not returning data | Check that both source sheets contain rows and the correct sheet tabs are selected |\n| Records are not matching correctly | `account_id` values differ between the two source sheets | Make sure `account_id` values are identical and formatted consistently in both sheets |\n| All rows are being flagged as mismatches | Balance fields contain text, blanks or invalid values | Ensure `internal_balance` and `custodian_balance` contain numeric values only |\n| Small rounding differences are creating mismatches | Tolerance is too strict for your use case | Update the tolerance value in `Calculate Balance Difference` |\n| Matched records are not being logged | Google Sheets append node is not configured correctly | Verify the target spreadsheet, sheet tab and credentials in `Log Matched Records` |\n| Mismatch records are not being saved | Exception logging sheet is missing expected columns | Confirm the target sheet includes all mapped fields, including `ai_explanation` and `recon_status` |\n| AI explanation is blank | OpenAI credentials or model configuration issue | Reconnect your OpenAI credentials and verify the model is available |\n| Workflow fails after import | Credentials are not connected in your environment | Reassign all credential-dependent nodes after importing the workflow |\n| Workflow does not run automatically | Schedule Trigger is not active or workflow is disabled | Activate the workflow and confirm the schedule settings |\n| Numeric values look wrong in output | Source sheet values are stored with symbols or formatting | Remove currency symbols, commas or text formatting from balance columns |\n\n\n## Need Help?\n\nIf you want help setting up, customizing or extending this workflow, our [n8n workflow automation team](https://www.weblineindia.com/hire-n8n-developers/) at **WeblineIndia** can help you move faster.\n\nWe can help you with:\n\n- n8n workflow setup and deployment\n- Google Sheets and finance operations automations\n- OpenAI-powered exception handling\n- Slack / email alert integrations\n- dashboard and reporting extensions\n- custom reconciliation logic\n- production-grade workflow improvements\n",
+    "workflow": {
+      "id": "FChFYOPW7ReutJkS",
+      "meta": {
+        "instanceId": "9f24379abd1ca05a3f590fdaa874ca82fbc5e1188798d609d51d2a8f6bacb662",
+        "templateCredsSetupCompleted": true
+      },
+      "name": "Cash Reconciliation Checker",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "667627cb-1d7c-4681-8364-c1efb7f768e5",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            944,
+            544
+          ],
+          "parameters": {
+            "width": 704,
+            "height": 624,
+            "content": "## Cash Reconciliation Workflow\n\nAutomates balance reconciliation by comparing internal and custodian cash balances, identifying mismatches and routing records for logging, AI-based analysis and Slack alerts.\n\n## Flow:\n\nSchedule Trigger → Fetch Sheets → Edit Fields → Match Accounts → Calculate Difference → Mismatch Check\n\n## Setup Steps\n\nCreate two Google Sheets for internal and custodian balances using the same account_id values. Ensure balance columns contain numeric data only. Configure Schedule Trigger timing, map fields correctly in Google Sheets nodes and connect Slack for mismatch alerts. Verify AI node, logging sheet and output columns are properly configured.\n\n## How It Works\n\nThe workflow runs on schedule, fetches both balance sheets, standardizes fields and matches records by account_id. It calculates the balance difference and checks for mismatches. Matching records are logged directly. Mismatched records go through AI explanation, are prepared for reporting, logged into Sheets and sent as Slack alerts."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "589ada80-e623-41a0-a14d-480e9758e1db",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1664,
+            1456
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 352,
+            "height": 528,
+            "content": "## Scheduled Balance Fetch\n\nTriggers the workflow on a schedule and pulls both internal finance balances and custodian/bank balances from Google Sheets for reconciliation."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f0af182d-1077-4a37-b5f5-b2fece0bcd61",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2992,
+            1456
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 352,
+            "height": 528,
+            "content": "## Reconciliation Outcome Check\n\nEvaluates the calculated balance difference and routes each record based on whether it is **matched** or **mismatched** for further logging and exception handling.\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "1d9ea856-87b8-491a-a394-a77ba032f117",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3392,
+            1456
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 576,
+            "height": 528,
+            "content": "## AI Exception Analysis\n\nTakes mismatched reconciliation records, sends them to the AI model for a short possible explanation and prepares the result for exception logging and alerting.\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "91596983-4ce7-4ba0-828f-70e308a316c6",
+          "name": "Run Reconciliation on Schedule",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            1680,
+            1728
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "field": "minutes"
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "86dba853-c610-498a-9c6e-eb60a83d24f4",
+          "name": "Fetch Internal Balances",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            1888,
+            1632
+          ],
+          "parameters": {
+            "options": {},
+            "sheetName": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gid=0",
+              "cachedResultName": "Sheet1"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "1aybRV31sefahegSLnKXYlg0f9NyId4e-6_M3KUzRRTk",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1aybRV31sefahegSLnKXYlg0f9NyId4e-6_M3KUzRRTk/edit?usp=drivesdk",
+              "cachedResultName": "Internal Balance Sheet"
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "id": "ZHLTvYnUUIblmsUL",
+              "name": "pt-vishaka google sheet account"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "id": "13d797e3-7816-4bf3-b9c1-8621722be228",
+          "name": "Fetch Custodian Balances",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            1888,
+            1824
+          ],
+          "parameters": {
+            "options": {},
+            "sheetName": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gid=0",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1m2VP3OdOJr4HgzWO_VjgeC9H-EXTjm8AtrbgYEu5xyI/edit#gid=0",
+              "cachedResultName": "Sheet1"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "1m2VP3OdOJr4HgzWO_VjgeC9H-EXTjm8AtrbgYEu5xyI",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1m2VP3OdOJr4HgzWO_VjgeC9H-EXTjm8AtrbgYEu5xyI/edit?usp=drivesdk",
+              "cachedResultName": "Custodian Balance Sheet"
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "id": "ZHLTvYnUUIblmsUL",
+              "name": "pt-vishaka google sheet account"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "id": "4f6108e9-8356-4658-9ca9-2b64421a5846",
+          "name": "Match Accounts by Account ID",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            2336,
+            1728
+          ],
+          "parameters": {
+            "mode": "combine",
+            "options": {},
+            "fieldsToMatchString": "account_id"
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "3f2f63f4-8010-46a6-9d25-7efd94560174",
+          "name": "Calculate Balance Difference",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2560,
+            1728
+          ],
+          "parameters": {
+            "jsCode": "const TOLERANCE = 0.01;\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const d = item.json;\n  const internal = parseFloat(d.internal_balance ?? 'NaN');\n  const custodian = parseFloat(d.custodian_balance ?? 'NaN');\n  const difference = parseFloat((internal - custodian).toFixed(6));\n  const absDiff = Math.abs(difference);\n  const mismatch = isNaN(internal) || isNaN(custodian) || absDiff > TOLERANCE;\n\n  results.push({\n    json: {\n      account_id: d.account_id,\n      currency: d.currency,\n      internal_balance: internal,\n      custodian_balance: custodian,\n      difference: difference,\n      abs_difference: absDiff,\n      mismatch: mismatch,\n      checked_at: new Date().toISOString()\n    }\n  });\n}\n\nreturn results;"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "92daf1ee-4b9e-4bb5-a339-6b4f8c7a5f54",
+          "name": "Check for Balance Mismatch",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            2784,
+            1728
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "4422433f-2a60-445d-a376-b8f3a1c8e42d",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json.mismatch }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "f9c44d76-b6a6-40fe-9587-f48bf60c4e64",
+          "name": "Generate AI Mismatch Explanation",
+          "type": "@n8n/n8n-nodes-langchain.openAi",
+          "position": [
+            3056,
+            1648
+          ],
+          "parameters": {
+            "modelId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini",
+              "cachedResultName": "GPT-4O-MINI"
+            },
+            "options": {},
+            "responses": {
+              "values": [
+                {
+                  "content": "=You are a senior operations analyst at a fund administrator.\n\nAccount: {{ $json.account_id }}\nCurrency: {{ $json.currency }}\nInternal balance: {{ $json.internal_balance }}\nCustodian balance: {{ $json.custodian_balance }}\nDifference (internal minus custodian): {{ $json.difference }}\nCheck date: {{ $json.checked_at }}\n\nIn maximum 120 words, explain the most likely cause of this mismatch from: settlement delay (T+1/T+2), pending fees or accrued interest, FX conversion timing, failed corporate actions, bank charges not yet booked or data entry error. State top 1-2 causes and end with one recommended next action."
+                }
+              ]
+            },
+            "builtInTools": {}
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "5ca9a11d-342f-43d8-9601-95ea58c83f46",
+          "name": "Prepare Exception Record",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            3488,
+            1664
+          ],
+          "parameters": {
+            "jsCode": "return $input.all().map((item, index) => {\n  const aiText = item.json.output?.[0]?.content?.[0]?.text ?? 'No explanation returned.';\n  \n  // Match by index, not hardcoded [0]\n  const original = $('Check for Balance Mismatch').all()[index].json;\n\n  return {\n    json: {\n      account_id: original.account_id,\n      currency: original.currency,\n      internal_balance: original.internal_balance,\n      custodian_balance: original.custodian_balance,\n      difference: original.difference,\n      abs_difference: original.abs_difference,\n      mismatch: original.mismatch,\n      checked_at: original.checked_at,\n      ai_explanation: aiText,\n      recon_status: 'Mismatch'\n    }\n  };\n});"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "8986cc9c-ad55-4d4e-85c2-ed508d7250ac",
+          "name": "Log Matched Records",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            3104,
+            1824
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "currency": "={{ $json.currency }}",
+                "mismatch": "={{ $json.mismatch }}",
+                "account_id": "={{ $json.account_id }}",
+                "checked_at": "={{ $json.checked_at }}",
+                "difference": "={{ $json.difference }}",
+                "recon_status": "Matched",
+                "abs_difference": "={{ $json.abs_difference }}",
+                "internal_balance": "={{ $json.internal_balance }}",
+                "custodian_balance": "={{ $json.custodian_balance }}"
+              },
+              "schema": [
+                {
+                  "id": "account_id",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "account_id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "currency",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "currency",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "internal_balance",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "internal_balance",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "custodian_balance",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "custodian_balance",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "difference",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "difference",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "abs_difference",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "abs_difference",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "mismatch",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "mismatch",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "checked_at",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "checked_at",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "ai_explanation",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "required": false,
+                  "displayName": "ai_explanation",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "recon_status",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "recon_status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gid=0"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "1cG_BW9jZLFphiMLuIvRj4xh3bML2Eh_KbB9Dswln3NQ",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cG_BW9jZLFphiMLuIvRj4xh3bML2Eh_KbB9Dswln3NQ/edit?usp=drivesdk",
+              "cachedResultName": "Reconciliation Log Sheet"
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "id": "ZHLTvYnUUIblmsUL",
+              "name": "pt-vishaka google sheet account"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "id": "531e3349-2a4e-4824-b12d-38084bd54b29",
+          "name": "Edit Internal Fields",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            2112,
+            1632
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "863617b6-3339-4dc1-8617-ca0a796c8fae",
+                  "name": "account_id",
+                  "type": "string",
+                  "value": "={{ $json.account_id }}"
+                },
+                {
+                  "id": "0d3a6dc2-30e1-4952-ad28-b025ebaba2d4",
+                  "name": "currency",
+                  "type": "string",
+                  "value": "={{ $json.currency }}"
+                },
+                {
+                  "id": "c89f8442-c1f5-4a3d-8084-d19a941c3e86",
+                  "name": "internal_balance",
+                  "type": "number",
+                  "value": "={{ Number($json.internal_balance) }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "79239cec-2d78-4de7-bc06-639d82947fa4",
+          "name": "Edit Custodian Fields",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            2112,
+            1824
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "bcd27321-c626-4bec-a439-92628fe0d5c3",
+                  "name": "account_id",
+                  "type": "string",
+                  "value": "={{ $json.account_id }}"
+                },
+                {
+                  "id": "9488e96d-9628-4ea8-9f18-8cda962b479f",
+                  "name": "currency",
+                  "type": "string",
+                  "value": "={{ $json.currency }}"
+                },
+                {
+                  "id": "842e8f40-d406-401c-a5d6-aca09ce75206",
+                  "name": "custodian_balance",
+                  "type": "number",
+                  "value": "={{ Number($json.custodian_balance) }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "5f7b523a-720f-471e-a2e5-dbe6590ad55a",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2064,
+            1456
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 832,
+            "height": 528,
+            "content": "## Balance Comparison Logic\n\nFormats both balance sheets, matches accounts by `account_id`, calculates balance differences and detects mismatches for reconciliation."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "fc412596-8212-470a-b387-461e1fe9da91",
+          "name": "Append The Data In The Sheet",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            3680,
+            1664
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "currency": "={{ $json.currency }}",
+                "mismatch": "={{ $json.mismatch }}",
+                "account_id": "={{ $json.account_id }}",
+                "checked_at": "={{ $json.checked_at }}",
+                "difference": "={{ $json.difference }}",
+                "recon_status": "={{ $json.recon_status }}",
+                "abs_difference": "={{ $json.abs_difference }}",
+                "ai_explanation": "={{ $json.ai_explanation }}",
+                "internal_balance": "={{ $json.internal_balance }}",
+                "custodian_balance": "={{ $json.custodian_balance }}"
+              },
+              "schema": [
+                {
+                  "id": "account_id",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "account_id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "currency",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "currency",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "internal_balance",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "internal_balance",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "custodian_balance",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "custodian_balance",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "difference",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "difference",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "abs_difference",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "abs_difference",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "mismatch",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "mismatch",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "checked_at",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "checked_at",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "ai_explanation",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "ai_explanation",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "recon_status",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "recon_status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gid=0",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Vyewa8rH1WQ1d1FC9DAw7yuI6O8RRl0EcvZma6Xr4Ck/edit#gid=0",
+              "cachedResultName": "Sheet1"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "1Vyewa8rH1WQ1d1FC9DAw7yuI6O8RRl0EcvZma6Xr4Ck",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Vyewa8rH1WQ1d1FC9DAw7yuI6O8RRl0EcvZma6Xr4Ck/edit?usp=drivesdk",
+              "cachedResultName": "alert_sheet"
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "id": "ZHLTvYnUUIblmsUL",
+              "name": "pt-vishaka google sheet account"
+            }
+          },
+          "typeVersion": 4.7
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "availableInMCP": false,
+        "executionOrder": "v1"
+      },
+      "versionId": "05871395-09c7-409b-912d-d84e297542e3",
+      "connections": {
+        "Edit Internal Fields": {
+          "main": [
+            [
+              {
+                "node": "Match Accounts by Account ID",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Edit Custodian Fields": {
+          "main": [
+            [
+              {
+                "node": "Match Accounts by Account ID",
+                "type": "main",
+                "index": 1
+              }
+            ]
+          ]
+        },
+        "Fetch Internal Balances": {
+          "main": [
+            [
+              {
+                "node": "Edit Internal Fields",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Fetch Custodian Balances": {
+          "main": [
+            [
+              {
+                "node": "Edit Custodian Fields",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Prepare Exception Record": {
+          "main": [
+            [
+              {
+                "node": "Append The Data In The Sheet",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Check for Balance Mismatch": {
+          "main": [
+            [
+              {
+                "node": "Generate AI Mismatch Explanation",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Log Matched Records",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Calculate Balance Difference": {
+          "main": [
+            [
+              {
+                "node": "Check for Balance Mismatch",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Match Accounts by Account ID": {
+          "main": [
+            [
+              {
+                "node": "Calculate Balance Difference",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Run Reconciliation on Schedule": {
+          "main": [
+            [
+              {
+                "node": "Fetch Internal Balances",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Fetch Custodian Balances",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Generate AI Mismatch Explanation": {
+          "main": [
+            [
+              {
+                "node": "Prepare Exception Record",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 17,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.set": {
+          "count": 2
+        },
+        "n8n-nodes-base.code": {
+          "count": 2
+        },
+        "n8n-nodes-base.merge": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 5
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 4
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.openAi": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "WeblineIndia",
+      "username": "weblineindia",
+      "bio": "A Leading Software Engineering, Consulting & Outsourcing Services Company in USA & India serving Clients Globally since 1999.",
+      "verified": true,
+      "links": [
+        "https://www.weblineindia.com/hire-n8n-developers/"
+      ],
+      "avatar": "https://gravatar.com/avatar/a229d43aefca4588581583c58bb37b4773aebbdf4c1fef86a08bb1d38eae91fa?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 24,
+        "icon": "file:merge.svg",
+        "name": "n8n-nodes-base.merge",
+        "codex": {
+          "data": {
+            "alias": [
+              "Join",
+              "Concatenate",
+              "Wait"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-sync-data-between-two-systems/",
+                  "icon": "🏬",
+                  "label": "How to synchronize data between two systems (one-way vs. two-way sync"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.merge/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Merge"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTc3XzUxOCkiPgo8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTAgNDhDMCAyMS40OTAzIDIxLjQ5MDMgMCA0OCAwSDExMkMxMzguNTEgMCAxNjAgMjEuNDkwMyAxNjAgNDhWNTZIMTk2LjI1MkMyNDAuNDM1IDU2IDI3Ni4yNTIgOTEuODE3MiAyNzYuMjUyIDEzNlYxOTJDMjc2LjI1MiAyMTQuMDkxIDI5NC4xNjEgMjMyIDMxNi4yNTIgMjMySDM1MlYyMjRDMzUyIDE5Ny40OSAzNzMuNDkgMTc2IDQwMCAxNzZINDY0QzQ5MC41MSAxNzYgNTEyIDE5Ny40OSA1MTIgMjI0VjI4OEM1MTIgMzE0LjUxIDQ5MC41MSAzMzYgNDY0IDMzNkg0MDBDMzczLjQ5IDMzNiAzNTIgMzE0LjUxIDM1MiAyODhWMjgwSDMxNi4yNTJDMjk0LjE2MSAyODAgMjc2LjI1MiAyOTcuOTA5IDI3Ni4yNTIgMzIwVjM3NkMyNzYuMjUyIDQyMC4xODMgMjQwLjQzNSA0NTYgMTk2LjI1MiA0NTZIMTYwVjQ2NEMxNjAgNDkwLjUxIDEzOC41MSA1MTIgMTEyIDUxMkg0OEMyMS40OTAzIDUxMiAwIDQ5MC41MSAwIDQ2NFY0MDBDMCAzNzMuNDkgMjEuNDkwMyAzNTIgNDggMzUySDExMkMxMzguNTEgMzUyIDE2MCAzNzMuNDkgMTYwIDQwMFY0MDhIMTk2LjI1MkMyMTMuOTI1IDQwOCAyMjguMjUyIDM5My42NzMgMjI4LjI1MiAzNzZWMzIwQzIyOC4yNTIgMjk0Ljc4NCAyMzguODU5IDI3Mi4wNDQgMjU1Ljg1MyAyNTZDMjM4Ljg1OSAyMzkuOTU2IDIyOC4yNTIgMjE3LjIxNiAyMjguMjUyIDE5MlYxMzZDMjI4LjI1MiAxMTguMzI3IDIxMy45MjUgMTA0IDE5Ni4yNTIgMTA0SDE2MFYxMTJDMTYwIDEzOC41MSAxMzguNTEgMTYwIDExMiAxNjBINDhDMjEuNDkwMyAxNjAgMCAxMzguNTEgMCAxMTJWNDhaTTEwNCA0OEMxMDguNDE4IDQ4IDExMiA1MS41ODE3IDExMiA1NlYxMDRDMTEyIDEwOC40MTggMTA4LjQxOCAxMTIgMTA0IDExMkg1NkM1MS41ODE3IDExMiA0OCAxMDguNDE4IDQ4IDEwNFY1NkM0OCA1MS41ODE3IDUxLjU4MTcgNDggNTYgNDhIMTA0Wk00NTYgMjI0QzQ2MC40MTggMjI0IDQ2NCAyMjcuNTgyIDQ2NCAyMzJWMjgwQzQ2NCAyODQuNDE4IDQ2MC40MTggMjg4IDQ1NiAyODhINDA4QzQwMy41ODIgMjg4IDQwMCAyODQuNDE4IDQwMCAyODBWMjMyQzQwMCAyMjcuNTgyIDQwMy41ODIgMjI0IDQwOCAyMjRINDU2Wk0xMTIgNDA4QzExMiA0MDMuNTgyIDEwOC40MTggNDAwIDEwNCA0MDBINTZDNTEuNTgxNyA0MDAgNDggNDAzLjU4MiA0OCA0MDhWNDU2QzQ4IDQ2MC40MTggNTEuNTgxNyA0NjQgNTYgNDY0SDEwNEMxMDguNDE4IDQ2NCAxMTIgNDYwLjQxOCAxMTIgNDU2VjQwOFoiIGZpbGw9IiM1NEI4QzkiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTc3XzUxOCI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Merge",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1250,
+        "icon": "file:openAi.svg",
+        "name": "@n8n/n8n-nodes-langchain.openAi",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "ChatGPT",
+              "Sora",
+              "DallE",
+              "whisper",
+              "audio",
+              "transcribe",
+              "tts",
+              "assistant"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-langchain.openai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Miscellaneous",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg1IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NiAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MSA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4K"
+        },
+        "displayName": "OpenAI",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 35,
+        "name": "Document Extraction"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

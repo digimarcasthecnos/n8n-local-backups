@@ -1,0 +1,1243 @@
+{
+  "workflow": {
+    "id": 15243,
+    "name": "Generate a Google Ads keyword plan from seed keywords with Keyword Planner and OpenAI",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-22T14:59:17.708Z",
+    "description": "## Who is this template for?\n\nThis workflow is built for **digital marketers, SEO/PPC specialists, and business owners** who run or plan Google Ads campaigns and need a fast, structured way to discover and evaluate keywords. Instead of manually exporting data from Google Keyword Planner and sorting it in spreadsheets, this template automates the entire process — from raw seed keywords to a fully enriched, AI-analyzed keyword plan saved directly in Google Sheets.\n\n## What this workflow does\n\nThis n8n workflow connects Google Keyword Planner, OpenAI chat model, and Google Sheets to deliver a production-ready keyword research pipeline:\n\n1. **User submits a form** with their website URL, company name, industry/niche, seed keywords, and products/services\n2. **Google Keyword Planner API** returns keyword ideas with real search volume, competition level, and CPC bid range data\n3. **OpenAI chat model (e.g, GPT-5.4-mini)** analyzes all keyword ideas in business context — scoring relevance, classifying intent (informational, navigational, commercial, transactional), assigning keyword type (branded, competitor, product, application, etc.), and generating additional relevatn high-intent keyword suggestions.\n4. **Google Sheets** receives two outputs: a structured keyword plan sheet (AI-enriched, evaluated, scored, and classified) and a raw keyword ideas sheet (all Keyword Planner results)\n\nThe result is a complete, ready-to-use keyword strategy document your team can act on immediately.\n\n## How to set up\n\n1. **Google Ads API** — Create a Google Ads Developer Token and OAuth 2.0 credentials. Add your Google Ads Customer ID to the workflow. Follow the [official Google Ads API quickstart](https://developers.google.com/google-ads/api/docs/get-started/introduction).\n2. **OpenAI** — Add your OpenAI API credentials to the OpenAI chat model node.\n3. **Google Sheets** — Connect your Google account via OAuth 2.0. The workflow automatically creates a new spreadsheet for each run — no manual sheet setup required.\n4. **Configure the HTTP Request node** — Update the Customer ID, Developer Token, and geo/language targeting to match your market.\n5. **Activate the workflow** and submit the form to run your first keyword research & planning session.\n\n## Requirements\n\n- n8n (cloud or self-hosted)\n- Google Ads account with API access and a Developer Token\n- OpenAI API key (GPT-4.1-mini or higher recommended)\n- Google account with Sheets access\n\n## What you get in the output\n\nThe workflow automatically creates a new Google Spreadsheet on every run with two sheets:\n\n### 📊 Keyword Plan\n\nAI-evaluated, scored, and classified keywords ready for Google Ads — filtered to relevance score 5 or higher:\n\n- `keyword` — the keyword text\n- `searchIntent` — informational, commercial, transactional, or navigational\n- `keywordType` — branded, competitor, product/service, feature/spec, synonym, application, or solution\n- `source` — Keyword Planner or AI\n- `seedKeyword` — which seed keyword this idea originated from\n- `relevanceScore` — AI score (1–10) based on your business context\n- `avgMonthlySearches` — monthly search volume from Google Keyword Planner\n- `competition` — LOW / MEDIUM / HIGH\n- `recommendedBid` — AI-calculated CPC bid recommendation in USD\n- `recommendedMatchType` — recommended Google Ads match type (Broad, Phrase, or Exact)\n\n### 📋 All Keyword Ideas\n\nRaw, unfiltered output from Google Keyword Planner — useful as a reference or for manual review:\n\n- `keyword` — the keyword text\n- `avgMonthlySearches` — monthly search volume\n- `competition` — LOW / MEDIUM / HIGH\n- `competitionIndex` — numeric competition score (0–100)\n- `lowTopOfPageBid` — low end of the estimated CPC range in USD\n- `highTopOfPageBid` — high end of the estimated CPC range in USD\n\n## How to customize this workflow\n\n- **Change the AI model** — swap GPT-5.4-mini for Claude, Gemini, or any LLM supported by n8n\n- **Add geo/language targeting** — modify the HTTP request body to filter results by country and language\n- **Adjust the relevance threshold** — edit the AI prompt to change the minimum relevance score for inclusion\n- **Add Slack or email notifications** — append a notification node after the Google Sheets write to alert your team when a new keyword plan is ready\n- **Connect to a CMS or ad platform** — pipe the output directly into your Google Ads campaigns or content calendar",
+    "workflow": {
+      "meta": {
+        "templateCredsSetupCompleted": true
+      },
+      "name": "AI Google Ads Keyword Plan Builder",
+      "tags": [],
+      "nodes": [
+        {
+          "name": "Structure & format output for AI",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            304,
+            -96
+          ],
+          "parameters": {
+            "jsCode": "const input = $input.first().json;\nconst results = input.results;\n\nfunction microsToUSD(micros) {\n  if (!micros) return null;\n  return \"$\" + (parseInt(micros) / 1_000_000).toFixed(2);\n}\n\nconst keywords = results.map(item => {\n  const metrics = item.keywordIdeaMetrics || {};\n  return {\n    keyword: item.text,\n    avgMonthlySearches: metrics.avgMonthlySearches || \"0\",\n    competition: metrics.competition || \"UNSPECIFIED\",\n    competitionIndex: metrics.competitionIndex || \"0\",\n    lowTopOfPageBid: microsToUSD(metrics.lowTopOfPageBidMicros),\n    highTopOfPageBid: microsToUSD(metrics.highTopOfPageBidMicros)\n  };\n});\n\nreturn [{\n  json: {\n    keywords: keywords\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "name": "Parse AI output for Google Sheet",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1184,
+            -96
+          ],
+          "parameters": {
+            "jsCode": "const raw = $('Analyze & enrich keywords with AI').first().json.text;\n\n// Dvostruki parse: prvo ukloni outer escaping, pa parsiraj JSON array\nconst keywords = JSON.parse(raw);\n\nreturn keywords.map(kw => ({ json: kw }));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -400,
+            -704
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 384,
+            "height": 576,
+            "content": "**Step 1 — User Input**\n\nThe workflow starts with a form submission.\n\nCollected fields:\n- Website URL\n- Company name\n- Industry / Niche\n- Seed keywords (comma-separated)\n- Products/Services\n- Notes (optional)\n\nThese values are parsed and passed to both the Keyword Planner API call and the AI agent."
+          },
+          "typeVersion": 1
+        },
+        {
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            0,
+            -704
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 432,
+            "height": 576,
+            "content": "**Step 2 — Google Keyword Planner API**\n\nSends a POST request to the Google Ads REST API (v23) using your seed keywords and/or website URL to generate keyword ideas. The `generateKeywordIdeas` endpoint supports `keywordSeed`, `urlSeed`, or `keywordAndUrlSeed` inputs.\n\nReturns keyword ideas with:\n- Average monthly searches\n- Competition level\n- Competition index\n- Low and high top-of-page bid estimates\n\nBefore running this step, update these values in the HTTP Request node:\n- `YOUR_GOOGLE_ADS_CUSTOMER_ID` in the request URL\n- `YOUR_GOOGLE_ADS_DEVELOPER_TOKEN` in the `developer-token` header\n- `YOUR_MANAGER_ACCOUNT_ID` in the `login-customer-id` header (only needed if you access the account through an MCC / manager account)\n\n⚠️ This node also requires valid Google Ads OAuth 2.0 credentials for the `Authorization` header. \n\nIf you access the client account directly, you may not need the `login-customer-id` header."
+          },
+          "typeVersion": 1
+        },
+        {
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            448,
+            -704
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 416,
+            "height": 576,
+            "content": "**Step 3 — AI Keyword Analysis (GPT-5.4-mini)**\n\nThe AI chat model receives all keyword ideas + seed keywords + your business context and:\n\n1. Evaluates & Scores each keyword for relevance (1–10) based on your business\n2. Classifies search intent (informational / commercial / transactional / navigational)\n3. Assigns keyword type (branded, competitor, product/service, solution, application, etc.)\n4. Recommends match type & bids for Google Ads\n5. Generates additional AI keyword suggestions to fill gaps not covered by Keyword Planner\n\nOutput is a structured JSON array — one object per keyword."
+          },
+          "typeVersion": 1
+        },
+        {
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            880,
+            -704
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 1136,
+            "height": 576,
+            "content": "**Step 4 — Save to Google Sheets**\n\nTwo sheets are written automatically:\n\n📊 **Keyword Plan sheet** — AI-processed keywords with all enrichment fields\n📋 **Keyword Ideas sheet** — Raw Keyword Planner data (keyword ideas)\n\nA new Google Spreadsheet is created on each run, named after your company/topic.\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "name": "GPT 5.4-mini",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            544,
+            96
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-5.4-mini",
+              "cachedResultName": "gpt-5.4-mini"
+            },
+            "options": {
+              "timeout": 180000
+            },
+            "builtInTools": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "name": "OpenAI account"
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "name": "Analyze & enrich keywords with AI",
+          "type": "@n8n/n8n-nodes-langchain.chainLlm",
+          "position": [
+            544,
+            -96
+          ],
+          "parameters": {
+            "text": "=Here is the keyword data to analyze:\n\nKeyword ideas: {{ JSON.stringify($json.keywords, null, 2) }}\nSeed keywords: {{ $('Parse & normalize user inputs').item.json.seedKeywords }}\n\nBusiness context:\n- Website: {{ $('Parse & normalize user inputs').item.json['Website URL'] }}\n- Company: {{ $('Parse & normalize user inputs').item.json['Company name'] }}\n- Industry: {{ $('Parse & normalize user inputs').item.json.Industry }}\n- Products/Services: {{ $('Parse & normalize user inputs').item.json['Products/Services'] }}\nNotes: {{ $('Parse & normalize user inputs').item.json['Notes'] }}",
+            "batching": {},
+            "messages": {
+              "messageValues": [
+                {
+                  "message": "You are a Google Ads keyword strategy expert. Your job is to analyze keyword\nideas from Google Keyword Planner together with business context provided by\nthe user, select the most strategically valuable keywords, enrich them with\nadditional high-intent suggestions, and produce a structured JSON output\noptimized for Google Ads campaigns.\n\n---\n\n## 1. INPUTS YOU WILL RECEIVE\n\n1. **Keyword ideas** — A JSON array from Google Keyword Planner containing\n   keyword ideas and their associated metrics:\n   - keyword, avgMonthlySearches, competition, competitionIndex,\n     lowTopOfPageBid, highTopOfPageBid, source, seedKeyword\n\n2. **Seed keywords** — A list of seed keywords provided by the user.\n   These represent the core products, services, or topics the campaign\n   should cover. Every output keyword must be traceable back to one of\n   these seeds.\n\n3. **Business context** (use all available fields to inform relevance\n   scoring, keyword classification, and AI-generated keyword suggestions):\n   - **Website URL** — the company's website; use to infer brand, market\n     positioning, and target audience if other context is limited\n   - **Company name** — treat this as the own brand name when classifying\n     `branded` keywords\n   - **Industry / niche** — the market segment the business operates in\n   - **Products / services** — detailed description of what the business\n     offers; the primary reference for evaluating keyword relevance\n   - **Notes** — additional preferences, exclusions, or campaign goals\n     provided by the user\n\n---\n\n## 2. YOUR TASK\n\nComplete the following steps in order:\n\n### Step 1 — Understand the Business Context\n\nBefore evaluating any keyword, thoroughly read and internalize all available\nbusiness context. Identify:\n- What the business sells and to whom\n- Which keywords represent core offerings vs. peripheral topics\n- Which brand names belong to the company (for `branded` classification) —\n  derived from the Company name field\n- Which brand names belong to competitors (for `competitor` classification) —\n  infer from industry context, product descriptions, and any mentions in Notes\n\nIf business context is missing or incomplete, proceed with what is available\nbut apply conservative relevance scoring for keywords whose fit cannot be\nconfirmed.\n\n### Step 2 — Evaluate and Select Keywords from \"Keyword ideas\"\n\nAnalyze ALL keywords in the provided Keyword ideas list. For each keyword,\nevaluate:\n- **Relevance** — How closely does this keyword match the business offerings\n  and the intent of its seed keyword?\n- **Search intent** — Does the keyword reflect a buyer, researcher, or\n  navigator? Higher commercial and transactional intent = higher strategic\n  value.\n- **Strategic value** — Consider search volume, competition level, and\n  estimated bid in relation to relevance. A low-volume, high-intent keyword\n  can outperform a high-volume, low-intent one.\n\n**Include** keywords with a relevanceScore of 5 or higher.\n**Exclude** keywords that are:\n- Clearly irrelevant to the business (relevanceScore 1–4)\n- Too generic to target effectively without strong context\n- Duplicates or near-identical variants of higher-scoring keywords already\n  included\n\n### Step 3 — Generate AI-Suggested Keywords\n\nAfter processing all keywords from the Keyword ideas input, generate\nadditional keywords using your own knowledge. For each entry in\nSeed keywords:\n\n- Review the keywords already selected from that seed in Step 2\n- Identify meaningful gaps — high-intent keyword angles that are not yet\n  covered (e.g. missing competitor terms, strong solution-based queries,\n  overlooked application contexts)\n- Generate **1 to 3 new keywords per seed keyword** that:\n  - Are highly relevant to the business context\n  - Fill a gap not already covered by Keyword Planner results\n  - Have realistic search demand (do not invent obscure or unnatural phrases)\n  - Are written in the same language as the seed keywords\n  - Are not duplicates of any keyword already present in Keyword ideas\n\nThese AI-generated keywords must be tagged with source = \"AI\" and will have\navgMonthlySearches = null and competition = null, as no Keyword Planner\ndata is available for them.\n\n### Step 4 — Assemble the Output\n\nCombine all selected keywords from Step 2 and all AI-generated keywords\nfrom Step 3 into a single JSON array. For every keyword, populate all\nrequired fields as defined in the Output Format and Field Definitions \nsections below.\n\n---\n\n## 3. OUTPUT FORMAT\n\nReturn a valid JSON array only — no markdown, no explanation text,\nno code blocks. Just the raw JSON array.\n\nEach object in the array must contain exactly these fields:\n\n{\n  \"keyword\": string,\n  \"searchIntent\": string,\n  \"keywordType\": string,\n  \"source\": string,\n  \"seedKeyword\": string,\n  \"relevanceScore\": number (1–10),\n  \"avgMonthlySearches\": string or null,\n  \"competition\": string or null,\n  \"recommendedBid\": string or null,\n  \"recommendedMatchType\": string\n}\n\n---\n\n## 4. FIELD DEFINITIONS AND RULES\n\nEvery keyword must be assigned all fields below. Apply each rule strictly\nand consistently across all keywords.\n\n### keyword\nPass through the keyword string exactly as received in the input.\nDo not normalize, translate, or modify the keyword text in any way.\n> Source: Keyword ideas → field: keyword\n\n**Exception:** If source = \"AI\" (the keyword was generated by the AI model\nand was not present in the input), use the keyword string as invented\nby the AI during processing. Ensure it is:\n- Written in the same language as the seed keywords provided by the user\n- Not a duplicate of any keyword already present in Keyword ideas\n- Relevant to the assigned seedKeyword and consistent with the business\n  context provided\n\n### searchIntent\n\nClassify each keyword into exactly one of the following intent types:\n\n**informational**\nThe user is in the research phase and seeking to learn or understand something.\nNo clear purchase intent.\n> Content target: blog posts, guides, how-to articles.\n> Example: \"how does RAM affect laptop performance\",\n  \"what is pronation in running shoes\", \"types of laptop processors explained\"\n\n**navigational**\nThe user is trying to reach a specific website, brand page, or resource they\nalready know. Brand awareness is assumed.\n> Content target: homepage, brand landing page.\n> Example: \"Dell official website\", \"Nike store online\", \"Apple support MacBook\"\n\n**commercial — evaluation**\nThe user is actively comparing options, reading reviews, or building a shortlist.\nHigh research intent with emerging purchase readiness.\n> Trigger signals: \"best\", \"vs\", \"top\", \"review\", \"compare\", \"alternative\"\n> Content target: comparison pages, review landing pages, category PDPs.\n> Example: \"best laptops under $1000 2025\", \"Nike vs Adidas running shoes\",\n  \"top-rated waterproof hiking shoes\"\n\n**commercial — specification**\nThe user knows the product category and is drilling into technical details\nor specific models. Indicates a buyer close to a decision.\n> Trigger signals: model numbers, spec terms, technical comparisons\n> Content target: product detail pages, spec sheets, configurators.\n> Example: \"Dell XPS 15 vs MacBook Pro 14 specs\", \"Nike Pegasus 41 vs Vomero 17\",\n  \"i7 vs i9 laptop performance benchmark\"\n\n**transactional**\nThe user has clear buying intent and is ready to take action —\npurchase, request a quote, or get a demo.\n> Trigger signals: \"buy\", \"price\", \"for sale\", \"order\", \"discount\",\n  \"coupon\", \"quote\", \"deal\", \"shop\", \"cheap\"\n> Content target: product pages, checkout, contact/quote forms.\n> Example: \"buy MacBook Pro online\", \"Nike Air Max 90 price\",\n  \"gaming laptop for sale cheap\"\n\n**Edge cases:**\n1. **commercial (evaluation) vs. commercial (specification)**\n   - \"best\", \"vs\", \"top\", \"review\" → evaluation\n   - Model numbers, spec comparisons, technical deep-dives → specification\n\n2. **informational vs. solution (keywordType)** — Both lack direct purchase\n   signals, but a `solution` keyword implies a product need.\n   `informational` intent is purely knowledge-seeking.\n   - \"why do knees hurt when running\" → informational (intent)\n   - \"shoes that reduce knee pain\" → solution (type) + informational (intent)\n\n3. **competitor + transactional** — If a competitor keyword also contains\n   buying signals, the intent is `transactional`.\n   - \"Lenovo ThinkPad price\" → competitor (type) + transactional (intent)\n\n### keywordType\n\nClassify each keyword into exactly one of the following types:\n\n**branded**\nThe keyword contains the company's own brand name or product line name.\nApplies when users are already aware of your brand.\n> Example: \"Dell XPS laptop\", \"Nike Air Max\", \"Apple MacBook Pro 14\"\n\n**competitor**\nThe keyword contains a competitor's brand name, product name, or model number.\nUse this to identify conquest targeting opportunities.\n> Note: If a competitor brand name is present, always classify as `competitor`\n  regardless of other intent signals.\n> Example: \"HP Spectre x360 review\", \"Adidas Ultraboost running shoe\",\n  \"Lenovo ThinkPad price\"\n\n**product/service**\nA direct product category, product type, or service name — without a specific brand.\nThese are core commercial keywords that describe what you sell.\n> Example: \"gaming laptop\", \"running shoes for men\",\n  \"wireless noise-cancelling headphones\"\n\n**application**\nThe keyword refers to a specific use case, task, or context in which the product\nis used. Focus is on what the user is doing or trying to accomplish,\nnot the product itself.\n> Example: \"laptop for video editing\", \"shoes for standing all day\",\n  \"notebook for college students\"\n\n**solution**\nThe keyword describes a problem, pain point, or desired outcome — the product\nis implied as the answer. These keywords reflect early-stage or problem-aware buyers.\n> Example: \"how to fix back pain from standing\", \"laptop that doesn't overheat\",\n  \"lightweight shoes for travel\"\n\n**synonym**\nAn alternative name, informal term, or industry jargon for the same product type.\nFunctionally identical to product/service keywords but using different vocabulary.\n> Example: \"ultrabook\" (= thin laptop), \"kicks\" (= sneakers),\n  \"notebook computer\" (= laptop)\n\n**feature/spec**\nThe keyword is primarily driven by a specific technical feature, specification,\nor attribute. Common in B2B or high-consideration purchases where buyers know\nexactly what they need.\n> Example: \"laptop with 32GB RAM\", \"shoes with arch support\",\n  \"4K OLED display laptop under 2kg\"\n\n**Edge cases:**\n1. **synonym vs. application** — If the keyword is just another name for the\n   product, use `synonym`. If it adds a context or use case, use `application`.\n   - \"sneakers\" → synonym | \"sneakers for gym workouts\" → application\n\n2. **solution vs. application** — If the keyword describes a problem or\n   desired outcome the product solves, use `solution`. If it describes a\n   specific task context where the product is used, use `application`.\n   - \"shoes that reduce knee pain\" → solution | \"shoes for nurses\" → application\n\n3. **feature/spec vs. product/service** — If a technical attribute is the\n   dominant search signal, use `feature/spec`. If the keyword is primarily\n   a category name, use `product/service`.\n   - \"laptop\" → product/service | \"laptop with 16GB RAM OLED display\" → feature/spec\n\n4. **competitor override** — If a competitor brand name is present, always\n   classify as `competitor`, regardless of other signals.\n   - \"Adidas running shoes price\" → competitor (not transactional)\n\n### source\n\nIndicates how the keyword was obtained. Assign exactly one of the following\nvalues based on whether the keyword existed in the input or was newly created:\n\n| Value               | When to Use |\n|---------------------|-------------|\n| **Keyword Planner** | The keyword was present in Keyword ideas in the input |\n| **AI**              | The keyword was NOT present in Keyword ideas — it was created by the AI model |\n\n**Assignment logic (strict):**\n1. For every output keyword, check whether the exact keyword string exists\n   in the Keyword ideas received in the input.\n2. If YES → source = \"Keyword Planner\"\n3. If NO → source = \"AI\"\n\n> Never assign source based on assumptions or keyword style. The only valid\n  check is whether the keyword string was present in the input or not.\n\n### seedKeyword\n\nThe original seed keyword provided by the user that this keyword was derived\nfrom, retrieved for, or is most closely associated with.\n> Source: Seed keywords (exact values as provided by the user)\n\n**Assignment rules:**\n1. **Direct match** — If source = \"Keyword Planner\", assign the seed keyword\n   that was used as the Keyword Planner input to retrieve it. This mapping\n   is available in the input data.\n\n2. **AI-generated keywords** — If source = \"AI\", assign the seed keyword\n   that most directly inspired or relates to this keyword by product type,\n   use case, or user intent.\n\n3. **Ambiguous association** — If a keyword could plausibly relate to more\n   than one seed, assign the single seed keyword it most closely matches\n   by core product or service meaning — not just by shared words.\n   - \"portable noise-cancelling headset\" with seeds [\"headphones\", \"laptop bags\"]\n     → seedKeyword = \"headphones\" (product match beats word overlap)\n\n4. **Exact wording** — Always use the seed keyword exactly as written in\n   Seed keywords. Do not paraphrase, normalize, translate, or reformat.\n   - If the user wrote \"running shoes\" → always output \"running shoes\",\n     never \"Running Shoes\", \"run shoes\", or \"shoes for running\"\n\n5. **Never leave empty** — Every keyword must have a seedKeyword assigned.\n   If no direct match exists, assign the closest seed keyword by intent\n   and product relevance.\n\n### relevanceScore (1–10)\n\nScore how relevant this keyword is for the business offerings provided:\n\n| Score | Meaning |\n|-------|---------|\n| 9–10  | Exact match to core product/service, high commercial intent |\n| 7–8   | Closely related, likely buyer intent |\n| 5–6   | Somewhat related, broader or indirect intent |\n| 3–4   | Loosely related, informational or tangential |\n| 1–2   | Barely relevant, unlikely to convert |\n\n### avgMonthlySearches\n\nPass through this value exactly as received in the input. Do not estimate\nor modify it.\n> Source: Keyword ideas → field: avgMonthlySearches\n\n**Exception:** If source = \"AI\", set this field to null — no search volume\ndata is available for AI-generated keywords.\n\n### competition\n\nPass through this value exactly as received in the input. Do not estimate\nor modify it.\n> Source: Keyword ideas → field: competition\n\n**Exception:** If source = \"AI\", set this field to null — no competition\ndata is available for AI-generated keywords.\n\n### recommendedBid\n\nCalculate the recommended bid using competitionIndex and bid range values\nfrom the input. Do not pass through — this is a computed field.\n> Source: Keyword ideas → fields: competitionIndex, lowTopOfPageBid,\n  highTopOfPageBid\n\n| competitionIndex | Rule                                          | Output  |\n|------------------|-----------------------------------------------|---------|\n| ≥ 70 (HIGH)      | Use highTopOfPageBid                          | \"$X.XX\" |\n| 30–69 (MEDIUM)   | (lowTopOfPageBid + highTopOfPageBid) / 2      | \"$X.XX\" |\n| < 30 (LOW)       | Use lowTopOfPageBid                           | \"$X.XX\" |\n\nIf both lowTopOfPageBid and highTopOfPageBid are null → return null.\n\n### recommendedMatchType\n\nAssign match type based on keywordType and keyword length/specificity.\nThis is a computed field — do not pass through from input.\n\n| Match Type  | When to Use |\n|-------------|-------------|\n| **Exact**   | Branded, competitor, or highly specific long-tail keywords (3+ words, niche product names or model numbers) |\n| **Phrase**  | Product, application, or feature keywords with moderate specificity (2–3 words) |\n| **Broad**   | Broader category, synonym, or solution keywords where discovery and reach are valuable |\n\n---\n\n## 5. IMPORTANT RULES\n\n- Return ONLY the raw JSON array — no preamble, no explanation,\n  no markdown formatting, no code blocks.\n- Apply all filtering, scoring, and classification decisions in the context\n  of the specific business provided — the same keyword may score and\n  classify differently for different businesses.\n- When recommendedBid has a calculated value, always format it as \"$X.XX\".\n  When bid data is unavailable, return null — never substitute \"$0.00\"\n  or any placeholder value.\n- Never leave any field empty or undefined. Every object in the output\n  array must contain all required fields with a valid value or explicit null."
+                }
+              ]
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 1.7
+        },
+        {
+          "name": "Get keyword ideas from Google Keyword Planner",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            64,
+            -96
+          ],
+          "parameters": {
+            "url": "https://googleads.googleapis.com/v23/customers/YOUR_GOOGLE_ADS_CUSTOMER_ID:generateKeywordIdeas",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"language\": \"languageConstants/1000\",\n  \"geoTargetConstants\": [\n    \"geoTargetConstants/2840\"\n  ],\n  \"includeAdultKeywords\": false,\n  \"keywordPlanNetwork\": \"GOOGLE_SEARCH_AND_PARTNERS\",\n  \"keywordSeed\": {\n    \"keywords\": {{ JSON.stringify($json.seedKeywords) }}\n  }\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "authentication": "predefinedCredentialType",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "developer-token",
+                  "value": "YOUR_GOOGLE_ADS_DEVELOPER_TOKEN"
+                },
+                {
+                  "name": "login-customer-id",
+                  "value": "YOUR_MANAGER_ACCOUNT_ID"
+                }
+              ]
+            },
+            "nodeCredentialType": "googleAdsOAuth2Api"
+          },
+          "credentials": {
+            "googleAdsOAuth2Api": {
+              "name": "Google Ads account"
+            }
+          },
+          "typeVersion": 4.3
+        },
+        {
+          "name": "Save keyword plan to Google Sheet",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            1440,
+            -96
+          ],
+          "parameters": {
+            "columns": {
+              "value": {},
+              "schema": [
+                {
+                  "id": "keyword",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "keyword",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "avgMonthlySearches",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "avgMonthlySearches",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "competition",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "competition",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "competitionIndex",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "competitionIndex",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "relevanceScore",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "relevanceScore",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "keywordType",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "keywordType",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "recommendedBid",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "recommendedBid",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "recommendedMatchType",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "recommendedMatchType",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "autoMapInputData",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $('Create spreadsheet for saving keyword plan & keyword ideas').item.json.sheets[0].properties.sheetId }}"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $('Create spreadsheet for saving keyword plan & keyword ideas').item.json.spreadsheetId }}"
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "name": "Google Sheets account"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "name": "Save all keyword ideas to Google Sheet",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            1920,
+            -96
+          ],
+          "parameters": {
+            "columns": {
+              "value": {},
+              "schema": [
+                {
+                  "id": "keyword",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "keyword",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "avgMonthlySearches",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "avgMonthlySearches",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "competition",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "competition",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "competitionIndex",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "competitionIndex",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "lowTopOfPageBid",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "lowTopOfPageBid",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "highTopOfPageBid",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "highTopOfPageBid",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "autoMapInputData",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $('Create spreadsheet for saving keyword plan & keyword ideas').first().json.sheets[1].properties.sheetId }}"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $('Create spreadsheet for saving keyword plan & keyword ideas').first().json.spreadsheetId }}"
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "name": "Google Sheets account"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "name": "Parse Google Keyword Planner output for Google Sheet",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1680,
+            -96
+          ],
+          "parameters": {
+            "jsCode": "const results = $('Get keyword ideas from Google Keyword Planner').first().json.results;\n\nfunction microsToUSD(micros) {\n  if (!micros) return null;\n  return \"$\" + (parseInt(micros) / 1_000_000).toFixed(2);\n}\n\nreturn results.map(item => {\n  const metrics = item.keywordIdeaMetrics || {};\n  return {\n    json: {\n      keyword: item.text,\n      avgMonthlySearches: metrics.avgMonthlySearches || \"0\",\n      competition: metrics.competition || \"UNSPECIFIED\",\n      competitionIndex: metrics.competitionIndex || \"0\",\n      lowTopOfPageBid: microsToUSD(metrics.lowTopOfPageBidMicros),\n      highTopOfPageBid: microsToUSD(metrics.highTopOfPageBidMicros)\n    }\n  };\n});"
+          },
+          "typeVersion": 2
+        },
+        {
+          "name": "Parse & normalize user inputs",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -176,
+            -96
+          ],
+          "parameters": {
+            "jsCode": "const input = $input.first().json;\n\n// Helper: čisti string od leading/trailing spaces\nfunction clean(str) {\n  return (str || '').trim();\n}\n\n// Helper: normalizuje separator - radi sa zarezom, tačka-zarezom, | i višestrukim razmacima\nfunction parseList(str) {\n  return (str || '')\n    .replace(/[;|\\\\/]/g, ',')\n    .split(',')\n    .map(item => item.trim())\n    .filter(item => item.length > 0);\n}\n\nconst websiteUrl = clean(input['Website URL']);\nconst companyName = clean(input['Company name']);\nconst industry = clean(input['Industry']);\nconst productsRaw = clean(input['Products/Services']);\nconst notes = clean(input['Notes']);\n\nconst seedKeywords = parseList(input['Seed keywords']);\n\nreturn [{\n  json: {\n    ...input,\n    'Website URL': websiteUrl,\n    'Company name': companyName,\n    'Industry': industry,\n    'Products/Services': productsRaw,\n    'Notes': notes,\n    seedKeywords,\n    productsFormatted: productsRaw\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "name": "Form trigger - User input",
+          "type": "n8n-nodes-base.formTrigger",
+          "position": [
+            -400,
+            -96
+          ],
+          "parameters": {
+            "options": {},
+            "formTitle": "Google Ads Keyword Research Tool",
+            "formFields": {
+              "values": [
+                {
+                  "fieldType": "textarea",
+                  "fieldLabel": "Seed keywords",
+                  "placeholder": "keyword 1, keyword 2, keyword 3...(max 10 keywords)",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Website URL",
+                  "placeholder": "https://site.com",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Company name",
+                  "placeholder": "Company",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Industry",
+                  "placeholder": "Industry/Niche",
+                  "requiredField": true
+                },
+                {
+                  "fieldType": "textarea",
+                  "fieldLabel": "Products/Services",
+                  "placeholder": "Describe company offerings here",
+                  "requiredField": true
+                },
+                {
+                  "fieldType": "textarea",
+                  "fieldLabel": "Notes",
+                  "placeholder": "Additonal notes or preferences"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "name": "Create spreadsheet for saving keyword plan & keyword ideas",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            928,
+            -96
+          ],
+          "parameters": {
+            "title": "={{ $('Parse & normalize user inputs').item.json['Company name'] }}-{{ $('Parse & normalize user inputs').item.json.submittedAt }}",
+            "options": {},
+            "resource": "spreadsheet",
+            "sheetsUi": {
+              "sheetValues": [
+                {
+                  "title": "Keyword Plan"
+                },
+                {
+                  "title": "All Keyword Ideas"
+                }
+              ]
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "name": "Google Sheets account"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1232,
+            -704
+          ],
+          "parameters": {
+            "color": 2,
+            "width": 752,
+            "height": 976,
+            "content": "## Google Ads Keyword Research Tool\n\nThis workflow turns seed keywords and business context into a structured keyword plan for Google Ads.\n\n### How it works\n1. Collects your inputs from a form:\n   - Website URL\n   - Company name\n   - Industry / niche\n   - Seed keywords\n   - Products / services\n   - Notes\n2. Sends the seed keywords to Google Keyword Planner to retrieve keyword ideas and metrics.\n3. Passes all keyword ideas + business context to an AI model for:\n   - evaluation & relevance scoring\n   - search intent classification\n   - keyword type classification\n   - recommended bid and match type\n   - additional AI-generated keyword suggestions\n4. Saves the final output to Google Sheets:\n   - Keyword Plan\n   - All Keyword Ideas\n\n### Requirements\n- Google Ads API access with a Developer Token\n- Google Ads OAuth 2.0 credentials\n- OpenAI API key\n- Google Sheets access\n\n### Before you run\nConnect your own credentials in n8n:\n- Google Ads OAuth 2.0 credentials\n- Google Sheets credentials\n- OpenAI credentials\n\nUpdate the placeholders in the HTTP Request node:\n- `YOUR_GOOGLE_ADS_CUSTOMER_ID`\n- `YOUR_GOOGLE_ADS_DEVELOPER_TOKEN`\n- `YOUR_MANAGER_ACCOUNT_ID` if you use an MCC account\n\nThis template is designed to be plug-and-play, but all credentials must be connected in your own n8n workspace before running the workflow."
+          },
+          "typeVersion": 1
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "executionOrder": "v1"
+      },
+      "connections": {
+        "GPT 5.4-mini": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Analyze & enrich keywords with AI",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Form trigger - User input": {
+          "main": [
+            [
+              {
+                "node": "Parse & normalize user inputs",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Parse & normalize user inputs": {
+          "main": [
+            [
+              {
+                "node": "Get keyword ideas from Google Keyword Planner",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Parse AI output for Google Sheet": {
+          "main": [
+            [
+              {
+                "node": "Save keyword plan to Google Sheet",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Structure & format output for AI": {
+          "main": [
+            [
+              {
+                "node": "Analyze & enrich keywords with AI",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Analyze & enrich keywords with AI": {
+          "main": [
+            [
+              {
+                "node": "Create spreadsheet for saving keyword plan & keyword ideas",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Save keyword plan to Google Sheet": {
+          "main": [
+            [
+              {
+                "node": "Parse Google Keyword Planner output for Google Sheet",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Save all keyword ideas to Google Sheet": {
+          "main": [
+            []
+          ]
+        },
+        "Get keyword ideas from Google Keyword Planner": {
+          "main": [
+            [
+              {
+                "node": "Structure & format output for AI",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Parse Google Keyword Planner output for Google Sheet": {
+          "main": [
+            [
+              {
+                "node": "Save all keyword ideas to Google Sheet",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Create spreadsheet for saving keyword plan & keyword ideas": {
+          "main": [
+            [
+              {
+                "node": "Parse AI output for Google Sheet",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 16,
+      "nodeTypes": {
+        "n8n-nodes-base.code": {
+          "count": 4
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 5
+        },
+        "n8n-nodes-base.formTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 1
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 3
+        },
+        "@n8n/n8n-nodes-langchain.chainLlm": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Zeljislav Petrovic",
+      "username": "zepix",
+      "bio": "Full-stack digital marketer with a strong technical side. Background in PPC/online advertising, email marketing, analytics, and marketing automation (Zapier, HubSpot, Zoho...) - and lately I've been going deeper into building AI automations and agentic systems in n8n. \n\nI create workflows that solve real business & marketing problems and turn manual processes into systems that run themselves. If something can be automated, I always find a way to do it.",
+      "verified": false,
+      "links": [
+        "https://www.linkedin.com/in/zeljislavpetrovic/"
+      ],
+      "avatar": "https://gravatar.com/avatar/3f177a40a0278804eeb9d772fc5cb8346827e8c72380e519451d51fc50199a24?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1123,
+        "icon": "fa:link",
+        "name": "@n8n/n8n-nodes-langchain.chainLlm",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.chainllm/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Chains",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Basic LLM Chain",
+          "color": "#909298"
+        },
+        "iconData": {
+          "icon": "link",
+          "type": "icon"
+        },
+        "displayName": "Basic LLM Chain",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1225,
+        "icon": "file:form.svg",
+        "name": "n8n-nodes-base.formTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "table",
+              "submit",
+              "post"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.formtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Other Trigger Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "On form submission"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NiIgaGVpZ2h0PSI0MCIgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iIzAwQjdCQyIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMzQuOTc4IDM3LjczMmExLjU2IDEuNTYgMCAwIDEtMS41NjIgMS41NjNINi4yNmExLjU2IDEuNTYgMCAwIDEtMS41NjMtMS41NjNWOS42MDdjMC0uNDA1LjE1Ny0uNzk0LjQzOC0xLjA4Nmw2LjMwNC02LjUzMXY1LjM0NEg4LjIxM2ExLjE3MiAxLjE3MiAwIDEgMCAwIDIuMzQzaDQuNDNhMS4xNyAxLjE3IDAgMCAwIDEuMTcxLTEuMTcxVi4yMzJoMTkuNjAyYTEuNTYgMS41NiAwIDAgMSAxLjU2MiAxLjU2M3YxMC4zMjdsLTIuODYgMi44Ni04LjI1MiA4LjI3NmE0MTMuMDA2IDQxMy4wMDYgMCAwIDEtMS42NTQgMS42NjJsLS4zMzcuMzM3YTIgMiAwIDAgMC0uNTU3IDEuMDhMMjAuMyAzMS45MjJjLS4xMDguNjM4LS4yMTUgMS4wNzkuMjExIDEuNDE4LjQwMy4zMi45LjE3NCAxLjU0LjA2Nmw1LjQwOC0uOTI4YTIgMiAwIDAgMCAxLjA4LS41NTZsNi40NC02LjQyOXptLTI0LjAzLTIxLjI2NWExLjE4IDEuMTggMCAwIDAgMS4xNzEgMS4xNzJoMTMuMTYzYTEuMTcyIDEuMTcyIDAgMSAwIDAtMi4zNDRIMTIuMTE5YTEuMTcgMS4xNyAwIDAgMC0xLjE3MiAxLjE3Mm03LjI5NCAxNC43NjZhMS4xNyAxLjE3IDAgMCAwLTEuMTcyLTEuMTcySDEyLjEyYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNC45NTFhMS4xNyAxLjE3IDAgMCAwIDEuMTcyLTEuMTcybS44Ni03LjM5MWExLjE3IDEuMTcgMCAwIDAtMS4xNzItMS4xNzJoLTUuODExYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNS44MWExLjE2NCAxLjE2NCAwIDAgMCAxLjE3My0xLjE3MSIgY2xpcC1ydWxlPSJldmVub2RkIi8+PHBhdGggZmlsbD0iIzAwQjdCQyIgZD0ibTMzLjUzMiAxNi4zOTcgNC4yODktNC4yODkgMy43NTggMy43MSAxLjYxNy0xLjYxNiAyLjI1OCAyLjI1N2MuMjE4LjIxOC4zNC41MTMuMzQzLjgyLS4wMDIuMzExLS4xMjUuNjA4LS4zNDQuODNsLTYuODA0IDYuNzk2YTEuMTMgMS4xMyAwIDAgMS0uODI4LjM0MyAxLjE1IDEuMTUgMCAwIDEtLjgyOC0uMzQzIDEuMTggMS4xOCAwIDAgMSAwLTEuNjU3bDUuOTc2LTUuOTY4LTEuMzEyLTEuMzEzLTEuMzgzIDEuNDE0LTEzLjE0OSAxMy4xMjUtNC42MTcuNzgyLjc4Mi00LjYxNy4zMzYtLjMzNyAyLjU2MiAyLjU1NWExLjEgMS4xIDAgMCAwIC44MjguMzQ0Yy4zMTIuMDA1LjYxMi0uMTIuODI4LS4zNDRhMS4xOCAxLjE4IDAgMCAwIDAtMS42NTZsLTIuNTYyLTIuNTYyek00NC43MzYgMTIuMjRjMCAuNDE0LS4xNjMuODEtLjQ1NCAxLjEwMmwtLjkyMi45MTQtMy44NTItMy44MjguOTMtLjkzYTEuNTYzIDEuNTYzIDAgMCAxIDIuMjAzIDBsMS42NCAxLjY0MWMuMjkxLjI5My40NTUuNjkuNDU1IDEuMTAyIi8+PC9zdmc+"
+        },
+        "displayName": "n8n Form Trigger",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 32,
+        "name": "Market Research"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

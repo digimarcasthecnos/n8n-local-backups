@@ -1,0 +1,1522 @@
+{
+  "workflow": {
+    "id": 15231,
+    "name": "Send tiered contract renewal Slack alerts from Google Sheets",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-22T11:26:20.963Z",
+    "description": "## **What this workflow does**\nRuns every morning at 9am. Reads every contract from the 5 tabs in your Contracts sheet, checks how many days are left until each `Cancellation Deadline`, and pings Slack with tiered alerts so no renewal slips through.\n\n---\n\n### Alert tiers\n\n| Days until deadline | Tier | Message |\n|---|---|---|\n| ≤ 7 | 🔴 Urgent | Act now |\n| ≤ 14 | 🟡 Action needed | Plan this week |\n| ≤ 30 | 🟢 Heads-up | On your radar |\n| &gt; 30 or past due | — | No alert |\n\nAuto-renewing contracts get a stronger warning than contracts that simply expire – because that's the case where money is actually at stake.\n\n---\n\n### Setup guide\n\n**1. Add two columns to every tab in your Contracts sheet**\nOpen your sheet and add these two columns to all 5 tabs (SaaS, Leases, Services, Insurance, Other):\n- `Last Alert Tier`\n- `Last Alert Date`\n\nLeave both empty for existing rows. These drive the de-duplication – without them you'll get the same ping every day for weeks.\n\n**2. Paste your Sheet ID**\nReplace `YOUR_GOOGLE_SHEET_ID` in all 5 Read nodes. It's the same Sheet you used in Part 1.\n\n**3. Set your Slack channel**\nReplace `YOUR_SLACK_CHANNEL_ID` in all 3 Slack nodes with the channel (or DM) where alerts should land. `#contracts` or `#finance-alerts` work well; DM to the contract owner is fine too.\n\n**4. Connect credentials**\n- Google Sheets → OAuth\n- Slack → OAuth\n\n**5. Activate and test**\nBefore turning it on, temporarily set one row's `Cancellation Deadline` to ~10 days from today and clear its `Last Alert Tier`. Click **Execute Workflow** and confirm a 🟡 Slack message lands. Revert the row, then activate.\n\n---\n\n### Known limitations (v1)\n\n**No automatic writeback.** Today the workflow alerts but doesn't mark the row as \"alerted\". To stop daily re-pings, either:\n- Fill `Last Alert Tier` manually when the alert fires (🟢 / 🟡 / 🔴), or\n- Add a Google Sheets Update node per tab (Switch by `Contract Class`, match on Start Date + Provider Name as a composite key)\n\n**Works on ISO dates only.** The `days_left` calculation assumes `Cancellation Deadline` is stored as `YYYY-MM-DD`. Part 1 produces this format correctly, so this is only a concern if you're adding rows manually.",
+    "workflow": {
+      "meta": {
+        "templateCredsSetupCompleted": false
+      },
+      "name": "Contract Renewal Watchdog Daily Slack Alerts",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "bbbe82aa-9e9b-4ff8-a21c-119132a123df",
+          "name": "Needs Alert Today?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            880,
+            624
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "d325af5d-5241-4baf-8b02-406b725cfe11",
+                  "operator": {
+                    "type": "string",
+                    "operation": "notEmpty",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json['Cancellation Deadline'] }}",
+                  "rightValue": ""
+                },
+                {
+                  "id": "5224a5b3-393c-4a93-9927-daa56591d3d6",
+                  "operator": {
+                    "type": "number",
+                    "operation": "lte"
+                  },
+                  "leftValue": "={{ $json.days_left }}",
+                  "rightValue": 30
+                },
+                {
+                  "id": "a6eaad68-55b9-4807-bbc6-66335b737d09",
+                  "operator": {
+                    "type": "number",
+                    "operation": "gte"
+                  },
+                  "leftValue": "={{ $json.days_left }}",
+                  "rightValue": 0
+                },
+                {
+                  "id": "26b6a84b-dcaf-43f4-a0df-7a70abd65baa",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ ({red: 3, yellow: 2, green: 1, none: 0}[$json.tier] || 0) > ({red: 3, yellow: 2, green: 1, '': 0}[($json['Last Alert Tier'] || '').toLowerCase()] || 0) }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "ec84588c-2aa7-4740-a11d-9dcc27f8d1f1",
+          "name": "Route by Tier",
+          "type": "n8n-nodes-base.switch",
+          "position": [
+            1168,
+            592
+          ],
+          "parameters": {
+            "rules": {
+              "values": [
+                {
+                  "outputKey": "Red",
+                  "conditions": {
+                    "options": {
+                      "version": 3,
+                      "leftValue": "",
+                      "caseSensitive": true,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "and",
+                    "conditions": [
+                      {
+                        "id": "1a6d0b2f-a334-4f5f-95e3-f8f55792da94",
+                        "operator": {
+                          "type": "string",
+                          "operation": "equals"
+                        },
+                        "leftValue": "={{ $json.tier }}",
+                        "rightValue": "red"
+                      }
+                    ]
+                  },
+                  "renameOutput": true
+                },
+                {
+                  "outputKey": "Yellow",
+                  "conditions": {
+                    "options": {
+                      "version": 3,
+                      "leftValue": "",
+                      "caseSensitive": true,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "and",
+                    "conditions": [
+                      {
+                        "id": "73e1171c-33bc-4b62-b954-abba75505bdf",
+                        "operator": {
+                          "name": "filter.operator.equals",
+                          "type": "string",
+                          "operation": "equals"
+                        },
+                        "leftValue": "={{ $json.tier }}",
+                        "rightValue": "yellow"
+                      }
+                    ]
+                  },
+                  "renameOutput": true
+                },
+                {
+                  "outputKey": "Green",
+                  "conditions": {
+                    "options": {
+                      "version": 3,
+                      "leftValue": "",
+                      "caseSensitive": true,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "and",
+                    "conditions": [
+                      {
+                        "id": "eb626e3e-d730-4d91-8c89-ab2f0cb11774",
+                        "operator": {
+                          "name": "filter.operator.equals",
+                          "type": "string",
+                          "operation": "equals"
+                        },
+                        "leftValue": "={{ $json.tier }}",
+                        "rightValue": "green"
+                      }
+                    ]
+                  },
+                  "renameOutput": true
+                }
+              ]
+            },
+            "options": {}
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "536797a1-a49a-4ce6-ac5e-9cc4af7e5f6e",
+          "name": "Slack: Urgent (Red)",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            1440,
+            432
+          ],
+          "parameters": {
+            "text": "=🔴 *URGENT: {{ $json.vendor_label }} cancellation deadline in {{ $json.days_left }} day{{ $json.days_left === 1 ? '' : 's' }}*\n\n- *Contract type:* {{ $json['Contract Class'] }}\n- *Cancellation deadline:* {{ $json['Cancellation Deadline'] }}\n- *End date:* {{ $json['End Date'] }}\n- *Value:* {{ $json['Contract Value'] }}\n- *Notice period:* {{ $json['Notice Period Days'] }} days\n{{ $json.auto_renew_bool ? '\\n⚠️ *This contract will AUTO-RENEW* unless notice of cancellation is given before the deadline.' : '\\n📅 This contract will expire at the end of its term (no auto-renewal).' }}",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_SLACK_CHANNEL_ID"
+            },
+            "otherOptions": {}
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "0c75e393-c495-40c7-b765-5b81c1cc390d",
+          "name": "Slack: Action (Yellow)",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            1440,
+            608
+          ],
+          "parameters": {
+            "text": "=🟡 *Action needed: {{ $json.vendor_label }} cancellation deadline in {{ $json.days_left }} day{{ $json.days_left === 1 ? '' : 's' }}*",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_SLACK_CHANNEL_ID"
+            },
+            "otherOptions": {}
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "f2b74ea1-8bd9-49e8-a6d8-a5905a06b872",
+          "name": "Slack: Heads-up (Green)",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            1440,
+            784
+          ],
+          "parameters": {
+            "text": "=🟢 *Heads-up: {{ $json.vendor_label }} cancellation deadline in {{ $json.days_left }} day{{ $json.days_left === 1 ? '' : 's' }}*",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_SLACK_CHANNEL_ID"
+            },
+            "otherOptions": {}
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "09be045a-1ec3-411b-947d-561bb459ea0a",
+          "name": "Trigger: Daily at 9am",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            -256,
+            624
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "triggerAtHour": 9
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "b3a8b02e-6c40-4c68-ad09-f50f033c0a0c",
+          "name": "Read: Services Tab",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            16,
+            624
+          ],
+          "parameters": {
+            "options": {},
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Services"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_GOOGLE_SHEET_ID"
+            }
+          },
+          "typeVersion": 4
+        },
+        {
+          "id": "e44852b3-c060-436c-8f8c-a6efe50f6c56",
+          "name": "Read: Leases Tab",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            16,
+            448
+          ],
+          "parameters": {
+            "options": {},
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Leases"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_GOOGLE_SHEET_ID"
+            }
+          },
+          "typeVersion": 4
+        },
+        {
+          "id": "c5dbdf98-9ff8-43cf-a7b2-7cc30e7c74eb",
+          "name": "Read: SaaS Tab",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            16,
+            272
+          ],
+          "parameters": {
+            "options": {},
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "SaaS"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_GOOGLE_SHEET_ID"
+            }
+          },
+          "typeVersion": 4
+        },
+        {
+          "id": "dc6ba403-ffdb-46cf-8e17-359888dc9b0f",
+          "name": "Read: Insurance Tab",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            16,
+            800
+          ],
+          "parameters": {
+            "options": {},
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Insurance"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_GOOGLE_SHEET_ID"
+            }
+          },
+          "typeVersion": 4
+        },
+        {
+          "id": "b9e469c1-e150-4a45-a3d4-188147301f49",
+          "name": "Read: Other Tab",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            16,
+            976
+          ],
+          "parameters": {
+            "options": {},
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Other"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_GOOGLE_SHEET_ID"
+            }
+          },
+          "typeVersion": 4
+        },
+        {
+          "id": "cef80888-a96c-403b-9bcb-47163e1f5345",
+          "name": "Merge: All Contracts",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            288,
+            576
+          ],
+          "parameters": {
+            "numberInputs": 5
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "a5f75835-aede-4788-85ff-ac4189a65a0e",
+          "name": "Calculate Tier & Days Left",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            576,
+            624
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "76ce752f-acde-48ac-a083-d65487eb6c2b",
+                  "name": "days_left",
+                  "type": "number",
+                  "value": "={{ Math.round((DateTime.fromISO($json['Cancellation Deadline']).startOf('day').toMillis() - DateTime.now().startOf('day').toMillis()) / 86400000) }}"
+                },
+                {
+                  "id": "7bce067b-37b0-4868-8326-7f0749754277",
+                  "name": "tier",
+                  "type": "string",
+                  "value": "={{ (() => { const d = Math.round((DateTime.fromISO($json['Cancellation Deadline']).startOf('day').toMillis() - DateTime.now().startOf('day').toMillis()) / 86400000); return d <= 7 ? 'red' : d <= 14 ? 'yellow' : d <= 30 ? 'green' : 'none'; })() }}"
+                },
+                {
+                  "id": "d2e49f8d-987a-4e36-b821-dffbb99915fb",
+                  "name": "vendor_label",
+                  "type": "string",
+                  "value": "={{ $json['Provider Name'] || $json['Client Name'] || 'Unknown contract' }}"
+                },
+                {
+                  "id": "1729e5d4-aa22-42cc-88ad-94095a162f72",
+                  "name": "auto_renew_bool",
+                  "type": "boolean",
+                  "value": "={{ String($json['Auto Renew']).toLowerCase() === 'true' }}"
+                }
+              ]
+            },
+            "includeOtherFields": true
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "80e01f6e-0927-4bb2-b202-6bcdc8cf2d5b",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -336,
+            480
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 256,
+            "height": 352,
+            "content": "### ⏰ Daily Trigger\nFires every morning at 9am. Change the hour in the node if your team prefers a different check-in time."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "a247f9bd-3cb4-4b9d-acd1-0cdaa31c9100",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -64,
+            112
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 256,
+            "height": 1040,
+            "content": "### 📥 Read All 5 Tabs\nOne Google Sheets read per contract class. Each returns every row from its tab. They converge in the merge node next."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "c198349a-55ce-4036-a516-ab633b9fd5e5",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            208,
+            432
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 256,
+            "height": 400,
+            "content": "### 🔗 Merge: All Contracts\nAppend mode combines rows from all 5 tabs into one stream so the filtering logic lives in a single place downstream."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "40da47f5-4b6d-41ec-b720-088cf2656e9b",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            480,
+            336
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 288,
+            "height": 496,
+            "content": "### 🧮 Calculate Tier & Days Left\nFor every contract row, derives:\n- `days_left` – days between today and `Cancellation Deadline`\n- `tier` – 🔴 red (≤7), 🟡 yellow (≤14), 🟢 green (≤30), `none` otherwise\n- `vendor_label` – Provider or Client name for the Slack message\n- `auto_renew_bool` – normalizes the string `\"true\"/\"false\"` from the sheet into a real boolean"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ff1b0154-ed64-4267-8b10-b9107aeaeab4",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            784,
+            336
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 288,
+            "height": 496,
+            "content": "### ❓ Needs Alert Today?\nPasses a contract through only if:\n- `Cancellation Deadline` exists\n- `days_left` is between 0 and 30\n- the new tier is more urgent than the `Last Alert Tier` already stored on the row\n\nThis is the escalation gate – contracts that already got their 🟢 ping won't ping again until they cross into 🟡."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "fe072824-4672-4894-9c70-5a8708f2b340",
+          "name": "Sticky Note5",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1088,
+            432
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 256,
+            "height": 400,
+            "content": "### 🔀 Route by Tier\nExpression-based Switch on `tier`. Each output feeds a tier-specific Slack message so the urgency of the ping matches the urgency of the deadline."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f812f850-0459-41df-b611-8cf44882c087",
+          "name": "Sticky Note6",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1360,
+            208
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 256,
+            "height": 752,
+            "content": "### 💬 Slack Alerts\nOne message per contract that crossed a new tier today. Auto-renewing contracts get a stronger warning (\"this WILL auto-renew unless cancelled\") than contracts that just expire – that's the distinction that actually matters financially."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "5efea265-9448-44e9-a83c-7aac0b55f54f",
+          "name": "Sticky Note7",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1072,
+            16
+          ],
+          "parameters": {
+            "width": 720,
+            "height": 1264,
+            "content": "## 🔔 Contract Renewal Watchdog – Daily Slack Alerts\n\n**What this workflow does**\nRuns every morning at 9am. Reads every contract from the 5 tabs in your Contracts sheet, checks how many days are left until each `Cancellation Deadline`, and pings Slack with tiered alerts so no renewal slips through.\n\n### Alert tiers\n\n**🔴 Urgent** – ≤ 7 days until deadline\nAct now\n\n**🟡 Action needed** – ≤ 14 days until deadline\nPlan this week\n\n**🟢 Heads-up** – ≤ 30 days until deadline\nOn your radar\n\n**No alert** – more than 30 days out, or already past due\n\nAuto-renewing contracts get a stronger warning than contracts that simply expire – because that's the case where money is actually at stake.\n\n### Setup guide\n\n**1. Add two columns to every tab in your Contracts sheet**\nOpen your sheet and add these two columns to all 5 tabs (SaaS, Leases, Services, Insurance, Other):\n- `Last Alert Tier`\n- `Last Alert Date`\n\nLeave both empty for existing rows. These drive the de-duplication – without them you'll get the same ping every day for weeks.\n\n**2. Paste your Sheet ID**\nReplace `YOUR_GOOGLE_SHEET_ID` in all 5 Read nodes. It's the same Sheet you used in Part 1.\n\n**3. Set your Slack channel**\nReplace `YOUR_SLACK_CHANNEL_ID` in all 3 Slack nodes with the channel (or DM) where alerts should land. `#contracts` or `#finance-alerts` work well; DM to the contract owner is fine too.\n\n**4. Connect credentials**\n- Google Sheets → OAuth\n- Slack → OAuth\n\n**5. Activate and test**\nBefore turning it on, temporarily set one row's `Cancellation Deadline` to ~10 days from today and clear its `Last Alert Tier`. Click **Execute Workflow** and confirm a 🟡 Slack message lands. Revert the row, then activate.\n\n### Known limitations (v1)\n\n**No automatic writeback.** Today the workflow alerts but doesn't mark the row as \"alerted\". To stop daily re-pings, either:\n- Fill `Last Alert Tier` manually when the alert fires (🟢 / 🟡 / 🔴), or\n- Add a Google Sheets Update node per tab (Switch by `Contract Class`, match on Start Date + Provider Name as a composite key)\n\n**Works on ISO dates only.** The `days_left` calculation assumes `Cancellation Deadline` is stored as `YYYY-MM-DD`. Part 1 produces this format correctly, so this is only a concern if you're adding rows manually."
+          },
+          "typeVersion": 1
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "availableInMCP": false,
+        "executionOrder": "v1"
+      },
+      "connections": {
+        "Route by Tier": {
+          "main": [
+            [
+              {
+                "node": "Slack: Urgent (Red)",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Slack: Action (Yellow)",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Slack: Heads-up (Green)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Read: SaaS Tab": {
+          "main": [
+            [
+              {
+                "node": "Merge: All Contracts",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Read: Other Tab": {
+          "main": [
+            [
+              {
+                "node": "Merge: All Contracts",
+                "type": "main",
+                "index": 4
+              }
+            ]
+          ]
+        },
+        "Read: Leases Tab": {
+          "main": [
+            [
+              {
+                "node": "Merge: All Contracts",
+                "type": "main",
+                "index": 1
+              }
+            ]
+          ]
+        },
+        "Needs Alert Today?": {
+          "main": [
+            [
+              {
+                "node": "Route by Tier",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Read: Services Tab": {
+          "main": [
+            [
+              {
+                "node": "Merge: All Contracts",
+                "type": "main",
+                "index": 2
+              }
+            ]
+          ]
+        },
+        "Read: Insurance Tab": {
+          "main": [
+            [
+              {
+                "node": "Merge: All Contracts",
+                "type": "main",
+                "index": 3
+              }
+            ]
+          ]
+        },
+        "Merge: All Contracts": {
+          "main": [
+            [
+              {
+                "node": "Calculate Tier & Days Left",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Trigger: Daily at 9am": {
+          "main": [
+            [
+              {
+                "node": "Read: SaaS Tab",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Read: Leases Tab",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Read: Services Tab",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Read: Insurance Tab",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Read: Other Tab",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Calculate Tier & Days Left": {
+          "main": [
+            [
+              {
+                "node": "Needs Alert Today?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 21,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.set": {
+          "count": 1
+        },
+        "n8n-nodes-base.merge": {
+          "count": 1
+        },
+        "n8n-nodes-base.slack": {
+          "count": 3
+        },
+        "n8n-nodes-base.switch": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 8
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 5
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Felix",
+      "username": "easybits",
+      "bio": "Marketing Lead with a passion for automation and AI. I love working on smart workflows that automate repetitive manual tasks.",
+      "verified": true,
+      "links": [
+        "https://easybits.tech/"
+      ],
+      "avatar": "https://gravatar.com/avatar/af10d12444918e1d6cb3fd05bd68baa80b70744968fc8a216d369a58366eb634?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 24,
+        "icon": "file:merge.svg",
+        "name": "n8n-nodes-base.merge",
+        "codex": {
+          "data": {
+            "alias": [
+              "Join",
+              "Concatenate",
+              "Wait"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-sync-data-between-two-systems/",
+                  "icon": "🏬",
+                  "label": "How to synchronize data between two systems (one-way vs. two-way sync"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.merge/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Merge"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTc3XzUxOCkiPgo8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTAgNDhDMCAyMS40OTAzIDIxLjQ5MDMgMCA0OCAwSDExMkMxMzguNTEgMCAxNjAgMjEuNDkwMyAxNjAgNDhWNTZIMTk2LjI1MkMyNDAuNDM1IDU2IDI3Ni4yNTIgOTEuODE3MiAyNzYuMjUyIDEzNlYxOTJDMjc2LjI1MiAyMTQuMDkxIDI5NC4xNjEgMjMyIDMxNi4yNTIgMjMySDM1MlYyMjRDMzUyIDE5Ny40OSAzNzMuNDkgMTc2IDQwMCAxNzZINDY0QzQ5MC41MSAxNzYgNTEyIDE5Ny40OSA1MTIgMjI0VjI4OEM1MTIgMzE0LjUxIDQ5MC41MSAzMzYgNDY0IDMzNkg0MDBDMzczLjQ5IDMzNiAzNTIgMzE0LjUxIDM1MiAyODhWMjgwSDMxNi4yNTJDMjk0LjE2MSAyODAgMjc2LjI1MiAyOTcuOTA5IDI3Ni4yNTIgMzIwVjM3NkMyNzYuMjUyIDQyMC4xODMgMjQwLjQzNSA0NTYgMTk2LjI1MiA0NTZIMTYwVjQ2NEMxNjAgNDkwLjUxIDEzOC41MSA1MTIgMTEyIDUxMkg0OEMyMS40OTAzIDUxMiAwIDQ5MC41MSAwIDQ2NFY0MDBDMCAzNzMuNDkgMjEuNDkwMyAzNTIgNDggMzUySDExMkMxMzguNTEgMzUyIDE2MCAzNzMuNDkgMTYwIDQwMFY0MDhIMTk2LjI1MkMyMTMuOTI1IDQwOCAyMjguMjUyIDM5My42NzMgMjI4LjI1MiAzNzZWMzIwQzIyOC4yNTIgMjk0Ljc4NCAyMzguODU5IDI3Mi4wNDQgMjU1Ljg1MyAyNTZDMjM4Ljg1OSAyMzkuOTU2IDIyOC4yNTIgMjE3LjIxNiAyMjguMjUyIDE5MlYxMzZDMjI4LjI1MiAxMTguMzI3IDIxMy45MjUgMTA0IDE5Ni4yNTIgMTA0SDE2MFYxMTJDMTYwIDEzOC41MSAxMzguNTEgMTYwIDExMiAxNjBINDhDMjEuNDkwMyAxNjAgMCAxMzguNTEgMCAxMTJWNDhaTTEwNCA0OEMxMDguNDE4IDQ4IDExMiA1MS41ODE3IDExMiA1NlYxMDRDMTEyIDEwOC40MTggMTA4LjQxOCAxMTIgMTA0IDExMkg1NkM1MS41ODE3IDExMiA0OCAxMDguNDE4IDQ4IDEwNFY1NkM0OCA1MS41ODE3IDUxLjU4MTcgNDggNTYgNDhIMTA0Wk00NTYgMjI0QzQ2MC40MTggMjI0IDQ2NCAyMjcuNTgyIDQ2NCAyMzJWMjgwQzQ2NCAyODQuNDE4IDQ2MC40MTggMjg4IDQ1NiAyODhINDA4QzQwMy41ODIgMjg4IDQwMCAyODQuNDE4IDQwMCAyODBWMjMyQzQwMCAyMjcuNTgyIDQwMy41ODIgMjI0IDQwOCAyMjRINDU2Wk0xMTIgNDA4QzExMiA0MDMuNTgyIDEwOC40MTggNDAwIDEwNCA0MDBINTZDNTEuNTgxNyA0MDAgNDggNDAzLjU4MiA0OCA0MDhWNDU2QzQ4IDQ2MC40MTggNTEuNTgxNyA0NjQgNTYgNDY0SDEwNEMxMDguNDE4IDQ2NCAxMTIgNDYwLjQxOCAxMTIgNDU2VjQwOFoiIGZpbGw9IiM1NEI4QzkiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTc3XzUxOCI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Merge",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 112,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.switch",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "If",
+              "Path",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Branch",
+              "Case"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.switch/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Switch",
+          "color": "#506000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "Switch",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 35,
+        "name": "Document Extraction"
+      }
+    ],
+    "image": []
+  }
+}

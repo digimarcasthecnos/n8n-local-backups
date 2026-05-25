@@ -1,0 +1,1738 @@
+{
+  "workflow": {
+    "id": 15069,
+    "name": "Turn meeting action items into ClickUp tasks with Fireflies, GPT-4o-mini and Telegram",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-15T09:34:45.675Z",
+    "description": "### Description\n\nConnect Fireflies to this workflow once and every meeting action item becomes a ClickUp task automatically — no manual note-taking, no copy-pasting. The moment Fireflies finishes transcribing a call, the workflow extracts action items from two sources, uses GPT-4o-mini to parse each one into a clean task with an owner, deadline, and priority, and creates every task in ClickUp via the API. When all tasks are created, you receive a single Telegram message confirming the total count. Built for founders, project managers, and team leads who want zero gap between a meeting ending and the work showing up in their task manager.\n\n---\n\n## What This Workflow Does\n\n- **Triggers automatically on transcription complete** — Fireflies fires the workflow the moment any meeting finishes transcribing, with no manual step needed\n- **Extracts action items from two sources** — Combines Fireflies NLP task-flagged sentences and the AI-generated summary list, then deduplicates and caps at 15 items\n- **Validates every incoming signal** — Checks for a valid meeting ID and silently discards invalid or test pings before any processing begins\n- **Parses each item into a structured task** — GPT-4o-mini converts raw action item text into a verb-first task name, assigns an owner, sets a deadline, and scores a priority from 1 to 4\n- **Creates tasks in ClickUp automatically** — Each parsed task is posted to your specified ClickUp list via the API with priority, due date, and a meeting reference in the description\n- **Sends one Telegram confirmation** — After all tasks are created, a single message is sent with the meeting title, date, and total task count — no spam per task\n- **Exits cleanly when nothing is found** — Meetings with no action items stop silently without errors or empty notifications\n\n---\n\n## Setup Requirements\n\n### Tools Needed\n- n8n instance (self-hosted or cloud)\n- Fireflies.ai account with webhook access\n- OpenAI account with GPT-4o-mini API access\n- ClickUp account with API access and a target list\n- Telegram bot (created via @BotFather)\n\n### Credentials Required\n- Fireflies API key (pasted into **5. Set — Config Values**)\n- ClickUp API token (pasted into **5. Set — Config Values**)\n- OpenAI API key\n- Telegram Bot credential (connected in n8n)\n\n**Estimated Setup Time: 15–20 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Import the workflow** — Open n8n → Workflows → Import from JSON → paste the workflow JSON → click Import\n\n2. **Activate the workflow and copy the webhook URL** — Toggle the workflow to Active → click on node **1. Webhook — Fireflies Transcript Done** → copy the webhook URL shown\n\n3. **Register the webhook in Fireflies** — Log in to fireflies.ai → Settings → Developer Settings → Webhooks → paste the webhook URL → save\n\n4. **Get your Fireflies API key** — In Fireflies, go to Settings → Integrations → copy your API key\n\n5. **Get your ClickUp API token** — In ClickUp, click your avatar (bottom left) → Settings → Apps → API Token → copy the token\n\n6. **Get your ClickUp List ID** — Open the ClickUp list where tasks should be created → look at the URL bar → copy the number after `/li/` (e.g. in `.../li/90121234567`, the list ID is `90121234567`)\n\n7. **Get your Telegram Chat ID** — Open Telegram → search for `@userinfobot` → send `/start` → it will reply with your chat ID\n\n8. **Fill in Config Values** — Open node **5. Set — Config Values** → replace all placeholders:\n\n| Field | What to enter |\n|---|---|\n| `YOUR_FIREFLIES_API_KEY` | Your Fireflies API key from step 4 |\n| `YOUR_CLICKUP_API_TOKEN` | Your ClickUp API token from step 5 |\n| `YOUR_CLICKUP_LIST_ID` | Your ClickUp list ID from step 6 |\n| `YOUR_TELEGRAM_CHAT_ID` | Your Telegram chat ID from step 7 |\n| `YOUR NAME` | Your name (used in the AI prompt context) |\n| `YOUR COMPANY NAME` | Your company name (shown in Telegram message) |\n\n9. **Connect OpenAI** — Open node **11. OpenAI — GPT-4o-mini Model** → click the credential dropdown → add your OpenAI API key → test the connection\n\n10. **Connect Telegram** — Open node **17. Telegram — Send Task Summary** → click the credential dropdown → add your Telegram Bot API credential → open Telegram → send `/start` to your bot before testing\n\n&gt; ⚠️ **Activate the workflow before registering the webhook in Fireflies.** An inactive workflow will not receive signals. Activate first, then paste the URL into Fireflies.\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Webhook: Fireflies Transcript Done**\nThis step listens for a signal from Fireflies. Every time a meeting finishes transcribing, Fireflies sends a request to this webhook URL containing the meeting ID. No manual trigger is needed — it fires automatically after every recorded call.\n\n**Step 2 — Code: Extract Meeting ID**\nThe meeting ID is extracted from the incoming signal. Fireflies can send the payload in several different formats, so this step checks all possible locations and pulls the ID safely. If no meeting ID is present, the signal is marked as invalid.\n\n**Step 3 — IF: Valid Meeting ID?**\nThis is the first gate check. If a valid meeting ID was found (YES path), the workflow moves forward to fetch the transcript. If the signal was invalid or empty (NO path), the workflow routes to **4. Set — Invalid Webhook Skip** and stops cleanly without errors.\n\n**Step 4 — Set: Invalid Webhook Skip**\nThis step handles the invalid signal case. It sets a brief message and the workflow ends here for that trigger.\n\n**Step 5 — Set: Config Values**\nYour Fireflies API key, ClickUp API token, ClickUp list ID, Telegram chat ID, your name, and company name are all stored here. The validated meeting ID from step 2 is also carried forward so the transcript fetch can use it directly.\n\n**Step 6 — HTTP: Fetch Transcript**\nA request is sent to the Fireflies API using your API key and the meeting ID. It retrieves the full transcript including all sentences with speaker labels and task flags, plus the AI-generated summary containing action items, overview, and keywords.\n\n**Step 7 — Code: Process Action Items**\nAction items are collected from two sources simultaneously: sentences that Fireflies NLP flagged as tasks, and the AI-generated action items list from the Fireflies summary. Both lists are combined, duplicates are removed, and the result is limited to 15 items. Meeting metadata (title, date, duration, participants, overview) is also extracted here. If no action items are found at all, a flag is set for the next gate check.\n\n**Step 8 — IF: Action Items Found?**\nThis is the second gate check. If action items were found (YES path), the workflow continues to AI parsing. If no action items were detected or the transcript was not ready (NO path), the workflow routes to **9. Set — No Action Items Skip** and ends cleanly.\n\n**Step 9 — Set: No Action Items Skip**\nThis step handles the no-items case. It logs the meeting ID and a skip message, and the workflow ends here.\n\n**Step 10 — AI Agent: Parse Action Items**\nGPT-4o-mini receives the meeting context and the full list of raw action items. For each item it returns four structured fields: a clean verb-first task name (maximum 60 characters), the responsible owner extracted from the text (or \"Unassigned\" if not mentioned), a deadline in YYYY-MM-DD format with relative date logic built in (today, tomorrow, this week, next week), and a priority number from 1 (Urgent) to 4 (Low). Every input item must produce exactly one output task — no skipping.\n\n**Step 11 — OpenAI: GPT-4o-mini Model**\nThis is the language model powering the parsing step. It runs at temperature 0.2 for precise, consistent structured output and is capped at 1,200 tokens to handle up to 15 tasks per meeting.\n\n**Step 12 — Parser: Structured Task Output**\nThis step enforces the exact array schema GPT-4o-mini must return. It validates that every task has all four required fields in the correct format before the results move to ClickUp creation, preventing any malformed tasks from reaching your account.\n\n**Step 13 — Code: Split Tasks for Loop**\nThe array of parsed tasks is converted into individual items — one per task — so each one can be sent to ClickUp separately. A deadline timestamp is calculated in milliseconds for the ClickUp API. A flag called `isLastTask` is set to true only on the final task in the list, which controls when the Telegram notification fires.\n\n**Step 14 — HTTP: Create ClickUp Task**\nFor each task, a request is sent to the ClickUp API v2. The task is created in your specified list with the task name, a description that includes the meeting title, date, owner, and deadline, plus the priority level, due date, and a tag `meeting-action-item` applied automatically.\n\n**Step 15 — IF: All Tasks Created?**\nAfter each ClickUp task is created, this check reads the `isLastTask` flag. If it is true (YES path — this was the last task), the workflow moves to build the Telegram summary. If it is false (NO path — more tasks still exist), the workflow routes to **18. Set — Loop Continues** and the loop proceeds to the next task.\n\n**Step 16 — Code: Build Telegram Summary**\nOnce all tasks are created, a clean confirmation message is assembled. It includes the meeting title, date, total number of tasks created, and a reminder to review the tasks in ClickUp. Your company name is included in the footer.\n\n**Step 17 — Telegram: Send Task Summary**\nThe confirmation message is sent to your Telegram chat ID. This fires exactly once per meeting — after all tasks are in ClickUp — not once per task.\n\n**Step 18 — Set: Loop Continues**\nThis step handles the non-final tasks in the loop. It sets a brief in-progress message and the loop continues to the next task creation.\n\n---\n\n## Key Features\n\n✅ **Dual-source action item extraction** — Combines Fireflies NLP task flags and the AI summary list for more complete coverage than either source alone\n✅ **Fires exactly once per meeting** — The Telegram notification uses an `isLastTask` flag so you receive one clean summary, not one message per task\n✅ **Relative deadline logic built in** — GPT understands \"by Friday\", \"next week\", and \"tomorrow\" and converts them to real dates automatically\n✅ **Three validation gates** — Invalid webhooks, missing transcripts, and meetings with no action items all exit cleanly without errors or empty tasks\n✅ **Priority scoring per task** — Every task is scored 1–4 (Urgent to Low) based on context so your ClickUp list is pre-sorted by importance\n✅ **Meeting reference in every task description** — Each ClickUp task includes the meeting title, date, owner, and deadline so your team always knows where the task came from\n✅ **`meeting-action-item` tag auto-applied** — Every task created by this workflow is tagged automatically so you can filter and report on meeting-sourced work in ClickUp\n✅ **Structured output enforced** — A schema parser validates all four task fields before anything reaches ClickUp — no broken or incomplete tasks\n\n---\n\n## Customisation Options\n\n**Change the maximum task limit** — In node **7. Code — Process Action Items**, change `.slice(0, 15)` to a higher or lower number to control how many action items per meeting are sent to ClickUp.\n\n**Add tasks to different lists by meeting type** — In node **5. Set — Config Values**, add a second list ID (e.g. `clickupSalesListId`). Then add an IF check after step 7 that reads the meeting title — if it contains \"sales\" or \"demo\", route to the sales list; otherwise use the default list.\n\n**Send a Slack message instead of or alongside Telegram** — After node **16. Code — Build Telegram Summary**, add a Slack node using the same message text to also post the task summary to a `#meetings` channel for team visibility.\n\n**Add a Google Sheets log** — After node **14. HTTP — Create ClickUp Task**, add a Google Sheets append step to log each task: meeting title, task name, owner, deadline, priority, and ClickUp task ID — giving you a permanent record outside ClickUp.\n\n**Assign tasks to specific ClickUp users** — In node **14. HTTP — Create ClickUp Task**, add an `assignees` field to the JSON body containing ClickUp user IDs. Map owner names from step 13 to their ClickUp IDs using a lookup object in the code step.\n\n---\n\n## Troubleshooting\n\n**Workflow not triggering when a call ends:**\n- Confirm the workflow is Active before expecting Fireflies to fire it — inactive workflows do not receive webhooks\n- Log in to Fireflies → Settings → Developer Settings → Webhooks → confirm the URL is saved and matches the URL from node **1. Webhook — Fireflies Transcript Done** exactly\n- Check that your Fireflies plan includes webhook support\n\n**Fireflies API key error or empty transcript:**\n- Confirm `YOUR_FIREFLIES_API_KEY` in node **5. Set — Config Values** is replaced with your actual key — not the placeholder text\n- Get your key from fireflies.ai → Settings → Integrations → API Key\n- If the transcript returns empty, Fireflies may still be processing — the workflow exits cleanly via **9. Set — No Action Items Skip** in this case\n\n**ClickUp tasks not being created:**\n- Confirm `YOUR_CLICKUP_API_TOKEN` in node **5. Set — Config Values** is your personal API token, not an OAuth token — get it from ClickUp avatar → Settings → Apps\n- Confirm `YOUR_CLICKUP_LIST_ID` is the numeric ID from the list URL (after `/li/`), not the list name\n- Check the execution log of node **14. HTTP — Create ClickUp Task** for the exact API error message — a 401 means wrong token, a 404 means wrong list ID\n\n**Telegram message not arriving:**\n- Confirm the Telegram Bot credential in node **17. Telegram — Send Task Summary** is connected with a valid bot token from @BotFather\n- Confirm `YOUR_TELEGRAM_CHAT_ID` in node **5. Set — Config Values** is your numeric chat ID — get it from @userinfobot in Telegram\n- You must send `/start` to your bot before the first message will be delivered — bots cannot initiate conversations\n\n**AI returning incomplete or wrongly formatted tasks:**\n- The schema parser in node **12. Parser — Structured Task Output** validates all four fields — check the execution log of node **10. AI Agent — Parse Action Items** if tasks are missing fields\n- If deadlines are returning as placeholder text instead of dates, confirm the action items text contains recognizable timeframes — GPT defaults to a 2-day deadline when no timeframe is mentioned\n- Confirm the OpenAI credential in node **11. OpenAI — GPT-4o-mini Model** is connected and your account has available credits\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email: [info@incrementors.com](info@incrementors.com)\n🌐 Website: [https://www.incrementors.com/](https://www.incrementors.com/)",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "c716600a-7c26-4e23-b04d-ce80288e64ec",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -576,
+            688
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 652,
+            "height": 1152,
+            "content": "## Meeting Action Items to ClickUp — Fireflies + GPT-4o-mini + Telegram\n\nFor founders, project managers, and team leads who want every meeting action item to automatically appear as a ClickUp task — without manual note-taking or copy-pasting. When Fireflies finishes transcribing a meeting, this workflow extracts action items from two sources: the Fireflies NLP task detector and the AI-generated summary. GPT-4o-mini parses each item into a clean task with an owner, deadline, and priority. Every task is created in ClickUp automatically. A single Telegram message confirms the total count when all tasks are done.\n\n## How it works\n- **1. Webhook — Fireflies Transcript Done** receives the meetingId from Fireflies on transcription complete\n- **2. Code — Extract Meeting ID** safely extracts the meetingId from all possible Fireflies payload structures\n- **3. IF — Valid Meeting ID?** validates the meetingId — invalid webhooks exit cleanly\n- **5. Set — Config Values** stores Fireflies API key, ClickUp API token, ClickUp list ID, Telegram chat ID, and author details\n- **6. HTTP — Fetch Transcript** calls the Fireflies GraphQL API for sentences with ai_filters.task and summary.action_items\n- **7. Code — Process Action Items** combines both sources, deduplicates, and limits to 15 items\n- **8. IF — Action Items Found?** stops cleanly if no action items were detected\n- **10. AI Agent — Parse Action Items** uses GPT-4o-mini to parse each item into taskName, owner, deadline, and priority\n- **13. Code — Split Tasks for Loop** converts the array to one item per task and sets isLastTask on the final one\n- **14. HTTP — Create ClickUp Task** creates each task in ClickUp via API v2 with priority and due date\n- **15. IF — All Tasks Created?** checks the isLastTask flag — only the last task triggers Telegram\n- **16. Code — Build Telegram Summary** builds the notification message with meeting title and total task count\n- **17. Telegram — Send Task Summary** sends one confirmation message after all tasks are created\n\n## Set up steps\n1. Activate the workflow and copy the webhook URL from node 1\n2. In Fireflies — go to Settings, Developer Settings, Webhooks, and paste the URL\n3. In **5. Set — Config Values** — replace YOUR_FIREFLIES_API_KEY, YOUR_CLICKUP_API_TOKEN, YOUR_CLICKUP_LIST_ID, YOUR_TELEGRAM_CHAT_ID, your name, and company name\n4. In **11. OpenAI — GPT-4o-mini Model** — connect your OpenAI credential\n5. In **17. Telegram — Send Task Summary** — connect your Telegram Bot API credential and send /start to your bot before testing"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "b6253aa9-c796-4d45-920e-bcf6cd7ada48",
+          "name": "Section — Webhook Receipt and Validation",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            160,
+            848
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 708,
+            "height": 708,
+            "content": "## Webhook Receipt and Validation\nFireflies POSTs a meetingId here on transcription complete. A Code node safely extracts the meetingId from any payload structure. Invalid webhooks exit cleanly via the Set node below."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "cde7f040-e4e0-4258-ae1c-804d61f5c341",
+          "name": "Section — Config, Transcript Fetch, and Action Item Extraction",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            944,
+            848
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 964,
+            "height": 660,
+            "content": "## Config, Transcript Fetch, and Action Item Extraction\nConfig stores all credentials and author details. Fireflies GraphQL API fetches the transcript. A Code node extracts action items from two sources: NLP task-flagged sentences and the AI summary list. Combined, deduplicated, limited to 15."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "272d8cca-09f2-4203-90d4-eaf4748bb7f8",
+          "name": "Section — AI Task Parsing",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1968,
+            848
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 468,
+            "height": 660,
+            "content": "## AI Task Parsing\nGPT-4o-mini (temperature 0.2) parses each raw action item into four structured fields: a clean verb-first task name, the responsible owner, a deadline in YYYY-MM-DD format, and a priority from 1 to 4. Structured Output Parser enforces the array schema."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "1cdbbbd7-1dcf-41f9-adc4-83767687aba2",
+          "name": "Section — ClickUp Task Creation Loop",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2480,
+            928
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 420,
+            "height": 388,
+            "content": "## ClickUp Task Creation Loop\nConverts the tasks array to one item per task. Creates each task in ClickUp via API v2 with name, description, priority, and due date. The isLastTask flag ensures Telegram fires exactly once after all tasks are created."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ae5e1eb2-7e80-4e15-b852-03de2763849b",
+          "name": "Section — Telegram Notification",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3040,
+            800
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 532,
+            "height": 340,
+            "content": "## Telegram Notification\nBuilds and sends a single confirmation message after all ClickUp tasks are created. Includes meeting title, date, and total task count."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "b264cc7a-7ea4-4323-9873-8faed829015c",
+          "name": "1. Webhook — Fireflies Transcript Done",
+          "type": "n8n-nodes-base.webhook",
+          "position": [
+            192,
+            1120
+          ],
+          "webhookId": "ff-clickup-tasks-001",
+          "parameters": {
+            "path": "fireflies-action-items",
+            "options": {},
+            "httpMethod": "POST"
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "d56b297b-0c13-4583-a740-fe00b4ee64c9",
+          "name": "2. Code — Extract Meeting ID",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            416,
+            1120
+          ],
+          "parameters": {
+            "jsCode": "// Safely extract meetingId from all possible payload structures\nconst raw = $input.first().json;\n\nconst meetingId =\n  raw.meetingId ||\n  raw.body?.meetingId ||\n  raw.data?.meetingId ||\n  raw.payload?.meetingId ||\n  '';\n\nconst eventType =\n  raw.eventType ||\n  raw.body?.eventType ||\n  'Transcription completed';\n\nreturn [{\n  json: {\n    isValid: !!meetingId,\n    meetingId: meetingId.trim(),\n    eventType\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "a899f7d0-9c83-4005-96e4-042d06a338c4",
+          "name": "3. IF — Valid Meeting ID?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            640,
+            1120
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-001",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $json.isValid }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "e340c7c2-8d95-4860-a4a5-4dfc2cf1a0e8",
+          "name": "4. Set — Invalid Webhook Skip",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            640,
+            1328
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "skip-001",
+                  "name": "result",
+                  "type": "string",
+                  "value": "Invalid webhook — no meetingId received."
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "9c683dcc-1e63-4cda-913e-29bc7380651e",
+          "name": "5. Set — Config Values",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            976,
+            1104
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "cfg-001",
+                  "name": "firefliesApiKey",
+                  "type": "string",
+                  "value": "YOUR_FIREFLIES_API_KEY"
+                },
+                {
+                  "id": "cfg-002",
+                  "name": "clickupApiToken",
+                  "type": "string",
+                  "value": "YOUR_CLICKUP_API_TOKEN"
+                },
+                {
+                  "id": "cfg-003",
+                  "name": "clickupListId",
+                  "type": "string",
+                  "value": "YOUR_CLICKUP_LIST_ID"
+                },
+                {
+                  "id": "cfg-004",
+                  "name": "telegramChatId",
+                  "type": "string",
+                  "value": "YOUR_TELEGRAM_CHAT_ID"
+                },
+                {
+                  "id": "cfg-005",
+                  "name": "hostName",
+                  "type": "string",
+                  "value": "YOUR NAME"
+                },
+                {
+                  "id": "cfg-006",
+                  "name": "companyName",
+                  "type": "string",
+                  "value": "YOUR COMPANY NAME"
+                },
+                {
+                  "id": "cfg-007",
+                  "name": "meetingId",
+                  "type": "string",
+                  "value": "={{ $('2. Code — Extract Meeting ID').item.json.meetingId }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "f9e6b942-d647-4929-b71d-3b7e3fcf08e1",
+          "name": "6. HTTP — Fetch Transcript",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            1184,
+            1104
+          ],
+          "parameters": {
+            "url": "https://api.fireflies.ai/graphql",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"query\": \"query GetTranscript($id: String!) { transcript(id: $id) { id title date duration participants host_email sentences { speaker_name text ai_filters { task } } summary { action_items overview keywords } } }\",\n  \"variables\": {\n    \"id\": \"{{ $json.meetingId }}\"\n  }\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $json.firefliesApiKey }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "3d66e64a-857b-4845-9351-33676a9c9264",
+          "name": "7. Code — Process Action Items",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1408,
+            1104
+          ],
+          "parameters": {
+            "jsCode": "const response = $input.first().json;\nconst config = $('5. Set — Config Values').item.json;\n\nconst transcript = response?.data?.transcript;\n\nif (!transcript || !transcript.id) {\n  return [{\n    json: {\n      hasData: false,\n      meetingId: config.meetingId,\n      error: 'Transcript not found or not ready in Fireflies'\n    }\n  }];\n}\n\n// Collect action items from Fireflies summary\nconst rawActionItems = transcript.summary?.action_items || [];\n\n// ALSO collect sentences flagged as tasks by Fireflies NLP\nconst sentences = transcript.sentences || [];\nconst taskSentences = sentences\n  .filter(s => s.ai_filters?.task && (s.text || '').length > 10)\n  .map(s => (s.speaker_name ? s.speaker_name + ': ' + s.text : s.text))\n  .slice(0, 10);\n\n// Combine both sources\nconst allActionSources = [\n  ...rawActionItems,\n  ...taskSentences\n];\n\n// Deduplicate and clean\nconst uniqueItems = [...new Set(allActionSources)]\n  .filter(item => item && item.trim().length > 5)\n  .slice(0, 15);\n\nif (uniqueItems.length === 0) {\n  return [{\n    json: {\n      hasData: false,\n      meetingId: transcript.id,\n      error: 'No action items found in this meeting'\n    }\n  }];\n}\n\nconst meetingDate = transcript.date\n  ? new Date(transcript.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })\n  : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });\n\nconst durationMin = Math.round((transcript.duration || 0) / 60);\nconst participants = (transcript.participants || []).join(', ') || 'Not listed';\nconst overview = (transcript.summary?.overview || '').substring(0, 500);\nconst keywords = (transcript.summary?.keywords || []).slice(0, 8).join(', ');\n\nreturn [{\n  json: {\n    hasData: true,\n    meetingId: transcript.id,\n    meetingTitle: transcript.title || 'Untitled Meeting',\n    meetingDate,\n    durationMin,\n    participants,\n    overview,\n    keywords,\n    actionItemsRaw: uniqueItems.join('\\n'),\n    actionItemCount: uniqueItems.length,\n    clickupApiToken: config.clickupApiToken,\n    clickupListId: config.clickupListId,\n    telegramChatId: config.telegramChatId,\n    hostName: config.hostName,\n    companyName: config.companyName\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "9f313a3f-0965-43ac-a63d-af3e37276740",
+          "name": "8. IF — Action Items Found?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            1648,
+            1104
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-data",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $json.hasData }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "a7f2b1da-d2d0-4d5d-8996-e637b10413fa",
+          "name": "9. Set — No Action Items Skip",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            1648,
+            1312
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "skip-002",
+                  "name": "result",
+                  "type": "string",
+                  "value": "=No action items found or transcript not ready for: {{ $json.meetingId }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "ae6aaf0e-7066-41d2-9b17-83538356c999",
+          "name": "10. AI Agent — Parse Action Items",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            2016,
+            1088
+          ],
+          "parameters": {
+            "text": "=You are a project manager parsing meeting action items into structured ClickUp tasks.\n\nMEETING: {{ $json.meetingTitle }}\nDATE: {{ $json.meetingDate }}\nPARTICIPANTS: {{ $json.participants }}\nOVERVIEW: {{ $json.overview }}\n\nACTION ITEMS FROM MEETING:\n{{ $json.actionItemsRaw }}\n\nFor EACH action item above, extract the following and return a JSON array.\n\nReturn ONLY a valid JSON array. No extra text. No markdown. No backticks.\nEach element in the array must have exactly these 4 fields:\n\ntaskName — A clean, actionable task title. Start with a verb. Maximum 60 characters. Example: Send project proposal to client by Friday\n\nowner — The person responsible. Extract from the action item text if mentioned. If not mentioned, write: Unassigned\n\ndeadline — The deadline in YYYY-MM-DD format. Extract from the action item if a date or timeframe is mentioned. Examples: today = {{ $now.toFormat('yyyy-MM-dd') }}, tomorrow = {{ $now.plus({days: 1}).toFormat('yyyy-MM-dd') }}, this week = {{ $now.plus({days: 3}).toFormat('yyyy-MM-dd') }}, next week = {{ $now.plus({days: 7}).toFormat('yyyy-MM-dd') }}. If no deadline mentioned, default to {{ $now.plus({days: 2}).toFormat('yyyy-MM-dd') }}\n\npriority — A number: 1 for urgent, 2 for high, 3 for normal, 4 for low. Use context to decide. If unclear use 3.\n\nEXAMPLE OUTPUT FORMAT:\n[{\"taskName\": \"Send updated proposal to John by Friday\", \"owner\": \"Rahul\", \"deadline\": \"2026-04-12\", \"priority\": 2}, {\"taskName\": \"Schedule follow-up call with client\", \"owner\": \"Unassigned\", \"deadline\": \"2026-04-14\", \"priority\": 3}]\n\nRULES:\n- Return ONLY the JSON array. Nothing else.\n- Every item in the input must become exactly one task in the output.\n- Do not skip any action items.\n- Do not add tasks that were not in the input.",
+            "options": {},
+            "promptType": "define",
+            "hasOutputParser": true
+          },
+          "typeVersion": 1.7
+        },
+        {
+          "id": "22cf98cc-bad3-4630-b0de-af551b2780df",
+          "name": "11. OpenAI — GPT-4o-mini Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            2016,
+            1280
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini"
+            },
+            "options": {
+              "maxTokens": 1200,
+              "temperature": 0.2
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "8dc8f45d-5121-46f2-a5fe-eafc367d6895",
+          "name": "12. Parser — Structured Task Output",
+          "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+          "position": [
+            2160,
+            1360
+          ],
+          "parameters": {
+            "schemaType": "manual",
+            "inputSchema": "{\n  \"type\": \"array\",\n  \"items\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"taskName\": {\n        \"type\": \"string\",\n        \"description\": \"Clean actionable task title starting with a verb. Max 60 chars.\"\n      },\n      \"owner\": {\n        \"type\": \"string\",\n        \"description\": \"Person responsible for this task. Use Unassigned if not mentioned.\"\n      },\n      \"deadline\": {\n        \"type\": \"string\",\n        \"description\": \"Deadline date in YYYY-MM-DD format\"\n      },\n      \"priority\": {\n        \"type\": \"number\",\n        \"description\": \"Priority: 1=Urgent 2=High 3=Normal 4=Low\"\n      }\n    },\n    \"required\": [\"taskName\", \"owner\", \"deadline\", \"priority\"]\n  }\n}"
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "9e247d97-30fd-4111-bdbc-590418922767",
+          "name": "13. Code — Split Tasks for Loop",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2288,
+            1088
+          ],
+          "parameters": {
+            "jsCode": "// Convert parsed tasks array into individual items for ClickUp loop\nconst aiOutput = $input.first().json.output;\nconst meetingData = $('7. Code — Process Action Items').item.json;\n\nif (!aiOutput || !Array.isArray(aiOutput) || aiOutput.length === 0) {\n  return [{\n    json: {\n      hasTasksToCreate: false,\n      error: 'No structured tasks returned from AI',\n      meetingTitle: meetingData.meetingTitle,\n      telegramChatId: meetingData.telegramChatId,\n      hostName: meetingData.hostName\n    }\n  }];\n}\n\n// Return ONE item per task\nreturn aiOutput.map((task, index) => {\n  const deadlineMs = task.deadline\n    ? new Date(task.deadline).getTime()\n    : Date.now() + (2 * 24 * 60 * 60 * 1000);\n\n  const priorityNum = parseInt(task.priority) || 3;\n  const validPriority = [1, 2, 3, 4].includes(priorityNum) ? priorityNum : 3;\n\n  return {\n    json: {\n      hasTasksToCreate: true,\n      taskName: (task.taskName || 'Untitled Task').substring(0, 100),\n      owner: task.owner || 'Unassigned',\n      deadline: task.deadline || 'Not set',\n      deadlineMs,\n      priority: validPriority,\n      taskIndex: index + 1,\n      totalTasks: aiOutput.length,\n      isLastTask: index === aiOutput.length - 1,\n      meetingTitle: meetingData.meetingTitle,\n      meetingDate: meetingData.meetingDate,\n      meetingId: meetingData.meetingId,\n      clickupApiToken: meetingData.clickupApiToken,\n      clickupListId: meetingData.clickupListId,\n      telegramChatId: meetingData.telegramChatId,\n      hostName: meetingData.hostName,\n      companyName: meetingData.companyName\n    }\n  };\n});"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "43a4e049-7535-4281-8cbe-22f7cd9089c2",
+          "name": "14. HTTP — Create ClickUp Task",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            2528,
+            1088
+          ],
+          "parameters": {
+            "url": "=https://api.clickup.com/api/v2/list/{{ $json.clickupListId }}/task",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"name\": \"{{ $json.taskName }}\",\n  \"description\": \"Meeting: {{ $json.meetingTitle }}\\nDate: {{ $json.meetingDate }}\\nOwner: {{ $json.owner }}\\nDeadline: {{ $json.deadline }}\\n\\nAuto-created from meeting notes by n8n + Fireflies + GPT-4o-mini\",\n  \"priority\": {{ $json.priority }},\n  \"due_date\": {{ $json.deadlineMs }},\n  \"due_date_time\": true,\n  \"notify_all\": false,\n  \"tags\": [\"meeting-action-item\"]\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "={{ $json.clickupApiToken }}"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "7fd2b4db-0a42-47eb-9f95-9f135aa40d17",
+          "name": "15. IF — All Tasks Created?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            2752,
+            1088
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-last",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $('13. Code — Split Tasks for Loop').item.json.isLastTask }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "e1b7862e-3fe4-4f4e-ab22-4bbee4d8c086",
+          "name": "16. Code — Build Telegram Summary",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            3120,
+            928
+          ],
+          "parameters": {
+            "jsCode": "// Build Telegram summary message after all tasks created\nconst lastTaskData = $('13. Code — Split Tasks for Loop').item.json;\nconst totalTasks = lastTaskData.totalTasks;\nconst meetingTitle = lastTaskData.meetingTitle;\nconst meetingDate = lastTaskData.meetingDate;\nconst hostName = lastTaskData.hostName;\nconst companyName = lastTaskData.companyName;\n\nconst message =\n  'Meeting Action Items Created in ClickUp\\n' +\n  '\\n' +\n  'Meeting: ' + meetingTitle + '\\n' +\n  'Date: ' + meetingDate + '\\n' +\n  'Tasks Created: ' + totalTasks + ' tasks\\n' +\n  '\\n' +\n  'All tasks have been added to your ClickUp list automatically.\\n' +\n  'Check ClickUp to review, assign, and adjust deadlines.\\n' +\n  '\\n' +\n  'Powered by ' + companyName + ' + Fireflies.ai + GPT-4o-mini';\n\nreturn [{\n  json: {\n    telegramMessage: message,\n    telegramChatId: lastTaskData.telegramChatId\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "7b482d9e-e013-40cc-9a1e-adaeb708351e",
+          "name": "17. Telegram — Send Task Summary",
+          "type": "n8n-nodes-base.telegram",
+          "position": [
+            3328,
+            928
+          ],
+          "webhookId": "3e0125f6-1229-49e4-919c-b7eb2dc2e836",
+          "parameters": {
+            "text": "={{ $json.telegramMessage }}",
+            "chatId": "={{ $json.telegramChatId }}",
+            "additionalFields": {
+              "appendAttribution": false
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "69317b16-0964-4ce5-bc28-55717c3ac52f",
+          "name": "18. Set — Loop Continues",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            3104,
+            1248
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "skip-loop-001",
+                  "name": "result",
+                  "type": "string",
+                  "value": "=Task created. Continuing loop — not last task yet."
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "5. Set — Config Values": {
+          "main": [
+            [
+              {
+                "node": "6. HTTP — Fetch Transcript",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "3. IF — Valid Meeting ID?": {
+          "main": [
+            [
+              {
+                "node": "5. Set — Config Values",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "4. Set — Invalid Webhook Skip",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. HTTP — Fetch Transcript": {
+          "main": [
+            [
+              {
+                "node": "7. Code — Process Action Items",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "15. IF — All Tasks Created?": {
+          "main": [
+            [
+              {
+                "node": "16. Code — Build Telegram Summary",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "18. Set — Loop Continues",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. IF — Action Items Found?": {
+          "main": [
+            [
+              {
+                "node": "10. AI Agent — Parse Action Items",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "9. Set — No Action Items Skip",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "2. Code — Extract Meeting ID": {
+          "main": [
+            [
+              {
+                "node": "3. IF — Valid Meeting ID?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "11. OpenAI — GPT-4o-mini Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "10. AI Agent — Parse Action Items",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "14. HTTP — Create ClickUp Task": {
+          "main": [
+            [
+              {
+                "node": "15. IF — All Tasks Created?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. Code — Process Action Items": {
+          "main": [
+            [
+              {
+                "node": "8. IF — Action Items Found?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "13. Code — Split Tasks for Loop": {
+          "main": [
+            [
+              {
+                "node": "14. HTTP — Create ClickUp Task",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "10. AI Agent — Parse Action Items": {
+          "main": [
+            [
+              {
+                "node": "13. Code — Split Tasks for Loop",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "16. Code — Build Telegram Summary": {
+          "main": [
+            [
+              {
+                "node": "17. Telegram — Send Task Summary",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "12. Parser — Structured Task Output": {
+          "ai_outputParser": [
+            [
+              {
+                "node": "10. AI Agent — Parse Action Items",
+                "type": "ai_outputParser",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Webhook — Fireflies Transcript Done": {
+          "main": [
+            [
+              {
+                "node": "2. Code — Extract Meeting ID",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 24,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 3
+        },
+        "n8n-nodes-base.set": {
+          "count": 4
+        },
+        "n8n-nodes-base.code": {
+          "count": 4
+        },
+        "n8n-nodes-base.webhook": {
+          "count": 1
+        },
+        "n8n-nodes-base.telegram": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.outputParserStructured": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Incrementors",
+      "username": "incrementors",
+      "bio": "",
+      "verified": true,
+      "links": [
+        "https://www.incrementors.com/"
+      ],
+      "avatar": "https://gravatar.com/avatar/e09b4b6a8c5a00f886a9eedf3be23a4af5a50cc216cd6b2aee2a12c2dfba99dd?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 47,
+        "icon": "file:webhook.svg",
+        "name": "n8n-nodes-base.webhook",
+        "codex": {
+          "data": {
+            "alias": [
+              "HTTP",
+              "API",
+              "Build",
+              "WH"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-custom-incident-response-workflows-with-n8n/",
+                  "label": "How to automate every step of an incident response workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Webhook"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTM1IDM3Yy0yLjIgMC00LTEuOC00LTRzMS44LTQgNC00IDQgMS44IDQgNC0xLjggNC00IDQiLz48cGF0aCBmaWxsPSIjMzc0NzRmIiBkPSJNMzUgNDNjLTMgMC01LjktMS40LTcuOC0zLjdsMy4xLTIuNWMxLjEgMS40IDIuOSAyLjMgNC43IDIuMyAzLjMgMCA2LTIuNyA2LTZzLTIuNy02LTYtNmMtMSAwLTIgLjMtMi45LjdsLTEuNyAxTDIzLjMgMTZsMy41LTEuOSA1LjMgOS40YzEtLjMgMi0uNSAzLS41IDUuNSAwIDEwIDQuNSAxMCAxMFM0MC41IDQzIDM1IDQzIi8+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTE0IDQzQzguNSA0MyA0IDM4LjUgNCAzM2MwLTQuNiAzLjEtOC41IDcuNS05LjdsMSAzLjlDOS45IDI3LjkgOCAzMC4zIDggMzNjMCAzLjMgMi43IDYgNiA2czYtMi43IDYtNnYtMmgxNXY0SDIzLjhjLS45IDQuNi01IDgtOS44IDgiLz48cGF0aCBmaWxsPSIjZTkxZTYzIiBkPSJNMTQgMzdjLTIuMiAwLTQtMS44LTQtNHMxLjgtNCA0LTQgNCAxLjggNCA0LTEuOCA0LTQgNCIvPjxwYXRoIGZpbGw9IiMzNzQ3NGYiIGQ9Ik0yNSAxOWMtMi4yIDAtNC0xLjgtNC00czEuOC00IDQtNCA0IDEuOCA0IDQtMS44IDQtNCA0Ii8+PHBhdGggZmlsbD0iI2U5MWU2MyIgZD0ibTE1LjcgMzQtMy40LTIgNS45LTkuN2MtMi0xLjktMy4yLTQuNS0zLjItNy4zIDAtNS41IDQuNS0xMCAxMC0xMHMxMCA0LjUgMTAgMTBjMCAuOS0uMSAxLjctLjMgMi41bC0zLjktMWMuMS0uNS4yLTEgLjItMS41IDAtMy4zLTIuNy02LTYtNnMtNiAyLjctNiA2YzAgMi4xIDEuMSA0IDIuOSA1LjFsMS43IDF6Ii8+PC9zdmc+"
+        },
+        "displayName": "Webhook",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 49,
+        "icon": "file:telegram.svg",
+        "name": "n8n-nodes-base.telegram",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-telegram-bots-with-n8n-a-no-code-platform/",
+                  "icon": "💬",
+                  "label": "Creating Telegram Bots with n8n, a No-Code Platform"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.telegram/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/telegram/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Telegram"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgNjYgNjYiPjx1c2UgeGxpbms6aHJlZj0iI2EiIHg9Ii41IiB5PSIuNSIvPjxzeW1ib2wgaWQ9ImEiIG92ZXJmbG93PSJ2aXNpYmxlIj48ZyBmaWxsLXJ1bGU9Im5vbnplcm8iIHN0cm9rZT0ibm9uZSI+PHBhdGggZmlsbD0iIzM3YWVlMiIgZD0iTTAgMzJjMCAxNy42NzMgMTQuMzI3IDMyIDMyIDMyczMyLTE0LjMyNyAzMi0zMlM0OS42NzMgMCAzMiAwIDAgMTQuMzI3IDAgMzIiLz48cGF0aCBmaWxsPSIjYzhkYWVhIiBkPSJtMjEuNjYxIDM0LjMzOCAzLjc5NyAxMC41MDhzLjQ3NS45ODMuOTgzLjk4MyA4LjA2OC03Ljg2NCA4LjA2OC03Ljg2NGw4LjQwNy0xNi4yMzctMjEuMTE5IDkuODk4eiIvPjxwYXRoIGZpbGw9IiNhOWM2ZDgiIGQ9Im0yNi42OTUgMzcuMDM0LS43MjkgNy43NDZzLS4zMDUgMi4zNzMgMi4wNjggMGw0LjY0NC00LjIwMyIvPjxwYXRoIGQ9Im0yMS43MyAzNC43MTItNy44MDktMi41NDVzLS45MzItLjM3OC0uNjMzLTEuMjM3Yy4wNjItLjE3Ny4xODYtLjMyOC41NTktLjU4OCAxLjczMS0xLjIwNiAzMi4wMjgtMTIuMDk2IDMyLjAyOC0xMi4wOTZzLjg1Ni0uMjg4IDEuMzYxLS4wOTdjLjIzMS4wODguMzc4LjE4Ny41MDMuNTQ4LjA0NS4xMzIuMDcxLjQxMS4wNjguNjg5LS4wMDMuMjAxLS4wMjcuMzg2LS4wNDUuNjc4LS4xODQgMi45NzgtNS43MDYgMjUuMTk4LTUuNzA2IDI1LjE5OHMtLjMzIDEuMy0xLjUxNCAxLjM0NWMtLjQzMi4wMTYtLjk1Ni0uMDcxLTEuNTgyLS42MS0yLjMyMy0xLjk5OC0xMC4zNTItNy4zOTQtMTIuMTI2LTguNThhLjM0LjM0IDAgMCAxLS4xNDYtLjIzOWMtLjAyNS0uMTI1LjEwOC0uMjguMTA4LS4yOHMxMy45OC0xMi40MjcgMTQuMzUyLTEzLjczMWMuMDI5LS4xMDEtLjA3OS0uMTUxLS4yMjYtLjEwNy0uOTI5LjM0Mi0xNy4wMjUgMTAuNTA2LTE4LjgwMSAxMS42MjktLjEwNC4wNjYtLjM5NS4wMjMtLjM5NS4wMjMiLz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Telegram",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1179,
+        "icon": "fa:code",
+        "name": "@n8n/n8n-nodes-langchain.outputParserStructured",
+        "codex": {
+          "data": {
+            "alias": [
+              "json",
+              "zod"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.outputparserstructured/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Output Parsers"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Structured Output Parser"
+        },
+        "iconData": {
+          "icon": "code",
+          "type": "icon"
+        },
+        "displayName": "Structured Output Parser",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 46,
+        "name": "Project Management"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

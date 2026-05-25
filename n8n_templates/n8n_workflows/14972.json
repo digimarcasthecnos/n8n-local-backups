@@ -1,0 +1,2072 @@
+{
+  "workflow": {
+    "id": 14972,
+    "name": "Monitor nighttime system health with Google Sheets, GPT-4o-mini and Gmail",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-10T09:11:10.757Z",
+    "description": "This template automates overnight system health monitoring for DevOps and IT operations teams. It checks your internal services and APIs on a schedule, logs all results to Google Sheets, and sends AI-generated alert emails when something goes wrong.\n\n**Who this is for**\nSystem administrators, DevOps engineers, and IT operations teams who need lightweight, automated overnight monitoring — without setting up a full-scale monitoring platform.\n\n**What's included**\nA single workflow that handles the full monitoring loop:\n\n1. **Read Monitor Targets** — Reads active URLs from Google Sheets. Add or disable targets anytime without touching the workflow.\n2. **Health Check** — Sends HTTP GET requests with a 3-second timeout to each target.\n3. **Response Time Tracking** — Measures and logs response time in milliseconds for every check.\n4. **Full Result Logging** — Appends every check result (OK and ERROR) to a Google Sheets log with timestamp, status, status code, response time, error message, and alert status.\n5. **AI-Generated Alert** — On failure, GPT-4o-mini generates a structured Japanese alert message with situation summary, urgency level, first steps to check, and escalation guidance.\n6. **Gmail Alert** — Sends the alert email to a configured address with a clear subject line.\n7. **Alert Status Tracking** — Updates the log to mark when an alert has been sent.\n\n**Key features**\n- Manage all monitoring targets in Google Sheets — no workflow edits needed to add or remove URLs\n- Monitors both HTTP errors (503 etc.) and connection failures (timeout, ECONNREFUSED)\n- Logs every check result for uptime analysis and audit purposes\n- AI alert in Japanese with actionable first-response guidance\n- Configurable schedule via Cron expression (default: every 10 min, weekdays 1:00–4:59 AM)\n- Timezone follows your n8n instance setting — no hardcoded timezone\n\n**Prerequisites**\n- Google Sheets (copy link provided in the workflow)\n- Gmail account connected to n8n\n- OpenAI API key\n\n---\n\nこのテンプレートは、DevOpsおよびIT運用チーム向けに夜間のシステム死活監視を自動化します。スケジュールに従って社内サービスやAPIをチェックし、全結果をGoogle Sheetsに記録し、障害検知時にはAIが生成したアラートメールを送信します。\n\n**このワークフローの対象ユーザー**\n本格的な監視プラットフォームを導入せずに、軽量で自動化された夜間監視を必要としているシステム管理者・DevOpsエンジニア・IT運用担当者向けです。\n\n**含まれる内容**\n監視ループ全体を1つのワークフローで処理します：\n\n1. **Read Monitor Targets** — Google SheetsからアクティブなURLを読み込む。ワークフローを編集せずにいつでも監視対象を追加・無効化できる。\n2. **Health Check** — 各URLに3秒タイムアウトのHTTP GETリクエストを送信する。\n3. **レスポンスタイム計測** — 全チェックのレスポンスタイムをミリ秒単位で計測・記録する。\n4. **全結果ログ** — タイムスタンプ・ステータス・ステータスコード・レスポンスタイム・エラーメッセージ・アラート送信状況を含む全チェック結果（OKおよびERROR）をGoogle Sheetsに記録する。\n5. **AIアラート生成** — 障害検知時、GPT-4o-miniが状況・緊急度・まず確認すべき手順・エスカレーション先をまとめた構造化された日本語アラートを生成する。\n6. **Gmailアラート送信** — 設定したメールアドレスに、分かりやすい件名でアラートメールを送信する。\n7. **アラート送信状況の記録** — アラート送信済みかどうかをログに更新する。\n\n**主な特徴**\n- 監視対象のURLはすべてGoogle Sheetsで管理 — URLの追加・削除にワークフローの編集は不要\n- HTTPエラー（503等）と接続障害（タイムアウト・ECONNREFUSED）の両方を検知\n- 稼働率分析や監査目的のために全チェック結果を記録\n- 初動対応に役立つ日本語構造化アラートをAIが生成\n- Cron式でスケジュールをカスタマイズ可能（デフォルト：平日1:00〜4:59に10分ごと）\n- タイムゾーンはn8nインスタンスの設定に従う — ハードコードなし\n\n**前提条件**\n- Google Sheets（ワークフロー内にコピー用リンクあり）\n- n8nに接続済みのGmailアカウント\n- OpenAI APIキー",
+    "workflow": {
+      "meta": {
+        "instanceId": "e04cc86c30b0cecda8e6bbc7cc41459d9bf4d76816638a14d42d636b91913ebc",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "4f8a356e-3d08-4386-860d-3b0651d8993d",
+          "name": "Monitoring Schedule",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            -336,
+            928
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "field": "cronExpression",
+                  "expression": "*/10 1-4 * * 1-5"
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "1fe43501-0cc3-4167-ba17-3eaaee1fb101",
+          "name": "Loop Over Targets",
+          "type": "n8n-nodes-base.splitInBatches",
+          "position": [
+            112,
+            928
+          ],
+          "parameters": {
+            "options": {}
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "88c65eb8-8ee9-4857-ade1-6ee8f8de404b",
+          "name": "Health Check",
+          "type": "n8n-nodes-base.httpRequest",
+          "onError": "continueErrorOutput",
+          "position": [
+            560,
+            848
+          ],
+          "parameters": {
+            "url": "={{ $('Loop Over Targets').item.json.url }}",
+            "options": {
+              "timeout": 3000,
+              "response": {
+                "response": {
+                  "fullResponse": true,
+                  "responseFormat": "text"
+                }
+              }
+            }
+          },
+          "typeVersion": 4.3
+        },
+        {
+          "id": "96e1da86-a8ef-4368-8797-c7697b035149",
+          "name": "Check Status 200",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            752,
+            752
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "8d74755f-f5b9-4747-95df-dee3137af1a1",
+                  "operator": {
+                    "type": "number",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ $json.statusCode }}",
+                  "rightValue": 200
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "b742efe6-1751-4f12-b2b7-fe6f65eab4f4",
+          "name": "Generate Alert Message (GPT-4o-mini)",
+          "type": "@n8n/n8n-nodes-langchain.openAi",
+          "position": [
+            1328,
+            864
+          ],
+          "parameters": {
+            "modelId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini",
+              "cachedResultName": "GPT-4O-MINI"
+            },
+            "options": {},
+            "responses": {
+              "values": [
+                {
+                  "content": "=あなたは夜間の障害一次対応支援担当です。\n次の監視結果から、運用担当がすぐ動ける「短い通知文」を作ってください。\n\n【監視結果】\nsystem_name: {{ $('Set NG Result').item.json.name }}\nurl: {{ $('Set NG Result').item.json.url }}\nstatusCode: {{ $('Set NG Result').item.json.status_code }}\nerror_message: {{ $('Set NG Result').item.json.error_message }}\nchecked_at: {{ $('Set NG Result').item.json.checked_at }}\n\n【出力ルール】\n- 日本語\n- 250文字以内（長くしない）\n- 次の形式で出力（改行を含む）\n状況: ...\n緊急度: 高/中/低\nまず確認: 1) ... 2) ... 3) ...\nエスカレ: ..."
+                }
+              ]
+            },
+            "builtInTools": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "GYP6rAp7NDWgcFoo",
+              "name": "YOUR_OPENAI_CREDENTIAL"
+            }
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "69814c49-880c-49bb-86b2-a38f8bd689bb",
+          "name": "Send Alert Email",
+          "type": "n8n-nodes-base.gmail",
+          "position": [
+            1616,
+            864
+          ],
+          "webhookId": "e0d8834b-b92c-40c8-a1b7-2c19f56cf051",
+          "parameters": {
+            "sendTo": "YOUR_ALERT_EMAIL_ADDRESS",
+            "message": "={{ $json.output[0].content[0].text }}",
+            "options": {},
+            "subject": "=🚨 Alert: {{ $('Set NG Result').item.json.name }} is DOWN / {{ $('Set NG Result').item.json.status_code }}",
+            "emailType": "text"
+          },
+          "credentials": {
+            "gmailOAuth2": {
+              "id": "yLE2cZZcQ1YA6FCs",
+              "name": "YOUR_GMAIL_CREDENTIAL"
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "78aff004-8cef-4d35-980d-4263feeb97e7",
+          "name": "No Operation (Continue Loop)",
+          "type": "n8n-nodes-base.noOp",
+          "position": [
+            2032,
+            912
+          ],
+          "parameters": {},
+          "typeVersion": 1
+        },
+        {
+          "id": "65d32fe7-b13c-4de4-8319-4e35cbf96a6f",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1520,
+            192
+          ],
+          "parameters": {
+            "width": 1008,
+            "height": 688,
+            "content": "## 🖥️ Nighttime System Health Monitor — Sheets × GPT-4o-mini × Gmail\n\n**Who this is for**\nSystem administrators, DevOps, and IT operations teams who need automated overnight monitoring of internal services or APIs — with AI-generated alert messages sent directly to email.\n\n**What this workflow does**\n- Reads monitoring targets (URLs) from Google Sheets\n- Runs health checks against each URL on a schedule\n- Logs every result (OK and ERROR) to Google Sheets\n- On failure: generates a structured Japanese alert message via GPT-4o-mini and sends it by Gmail\n- Updates the log to record whether an alert was sent\n\n**How it works**\n1. Monitoring Schedule triggers every 10 minutes, weekdays 1:00–4:59 AM (Cron: */10 1-4 * * 1-5)\n2. Read Monitor Targets fetches active URLs from the Monitor Targets sheet\n3. Loop Over Targets processes each URL one by one\n4. Record Start Time captures the start timestamp for response time calculation\n5. Health Check sends an HTTP GET request (timeout: 3000ms)\n6. Check Status 200 routes OK (200) and non-OK responses\n7. Set OK Result / Set NG Result formats the result data\n8. Log to Check Log (OK/ERROR) appends every result to the Check Log sheet\n9. On ERROR: Generate Alert Message creates a structured alert in Japanese via GPT-4o-mini\n10. Send Alert Email delivers the alert to the configured email address\n11. Update alert_sent to TRUE marks the log entry as notified\n\n**Prerequisites**\n- Google Sheets (copy link provided in the Setup section below)\n- Gmail account connected to n8n\n- OpenAI API key"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "5f54c42e-cb3a-432b-bde5-eeebaa7031dd",
+          "name": "Read Monitor Targets",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            -112,
+            928
+          ],
+          "parameters": {
+            "options": {},
+            "filtersUI": {
+              "values": [
+                {
+                  "lookupValue": "={{ true }}",
+                  "lookupColumn": "active"
+                }
+              ]
+            },
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Monitor Targets"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "1OIo7K64HGvfUFufGYvAqxElVc0Ot65x3g-D5_w7ulLs",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1OIo7K64HGvfUFufGYvAqxElVc0Ot65x3g-D5_w7ulLs/edit?usp=drivesdk",
+              "cachedResultName": "System Health Monitor - Config & Log"
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "id": "kNSYyru1tftr0Bfi",
+              "name": "YOUR_GOOGLE_SHEETS_CREDENTIAL"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "id": "f06805e8-ca40-4a46-a24b-1fbf611e67f6",
+          "name": "Record Start Time",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            336,
+            848
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "24c6c235-b4c6-46a8-8c7b-957599308f22",
+                  "name": "start_time",
+                  "type": "number",
+                  "value": "={{ Date.now() }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "e111a598-aedc-4c39-b00a-67e812f9a8a2",
+          "name": "Set OK Result",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            1344,
+            640
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "87c63c28-37ff-48f6-8c60-7d1f22392cc7",
+                  "name": "checked_at",
+                  "type": "string",
+                  "value": "={{ $now.format('yyyy-MM-dd HH:mm:ss') }}"
+                },
+                {
+                  "id": "58e17fa7-649e-451a-b862-82e108e6ac3a",
+                  "name": "name",
+                  "type": "string",
+                  "value": "={{ $('Loop Over Targets').item.json.name }}"
+                },
+                {
+                  "id": "922a9606-446d-475d-b8dd-b1c77456e5cc",
+                  "name": "url",
+                  "type": "string",
+                  "value": "={{ $('Loop Over Targets').item.json.url }}"
+                },
+                {
+                  "id": "a36586c6-b0a4-4a87-a905-ce3996ecfe07",
+                  "name": "status",
+                  "type": "string",
+                  "value": "OK"
+                },
+                {
+                  "id": "868ae1b7-b90f-4526-ba01-8fc4fd338ebe",
+                  "name": "status_code",
+                  "type": "string",
+                  "value": "={{ $('Health Check').item.json.statusCode }}"
+                },
+                {
+                  "id": "388f1210-e827-4540-b289-98bc00c8baea",
+                  "name": "response_time_ms",
+                  "type": "number",
+                  "value": "={{ Date.now() - $('Record Start Time').item.json.start_time }}"
+                },
+                {
+                  "id": "e015c17d-2770-4fa0-ad85-8b8f0b68a5b0",
+                  "name": "error_message",
+                  "type": "string",
+                  "value": ""
+                },
+                {
+                  "id": "4795122e-21ca-49b2-a192-3d9b579e222a",
+                  "name": "alert_sent",
+                  "type": "string",
+                  "value": "FALSE"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "b242b895-224f-4813-a829-883261a100ab",
+          "name": "Log to Check Log (OK)",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            1632,
+            640
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "url": "={{ $json.url }}",
+                "name": "={{ $json.name }}",
+                "status": "={{ $json.status }}",
+                "alert_sent": "={{ $json.alert_sent }}",
+                "checked_at": "={{ $json.checked_at }}",
+                "status_code": "={{ $json.status_code }}",
+                "error_message": "={{ $json.error_message }}",
+                "response_time_ms": "={{ $json.response_time_ms }}"
+              },
+              "schema": [
+                {
+                  "id": "checked_at",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "checked_at",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "name",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "url",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "url",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "status",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "status_code",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "status_code",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "response_time_ms",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "response_time_ms",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "error_message",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "error_message",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "alert_sent",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "alert_sent",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Check Log"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "1OIo7K64HGvfUFufGYvAqxElVc0Ot65x3g-D5_w7ulLs",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1OIo7K64HGvfUFufGYvAqxElVc0Ot65x3g-D5_w7ulLs/edit?usp=drivesdk",
+              "cachedResultName": "System Health Monitor - Config & Log"
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "id": "kNSYyru1tftr0Bfi",
+              "name": "YOUR_GOOGLE_SHEETS_CREDENTIAL"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "id": "89b6c3d4-a422-4e4e-bdb0-e106a463b22a",
+          "name": "Log to Check Log (ERROR)",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            1152,
+            864
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "url": "={{ $json.url }}",
+                "name": "={{ $json.name }}",
+                "status": "={{ $json.status }}",
+                "alert_sent": "={{ $json.alert_sent }}",
+                "checked_at": "={{ $json.checked_at }}",
+                "status_code": "={{ $json.status_code }}",
+                "error_message": "={{ $json.error_message }}",
+                "response_time_ms": "={{ $json.response_time_ms }}"
+              },
+              "schema": [
+                {
+                  "id": "checked_at",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "checked_at",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "name",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "url",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "url",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "status",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "status_code",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "status_code",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "response_time_ms",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "response_time_ms",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "error_message",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "error_message",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "alert_sent",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "alert_sent",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Check Log"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "1OIo7K64HGvfUFufGYvAqxElVc0Ot65x3g-D5_w7ulLs",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1OIo7K64HGvfUFufGYvAqxElVc0Ot65x3g-D5_w7ulLs/edit?usp=drivesdk",
+              "cachedResultName": "System Health Monitor - Config & Log"
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "id": "kNSYyru1tftr0Bfi",
+              "name": "YOUR_GOOGLE_SHEETS_CREDENTIAL"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "id": "c4223442-7975-41ba-9830-1b044e587928",
+          "name": "Set NG Result",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            960,
+            864
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "87c63c28-37ff-48f6-8c60-7d1f22392cc7",
+                  "name": "checked_at",
+                  "type": "string",
+                  "value": "={{ $now.format('yyyy-MM-dd HH:mm:ss') }}"
+                },
+                {
+                  "id": "58e17fa7-649e-451a-b862-82e108e6ac3a",
+                  "name": "name",
+                  "type": "string",
+                  "value": "={{ $('Loop Over Targets').item.json.name }}"
+                },
+                {
+                  "id": "922a9606-446d-475d-b8dd-b1c77456e5cc",
+                  "name": "url",
+                  "type": "string",
+                  "value": "={{ $('Loop Over Targets').item.json.url }}"
+                },
+                {
+                  "id": "a36586c6-b0a4-4a87-a905-ce3996ecfe07",
+                  "name": "status",
+                  "type": "string",
+                  "value": "ERROR"
+                },
+                {
+                  "id": "868ae1b7-b90f-4526-ba01-8fc4fd338ebe",
+                  "name": "status_code",
+                  "type": "string",
+                  "value": "={{ $('Health Check').item.json.statusCode || $json.error?.code || \"N/A\" }}"
+                },
+                {
+                  "id": "388f1210-e827-4540-b289-98bc00c8baea",
+                  "name": "response_time_ms",
+                  "type": "number",
+                  "value": "={{ Date.now() - $('Record Start Time').item.json.start_time }}"
+                },
+                {
+                  "id": "e015c17d-2770-4fa0-ad85-8b8f0b68a5b0",
+                  "name": "error_message",
+                  "type": "string",
+                  "value": "={{ $json.error?.message || $json.errorMessage || $json.message || \"unknown error\" }}"
+                },
+                {
+                  "id": "4795122e-21ca-49b2-a192-3d9b579e222a",
+                  "name": "alert_sent",
+                  "type": "string",
+                  "value": "FALSE"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "1d2d86e8-f67e-4d47-88f2-782ed2975937",
+          "name": "Update alert_sent to TRUE",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            1776,
+            864
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "alert_sent": "TRUE",
+                "checked_at": "={{ $('Log to Check Log (ERROR)').item.json.checked_at }}"
+              },
+              "schema": [
+                {
+                  "id": "checked_at",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "checked_at",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "name",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "required": false,
+                  "displayName": "name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "url",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "required": false,
+                  "displayName": "url",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "status",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "required": false,
+                  "displayName": "status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "status_code",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "required": false,
+                  "displayName": "status_code",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "response_time_ms",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "required": false,
+                  "displayName": "response_time_ms",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "error_message",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "required": false,
+                  "displayName": "error_message",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "alert_sent",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "alert_sent",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "row_number",
+                  "type": "number",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": true,
+                  "required": false,
+                  "displayName": "row_number",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [
+                "checked_at"
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "update",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Check Log"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "1OIo7K64HGvfUFufGYvAqxElVc0Ot65x3g-D5_w7ulLs",
+              "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1OIo7K64HGvfUFufGYvAqxElVc0Ot65x3g-D5_w7ulLs/edit?usp=drivesdk",
+              "cachedResultName": "System Health Monitor - Config & Log"
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "id": "kNSYyru1tftr0Bfi",
+              "name": "YOUR_GOOGLE_SHEETS_CREDENTIAL"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "id": "7baf3119-354a-4c4b-b455-e34a64e7469b",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1760,
+            1152
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 880,
+            "height": 1120,
+            "content": "## 📊 Google Sheets Setup\n\n1. Make a copy of the template spreadsheet:\n   👉 https://docs.google.com/spreadsheets/d/1OIo7K64HGvfUFufGYvAqxElVc0Ot65x3g-D5_w7ulLs/copy\n\n2. Copy the Spreadsheet ID from your copied sheet's URL:\n   `https://docs.google.com/spreadsheets/d/【THIS IS THE ID】/edit`\n\n3. Replace the Spreadsheet ID in the following nodes with your copied sheet's ID:\n   - Read Monitor Targets\n   - Log to Check Log (OK)\n   - Log to Check Log (ERROR)\n   - Update alert_sent to TRUE\n\n4. Add your monitoring targets to the Monitor Targets sheet:\n   | name       | url                             | active |\n   |------------|-------------------------------|--------|\n   | Service A  | https://your-service.com/health | TRUE   |\n   | Service B  | https://api.example.com/ping    | TRUE   |\n\n   Set active to FALSE to temporarily disable a target without deleting the row.\n\n---\n\n## 📊 Google Sheetsセットアップ\n\n1. テンプレートスプレッドシートのコピーを作成：\n   👉 https://docs.google.com/spreadsheets/d/1OIo7K64HGvfUFufGYvAqxElVc0Ot65x3g-D5_w7ulLs/copy\n\n2. コピーしたスプレッドシートのURLからIDを取得：\n   `https://docs.google.com/spreadsheets/d/【ここがID】/edit`\n\n3. 以下のノードのスプレッドシートIDをコピー先のIDに変更する：\n   - Read Monitor Targets\n   - Log to Check Log (OK)\n   - Log to Check Log (ERROR)\n   - Update alert_sent to TRUE\n\n4. Monitor TargetsシートにURLを追加する：\n   | name       | url                             | active |\n   |------------|---------------------------------|--------|\n   | Service A  | https://your-service.com/health | TRUE   |\n   | Service B  | https://api.example.com/ping    | TRUE   |\n\n   activeをFALSEにすることで、行を削除せずに一時的に監視を停止できます。"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9ee879e7-59af-4cbe-b6c1-613626ce7586",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            848,
+            1136
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 864,
+            "height": 688,
+            "content": "## 🔑 Credentials & Settings Checklist\n\nReplace all placeholders before publishing:\n\n| Placeholder | Type | Node(s) |\n|---|---|---|\n| YOUR_GOOGLE_SHEETS_CREDENTIAL | Google Sheets OAuth2 | Read Monitor Targets, Log to Check Log (OK/ERROR), Update alert_sent to TRUE |\n| YOUR_GMAIL_CREDENTIAL | Gmail OAuth2 | Send Alert Email |\n| YOUR_OPENAI_CREDENTIAL | OpenAI API Key | Generate Alert Message (GPT-4o-mini) |\n| YOUR_ALERT_EMAIL_ADDRESS | Email address | Send Alert Email → sendTo field |\n\n---\n\n## 🔑 クレデンシャル・設定チェックリスト\n\nPublishする前に全プレースホルダーを置き換えてください：\n\n| プレースホルダー | 種別 | 対象ノード |\n|---|---|---|\n| YOUR_GOOGLE_SHEETS_CREDENTIAL | Google Sheets OAuth2 | Read Monitor Targets、Log to Check Log (OK/ERROR)、Update alert_sent to TRUE |\n| YOUR_GMAIL_CREDENTIAL | Gmail OAuth2 | Send Alert Email |\n| YOUR_OPENAI_CREDENTIAL | OpenAI APIキー | Generate Alert Message (GPT-4o-mini) |\n| YOUR_ALERT_EMAIL_ADDRESS | メールアドレス | Send Alert Email → sendToフィールド |"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "06cb9d89-ef76-41d0-97e4-fc86aa9a4fb0",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -208,
+            1136
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 1024,
+            "height": 1008,
+            "content": "## ⏰ Schedule Setting\n\nThis workflow runs every 10 minutes between 1:00–4:59 AM on weekdays (Mon–Fri).\nThe timezone follows your n8n instance setting (Settings → Default Timezone).\nAdjust the Cron expression in the Monitoring Schedule node to fit your window.\n\n*/10 1-4 * * 1-5   → Every 10 min, 1:00–4:59 AM, Mon–Fri (current setting)\n*/5 22-23 * * 1-5  → Every 5 min, 10:00 PM–11:59 PM, Mon–Fri\n*/10 0-5 * * *     → Every 10 min, 0:00–5:59 AM, every day\n\n⚠️ Note: checked_at is used as the matching key in Update alert_sent to TRUE.\nIn rare cases where multiple errors occur within the same second,\nthe update may affect the wrong row. This is acceptable for most use cases.\n\n---\n\n## ⏰ スケジュール設定\n\nこのワークフローは平日（月〜金）の1:00〜4:59の間、10分ごとに実行されます。\nタイムゾーンはn8nインスタンスの設定（Settings → Default Timezone）に従います。\nMonitoring ScheduleノードのCron式を変更して監視時間帯を調整してください。\n\n*/10 1-4 * * 1-5   → 平日 1:00〜4:59 に10分ごと（現在の設定）\n*/5 22-23 * * 1-5  → 平日 22:00〜23:59 に5分ごと\n*/10 0-5 * * *     → 毎日 0:00〜5:59 に10分ごと\n\n⚠️ 注意：Update alert_sent to TRUEノードはchecked_atをマッチングキーとして使用しています。\n同一秒内に複数のエラーが発生した場合、稀に誤った行が更新される可能性があります。\nほとんどのユースケースでは問題ありません。"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "0f4fe26f-6ee4-41d6-8a9a-7c45e02362b6",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1520,
+            928
+          ],
+          "parameters": {
+            "width": 1008,
+            "height": 784,
+            "content": "## 🖥️ 夜間システム死活監視 — Sheets × GPT-4o-mini × Gmail\n\n**このワークフローの対象ユーザー**\n社内サービスやAPIの夜間監視を自動化し、障害発生時にAIが生成した日本語アラートをメールで受け取りたいシステム管理者・DevOps・IT運用担当者向けです。\n\n**このワークフローでできること**\n- Google Sheetsから監視対象URL一覧を読み込む\n- 各URLに対してヘルスチェックを実行する\n- 全結果（OKおよびERROR）をGoogle Sheetsにログとして記録する\n- 障害検知時：GPT-4o-miniが構造化された日本語アラートを生成し、Gmailで送信する\n- アラート送信済みかどうかをログに記録する\n\n**処理の流れ**\n1. Monitoring Scheduleが平日1:00〜4:59の10分ごとに起動（Cron: */10 1-4 * * 1-5）\n2. Read Monitor TargetsがMonitor TargetsシートからアクティブなURLを取得\n3. Loop Over Targetsが1件ずつ処理\n4. Record Start Timeがレスポンスタイム計測用の開始時刻を記録\n5. Health CheckがHTTP GETリクエストを送信（タイムアウト: 3000ms）\n6. Check Status 200がOK（200）と非OKを振り分け\n7. Set OK Result / Set NG Resultが結果データを整形\n8. Log to Check Log（OK/ERROR）がCheck Logシートに全結果を記録\n9. ERRORの場合：Generate Alert Messageがアラート文を生成\n10. Send Alert Emailがメールでアラートを送信\n11. Update alert_sent to TRUEがログをアラート送信済みに更新\n\n**前提条件**\n- Google Sheets（下記セットアップセクションのコピー用リンクを使用）\n- n8nに接続済みのGmailアカウント\n- OpenAI APIキー"
+          },
+          "typeVersion": 1
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "Health Check": {
+          "main": [
+            [
+              {
+                "node": "Check Status 200",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Set NG Result",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Set NG Result": {
+          "main": [
+            [
+              {
+                "node": "Log to Check Log (ERROR)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Set OK Result": {
+          "main": [
+            [
+              {
+                "node": "Log to Check Log (OK)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Check Status 200": {
+          "main": [
+            [
+              {
+                "node": "Set OK Result",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Set NG Result",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Send Alert Email": {
+          "main": [
+            [
+              {
+                "node": "Update alert_sent to TRUE",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Loop Over Targets": {
+          "main": [
+            [],
+            [
+              {
+                "node": "Record Start Time",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Record Start Time": {
+          "main": [
+            [
+              {
+                "node": "Health Check",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Monitoring Schedule": {
+          "main": [
+            [
+              {
+                "node": "Read Monitor Targets",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Read Monitor Targets": {
+          "main": [
+            [
+              {
+                "node": "Loop Over Targets",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Log to Check Log (OK)": {
+          "main": [
+            [
+              {
+                "node": "No Operation (Continue Loop)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Log to Check Log (ERROR)": {
+          "main": [
+            [
+              {
+                "node": "Generate Alert Message (GPT-4o-mini)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Update alert_sent to TRUE": {
+          "main": [
+            [
+              {
+                "node": "No Operation (Continue Loop)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "No Operation (Continue Loop)": {
+          "main": [
+            [
+              {
+                "node": "Loop Over Targets",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Generate Alert Message (GPT-4o-mini)": {
+          "main": [
+            [
+              {
+                "node": "Send Alert Email",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 19,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.set": {
+          "count": 3
+        },
+        "n8n-nodes-base.noOp": {
+          "count": 1
+        },
+        "n8n-nodes-base.gmail": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 5
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 1
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 4
+        },
+        "n8n-nodes-base.splitInBatches": {
+          "count": 1
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.openAi": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Shohei Sawada",
+      "username": "dtosh-sawada",
+      "bio": "",
+      "verified": true,
+      "links": [],
+      "avatar": "https://gravatar.com/avatar/5b8e9f74d1363f3712624a83d73aa45a0d40be3a7cf6f2c8f2b9f00002e3328a?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 26,
+        "icon": "fa:arrow-right",
+        "name": "n8n-nodes-base.noOp",
+        "codex": {
+          "data": {
+            "alias": [
+              "nothing"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.noop/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "No Operation, do nothing",
+          "color": "#b0b0b0"
+        },
+        "iconData": {
+          "icon": "arrow-right",
+          "type": "icon"
+        },
+        "displayName": "No Operation, do nothing",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 39,
+        "icon": "fa:sync",
+        "name": "n8n-nodes-base.splitInBatches",
+        "codex": {
+          "data": {
+            "alias": [
+              "Loop",
+              "Concatenate",
+              "Batch",
+              "Split",
+              "Split In Batches"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.splitinbatches/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Loop Over Items",
+          "color": "#007755"
+        },
+        "iconData": {
+          "icon": "sync",
+          "type": "icon"
+        },
+        "displayName": "Loop Over Items (Split in Batches)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 356,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmail",
+        "codex": {
+          "data": {
+            "alias": [
+              "email",
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.gmail/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Gmail"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1250,
+        "icon": "file:openAi.svg",
+        "name": "@n8n/n8n-nodes-langchain.openAi",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "ChatGPT",
+              "Sora",
+              "DallE",
+              "whisper",
+              "audio",
+              "transcribe",
+              "tts",
+              "assistant"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-langchain.openai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Miscellaneous",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg1IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NiAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MSA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4K"
+        },
+        "displayName": "OpenAI",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 16,
+        "name": "DevOps"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

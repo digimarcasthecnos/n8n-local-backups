@@ -1,0 +1,1653 @@
+{
+  "workflow": {
+    "id": 15126,
+    "name": "Audit multi-page CRO with GPT-4o-mini, Google Sheets, and Gmail alerts",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-18T09:22:40.922Z",
+    "description": "### Description\n\nSubmit up to 3 landing page URLs using a simple form and the workflow audits each one automatically. For every page, GPT-4o-mini scrapes the content, scores it across five dimensions, identifies the top conversion issue, and generates five specific page fixes. Every result is logged to Google Sheets and pages that score below your alert threshold trigger an automatic Gmail alert with the full breakdown. Built for marketing managers, agency owners, and growth teams who need structured, repeatable conversion audits without spending hours reviewing pages manually.\n\n---\n\n## What This Workflow Does\n\n- **Scrapes and cleans each page automatically** — Fetches the raw HTML for every URL submitted, strips all scripts and styles, and prepares clean text for AI analysis\n- **Scores pages across five CRO dimensions** — GPT-4o-mini rates each page on overall conversion potential, CTA strength, trust score, and message clarity on a 1–10 scale\n- **Generates a letter grade per page** — Assigns A+ through F based on the overall score so you can rank pages at a glance\n- **Produces five page-specific fixes** — Every fix references actual content from the page and is scoped to be doable within 1–2 days — no generic advice\n- **Runs each page independently** — All three pages are processed as separate audits so one slow page never blocks the others\n- **Logs every audit to Google Sheets** — Appends a 14-column row per page with all scores, top issue, quick win, fix list, and priority label\n- **Sends Gmail alerts only for low-scoring pages** — Pages below your score threshold get an immediate email with the full audit breakdown — pages that pass trigger no email\n\n---\n\n## Setup Requirements\n\n### Tools Needed\n- n8n instance (self-hosted or cloud)\n- OpenAI account with GPT-4o-mini API access\n- Google Sheets (one sheet with a tab named **CRO Audit Dashboard**)\n- Gmail account (the account you want alerts sent from)\n\n### Credentials Required\n- OpenAI API key\n- Google Sheets OAuth2\n- Gmail OAuth2\n\n**Estimated Setup Time: 10–15 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Import the workflow** — Open n8n → Workflows → Import from JSON → paste the workflow JSON → click Import\n\n2. **Fill in Config Values** — Open node **2. Set — Config Values** → replace all four placeholders:\n\n| Field | What to enter |\n|---|---|\n| `PASTE_YOUR_GOOGLE_SHEET_ID_HERE` | The ID from your Google Sheet URL (the string between `/d/` and `/edit`) |\n| `PASTE_YOUR_EMAIL_ADDRESS_HERE` | The email address where CRO alerts should be sent |\n| `PASTE_YOUR_NAME_HERE` | Your name for the email sign-off |\n| `scoreThreshold` | Leave as `6` — pages scoring 5 or below get an alert. Change to `7` for stricter alerting or `5` for looser alerting |\n\n3. **Connect OpenAI** — Open node **7. OpenAI — GPT-4o-mini Model** → click the credential dropdown → add your OpenAI API key → test the connection\n\n4. **Create your Google Sheet tab** — Open your Google Sheet → add a tab named exactly **CRO Audit Dashboard** → add these 14 column headers in row 1: `Date`, `Page URL`, `Page Name`, `CRO Score`, `Grade`, `Top Issue`, `Quick Win`, `CTA Strength`, `Trust Score`, `Message Clarity`, `Priority`, `Fix List`, `Audited By`, `Logged At`\n\n5. **Connect Google Sheets** — Open node **10. Google Sheets — Log CRO Audit** → click the credential dropdown → add Google Sheets OAuth2 → sign in with your Google account → authorize access\n\n6. **Connect Gmail** — Open node **12. Gmail — Send CRO Alert** → click the credential dropdown → add Gmail OAuth2 → sign in with the Gmail account you want to send alerts from → authorize access\n\n7. **Activate the workflow** — Toggle the workflow to Active → copy the Form URL from node **1. Form — Multi-Page CRO Audit** → open it in a browser to submit your first audit\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Form: Multi-Page CRO Audit**\nYou open the form URL in a browser and fill in your name, up to three page URLs with their names, and the business type (e.g. SaaS, Law Firm, E-commerce). Only Page 1 URL and name are required — Pages 2 and 3 are optional. Submitting the form starts the workflow.\n\n**Step 2 — Set: Config Values**\nYour Google Sheet ID, alert email, sender name, score threshold, and all form inputs are stored here. Each page URL and name is mapped to its own variable. The business type and auditor name are also captured here for use in the AI prompt and the sheet log.\n\n**Step 3 — Code: Build Pages List**\nThe three possible page URLs are filtered to remove any blank entries. Only URLs that start with `http` are kept. If no valid URLs are found, the workflow stops with a clear error. Each valid page is then output as its own separate entry so every page runs through the full audit pipeline independently. This means if you submit 3 pages, the scraping, AI analysis, sheet logging, and Gmail alert steps run 3 times — once per page.\n\n**Step 4 — HTTP: Scrape Landing Page**\nFor each page, an HTTP request fetches the raw HTML content with a 15-second timeout. The response is returned as plain text for the cleaning step.\n\n**Step 5 — Code: Clean HTML to Text**\nThe raw HTML is cleaned by removing all script blocks, style blocks, and HTML comments. Tag closings for structural elements like divs, paragraphs, and headings are converted to line breaks to preserve readability. All remaining HTML tags are stripped, common HTML entities are decoded, and extra whitespace is collapsed. The result is capped at 4,000 characters — if the page is longer, a truncation note is added so the AI knows content was cut off. If the page returns less than 100 characters, the workflow throws an error rather than sending near-empty content to the AI.\n\n**Step 6 — AI Agent: CRO Audit**\nGPT-4o-mini receives the business type, page name, page URL, and cleaned page content. It returns nine structured fields: an overall score from 1–10, a letter grade, a CTA strength score, a trust score, a message clarity score, the single biggest conversion problem on the page, the fastest single fix to improve conversions, five page-specific improvements each doable in 1–2 days, and a priority label (CRITICAL, HIGH, MEDIUM, or LOW).\n\n**Step 7 — OpenAI: GPT-4o-mini Model**\nThis is the language model powering the audit. It runs at temperature 0.3 for consistent, factual scoring and is capped at 800 tokens to keep each audit concise and costs predictable.\n\n**Step 8 — Parser: Structured CRO Output**\nThis step enforces the exact nine-field schema GPT-4o-mini must return. It validates that all required fields are present and correctly typed before results move forward, preventing malformed AI output from reaching your sheet.\n\n**Step 9 — Code: Prepare Audit Results**\nThe AI output is merged with all page metadata. Sub-scores are formatted as \"X out of 10\" for readability. The fix list is formatted as a numbered list — pipe-separated for the sheet column and line-separated for the email. A `needsAlert` flag is set to true if the overall score is below your configured threshold. The email subject and full email body are also assembled here, including all scores, the top issue, quick win, and all five fixes.\n\n**Step 10 — Google Sheets: Log CRO Audit**\nOne row is appended to your CRO Audit Dashboard tab with all 14 columns populated. The Sheet log and the Gmail alert step both run at the same time — logging never delays the email.\n\n**Step 11 — IF: Score Below Threshold?**\nThis is the alert gate. If the page score is below your threshold (YES path), the Gmail alert fires immediately. If the page passed the threshold (NO path), the workflow routes to **13. Set — No Alert Needed** and ends silently for that page — no email is sent.\n\n**Step 12 — Gmail: Send CRO Alert**\nA plain-text alert email is sent to your configured address. It includes the page name, URL, overall score, grade, priority level, top issue, fastest fix, all five specific improvements, and the three sub-scores for CTA strength, trust, and message clarity.\n\n**Step 13 — Set: No Alert Needed**\nThis step handles pages that passed the threshold. It sets a brief log message confirming the page scored above the threshold and no email was sent.\n\n---\n\n## Key Features\n\n✅ **Batch audit up to 3 pages in one submission** — Submit multiple URLs at once and each page gets its own independent audit without you having to run the workflow three times\n✅ **Letter grade for instant ranking** — A+ through F grades let you sort pages by quality at a glance without interpreting raw scores\n✅ **Four sub-scores per page** — CTA strength, trust score, and message clarity give you a breakdown of why a page scored the way it did\n✅ **Five page-specific fixes every time** — Every fix references actual content from that specific page, not generic CRO advice — each one is scoped to 1–2 days of work\n✅ **Configurable alert threshold** — Change one number in Config Values to define what counts as a failing score — lower for stricter monitoring, higher for looser\n✅ **Structured output enforced** — A schema parser validates all nine AI fields before anything reaches your sheet — no broken rows or missing scores\n✅ **Sheet logs and Gmail run simultaneously** — Both outputs fire at the same time so your dashboard is always current and alerts are never delayed\n✅ **Silent pass for healthy pages** — Pages above the threshold log to Sheets and stop — no noise, no email clutter for pages that are already performing well\n\n---\n\n## Customisation Options\n\n**Lower the threshold for more aggressive alerting** — In node **2. Set — Config Values**, change `scoreThreshold` from `6` to `8` so any page scoring 7 or below triggers an email — useful for agencies running CRO campaigns where even average pages need attention.\n\n**Add a Slack notification alongside Gmail** — After node **9. Code — Prepare Audit Results**, add an IF check for `needsAlert === true` and connect a Slack node to also post the page name, score, and top issue to a `#cro-alerts` channel so your team sees issues in real time without checking email.\n\n**Increase the character limit for longer pages** — In node **5. Code — Clean HTML to Text**, change `.substring(0, 4000)` to `6000` or `8000` if your pages are content-heavy and you want GPT to see more of the page — note this will slightly increase OpenAI token usage per audit.\n\n**Expand to 5 pages per submission** — In node **3. Code — Build Pages List**, add two more page objects following the same pattern as pages 1–3, and add corresponding fields to the form in node **1. Form — Multi-Page CRO Audit** and Config Values in node **2**.\n\n**Send a weekly CRO summary email** — Add a separate Schedule trigger that fires every Monday, reads the CRO Audit Dashboard sheet, counts pages by priority label from the past 7 days, and sends a weekly digest showing how many CRITICAL, HIGH, MEDIUM, and LOW pages were found.\n\n---\n\n## Troubleshooting\n\n**Form submission not starting the workflow:**\n- Confirm the workflow is Active — inactive workflows do not receive form submissions\n- Copy the Form URL fresh from node **1. Form — Multi-Page CRO Audit** after activating — URLs copied before activation will not work\n- Make sure at least one URL starts with `http` — node **3. Code — Build Pages List** filters out any blank or invalid URLs\n\n**Page scraping returning empty or very short content:**\n- Some pages block automated HTTP requests and return a 403 error or a redirect — check the execution log of node **4. HTTP — Scrape Landing Page** for the response\n- Try adding a User-Agent header to node **4**: Name = `User-Agent`, Value = `Mozilla/5.0 (compatible; n8n-bot/1.0)` to bypass basic bot detection\n- If the page uses JavaScript rendering (e.g. React or Vue), the HTML may be empty — these pages require a headless browser and cannot be scraped with a simple HTTP request\n\n**OpenAI not generating audit results:**\n- Confirm the API key is connected in node **7. OpenAI — GPT-4o-mini Model** and your account has available credits\n- Check the execution log of node **6. AI Agent — CRO Audit** for the raw GPT response\n- If the schema parser in node **8. Parser — Structured CRO Output** is throwing an error, the AI returned an unexpected format — re-run the audit to see if the issue is consistent\n\n**Google Sheets not logging rows:**\n- Confirm the Google Sheets OAuth2 credential in node **10. Google Sheets — Log CRO Audit** is connected and not expired — re-authorize if needed\n- Check that `PASTE_YOUR_GOOGLE_SHEET_ID_HERE` in node **2. Set — Config Values** has been replaced with your actual sheet ID from the URL\n- Confirm the tab is named **CRO Audit Dashboard** exactly — capitalization must match `sheetName` in Config Values\n- Verify all 14 column headers in row 1 match exactly: `Date`, `Page URL`, `Page Name`, `CRO Score`, `Grade`, `Top Issue`, `Quick Win`, `CTA Strength`, `Trust Score`, `Message Clarity`, `Priority`, `Fix List`, `Audited By`, `Logged At`\n\n**Gmail alert not arriving for low-scoring pages:**\n- Confirm the Gmail OAuth2 credential in node **12. Gmail — Send CRO Alert** is connected and authorized\n- Check that `PASTE_YOUR_EMAIL_ADDRESS_HERE` in node **2. Set — Config Values** has been replaced with your actual email address\n- Check the execution log of node **11. IF — Score Below Threshold?** to confirm the `needsAlert` value is true for the pages that should trigger an alert — if false, the score may be at or above the threshold\n- Check your spam or promotions folder — automated Gmail OAuth2 messages sometimes land there on first send\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email: [info@incrementors.com](info@incrementors.com)\n🌐 Website: [https://www.incrementors.com/](https://www.incrementors.com/)",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "c5e88f1a-b212-4bd8-ac7b-b2a7e2010001",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1584,
+            1184
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 556,
+            "height": 1080,
+            "content": "## Multi-Page CRO Audit Pipeline — GPT-4o-mini + Sheets + Gmail\n\nFor marketing managers, agency owners, and growth teams who need a fast structured conversion rate audit across multiple landing pages at once. Submit up to 3 page URLs via the form. The workflow scrapes each page, cleans the HTML, and sends it to GPT-4o-mini which scores it across five dimensions: overall CRO score, CTA strength, trust score, message clarity, and a 5-item specific fix list. Every result is logged to Google Sheets. Pages scoring below your alert threshold automatically trigger a Gmail alert with the score, top issue, fastest fix, and all five improvements.\n\n## How it works\n- **1. Form — Multi-Page CRO Audit** collects up to 3 page URLs with names, business type, and your name\n- **2. Set — Config Values** stores Sheet ID, alert email, sender name, and score threshold\n- **3. Code — Build Pages List** filters valid URLs and outputs one item per page so the rest of the workflow runs independently for each\n- **4. HTTP — Scrape Landing Page** fetches the raw HTML of each page\n- **5. Code — Clean HTML to Text** strips scripts and styles, decodes HTML entities, and keeps the first 4000 characters for GPT\n- **6. AI Agent — CRO Audit** uses GPT-4o-mini to score the page across 9 fields including overall score, grade, sub-scores, top issue, quick win, and 5 page-specific fixes\n- **9. Code — Prepare Audit Results** formats all fields for Sheets and Gmail and sets the needsAlert flag based on score versus threshold\n- **10. Google Sheets — Log CRO Audit** appends one row per page to the tracker\n- **11. IF — Score Below Threshold?** routes pages that fail the threshold to Gmail\n- **12. Gmail — Send CRO Alert** sends a detailed alert only for pages scoring below the threshold\n\n## Set up steps\n1. In **2. Set — Config Values** — replace PASTE_YOUR_GOOGLE_SHEET_ID_HERE, PASTE_YOUR_EMAIL_ADDRESS_HERE, PASTE_YOUR_NAME_HERE, and adjust scoreThreshold (default 6 means pages scoring 5 or below get an alert)\n2. In **7. OpenAI — GPT-4o-mini Model** — connect your OpenAI credential\n3. In **10. Google Sheets — Log CRO Audit** — connect your Google Sheets OAuth2 credential\n4. In **12. Gmail — Send CRO Alert** — connect your Gmail OAuth2 credential\n5. Create a Google Sheet tab named CRO Audit Dashboard with columns: Date, Page URL, Page Name, CRO Score, Grade, Top Issue, Quick Win, CTA Strength, Trust Score, Message Clarity, Priority, Fix List, Audited By, Logged At\n6. Activate and open the Form URL to submit your first audit"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "2a6c222d-63b4-4ead-942e-c8ec72436228",
+          "name": "Section — Form Input, Config, and Pages List",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -944,
+            1360
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 740,
+            "height": 532,
+            "content": "## Form Input, Config, and Pages List\nUser submits up to 3 page URLs with names and business type. Config stores sheet ID, alert email, sender name, and score threshold. The Code node filters valid URLs and outputs one item per page so each page is audited independently."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "86780f61-e686-4e02-9e5b-90511395a229",
+          "name": "Section — Page Scraping, HTML Cleaning, and AI CRO Audit",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -144,
+            1360
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 788,
+            "height": 884,
+            "content": "## Page Scraping, HTML Cleaning, and AI CRO Audit\nHTTP fetches raw HTML for each page. A Code node strips scripts, styles, and tags — keeping 4000 chars of clean text for GPT. GPT-4o-mini scores the page across 9 fields including overall score, grade, CTA strength, trust score, message clarity, top issue, quick win, priority, and 5 page-specific fixes."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "51626482-65b4-4e8a-b7ed-ceba56855ec9",
+          "name": "Section — Results Assembly, Sheet Logging, and Alert Routing",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            816,
+            1216
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 836,
+            "height": 836,
+            "content": "## Results Assembly, Sheet Logging, and Alert Routing\nPrepares all fields for Sheets and Gmail. Sets needsAlert if score is below threshold. Google Sheets logs every page. The IF node routes low-scoring pages to Gmail. Pages passing the threshold exit cleanly with no email sent."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "2d5921fa-ec58-43b4-9ab1-402eb3fe0801",
+          "name": "1. Form — Multi-Page CRO Audit",
+          "type": "n8n-nodes-base.formTrigger",
+          "position": [
+            -816,
+            1568
+          ],
+          "webhookId": "07f39f6a-d6c3-4fb6-98bb-023ad908f97c",
+          "parameters": {
+            "options": {},
+            "formTitle": "Multi-Page CRO Audit",
+            "formFields": {
+              "values": [
+                {
+                  "fieldLabel": "Your Name or Company",
+                  "placeholder": "Example: Rahul — Incrementors",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Page 1 URL",
+                  "placeholder": "https://yoursite.com/page-1",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Page 1 Name",
+                  "placeholder": "Example: Homepage, Pricing Page, Contact Page",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Page 2 URL",
+                  "placeholder": "https://yoursite.com/page-2 (leave blank to skip)"
+                },
+                {
+                  "fieldLabel": "Page 2 Name",
+                  "placeholder": "Example: Product Page"
+                },
+                {
+                  "fieldLabel": "Page 3 URL",
+                  "placeholder": "https://yoursite.com/page-3 (leave blank to skip)"
+                },
+                {
+                  "fieldLabel": "Page 3 Name",
+                  "placeholder": "Example: Services Page"
+                },
+                {
+                  "fieldLabel": "Business Type",
+                  "placeholder": "Example: SaaS, Law Firm, E-commerce, Medical Spa"
+                }
+              ]
+            },
+            "formDescription": "Audit up to 3 landing pages at once. Each page gets a CRO score, key issues, and quick wins. Pages with low scores trigger an email alert automatically."
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "aaf2285c-9f38-4782-a9c1-e520b09d7750",
+          "name": "2. Set — Config Values",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -592,
+            1568
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "cfg-001",
+                  "name": "sheetId",
+                  "type": "string",
+                  "value": "PASTE_YOUR_GOOGLE_SHEET_ID_HERE"
+                },
+                {
+                  "id": "cfg-002",
+                  "name": "sheetName",
+                  "type": "string",
+                  "value": "CRO Audit Dashboard"
+                },
+                {
+                  "id": "cfg-003",
+                  "name": "alertEmail",
+                  "type": "string",
+                  "value": "PASTE_YOUR_EMAIL_ADDRESS_HERE"
+                },
+                {
+                  "id": "cfg-004",
+                  "name": "senderName",
+                  "type": "string",
+                  "value": "PASTE_YOUR_NAME_HERE"
+                },
+                {
+                  "id": "cfg-005",
+                  "name": "scoreThreshold",
+                  "type": "string",
+                  "value": "6"
+                },
+                {
+                  "id": "cfg-006",
+                  "name": "auditorName",
+                  "type": "string",
+                  "value": "={{ $json['Your Name or Company'] }}"
+                },
+                {
+                  "id": "cfg-007",
+                  "name": "businessType",
+                  "type": "string",
+                  "value": "={{ $json['Business Type'] || 'General Business' }}"
+                },
+                {
+                  "id": "cfg-008",
+                  "name": "page1Url",
+                  "type": "string",
+                  "value": "={{ $json['Page 1 URL']?.trim() || '' }}"
+                },
+                {
+                  "id": "cfg-009",
+                  "name": "page1Name",
+                  "type": "string",
+                  "value": "={{ $json['Page 1 Name'] || 'Page 1' }}"
+                },
+                {
+                  "id": "cfg-010",
+                  "name": "page2Url",
+                  "type": "string",
+                  "value": "={{ $json['Page 2 URL']?.trim() || '' }}"
+                },
+                {
+                  "id": "cfg-011",
+                  "name": "page2Name",
+                  "type": "string",
+                  "value": "={{ $json['Page 2 Name'] || 'Page 2' }}"
+                },
+                {
+                  "id": "cfg-012",
+                  "name": "page3Url",
+                  "type": "string",
+                  "value": "={{ $json['Page 3 URL']?.trim() || '' }}"
+                },
+                {
+                  "id": "cfg-013",
+                  "name": "page3Name",
+                  "type": "string",
+                  "value": "={{ $json['Page 3 Name'] || 'Page 3' }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "56cb9946-1ea8-4905-9bf0-e0ed6e502068",
+          "name": "3. Code — Build Pages List",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -368,
+            1568
+          ],
+          "parameters": {
+            "jsCode": "const config = $input.first().json;\n\n// Build list of pages — skip any that have no URL\nconst pages = [\n  { url: config.page1Url, name: config.page1Name },\n  { url: config.page2Url, name: config.page2Name },\n  { url: config.page3Url, name: config.page3Name }\n].filter(p => p.url && p.url.startsWith('http'));\n\nif (pages.length === 0) {\n  throw new Error('No valid URLs found. Please submit at least one URL starting with http.');\n}\n\n// Return one item per page — the rest of the workflow runs once for each page\nreturn pages.map((page, index) => ({\n  json: {\n    pageUrl: page.url,\n    pageName: page.name,\n    pageIndex: index + 1,\n    totalPages: pages.length,\n    businessType: config.businessType,\n    auditorName: config.auditorName,\n    sheetId: config.sheetId,\n    sheetName: config.sheetName,\n    alertEmail: config.alertEmail,\n    senderName: config.senderName,\n    scoreThreshold: parseInt(config.scoreThreshold) || 6\n  }\n}));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "602be28b-066c-4a17-a211-6e8717a284e3",
+          "name": "4. HTTP — Scrape Landing Page",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -112,
+            1568
+          ],
+          "parameters": {
+            "url": "={{ $json.pageUrl }}",
+            "options": {
+              "timeout": 15000,
+              "response": {
+                "response": {
+                  "responseFormat": "text"
+                }
+              }
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "213ef460-7563-4b1f-a9f9-d749150e615b",
+          "name": "5. Code — Clean HTML to Text",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            112,
+            1568
+          ],
+          "parameters": {
+            "jsCode": "const html = $input.first().json;\nconst pageData = $('3. Code — Build Pages List').item.json;\n\n// Get raw HTML as a string\nlet rawHtml = '';\nif (typeof html === 'string') {\n  rawHtml = html;\n} else if (html?.data) {\n  rawHtml = typeof html.data === 'string' ? html.data : JSON.stringify(html.data);\n} else {\n  rawHtml = JSON.stringify(html);\n}\n\nif (!rawHtml || rawHtml.length < 100) {\n  throw new Error('Page returned no usable content for: ' + pageData.pageUrl);\n}\n\n// Remove script and style blocks\nlet cleanText = rawHtml\n  .replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n  .replace(/<style[\\s\\S]*?<\\/style>/gi, '')\n  .replace(/<!--[\\s\\S]*?-->/g, '')\n  .replace(/<\\/(div|p|li|h[1-6]|section|article|header|footer|nav|main)>/gi, '\\n')\n  .replace(/<[^>]+>/g, ' ')\n  .replace(/&nbsp;/g, ' ')\n  .replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<')\n  .replace(/&gt;/g, '>')\n  .replace(/&quot;/g, '\"')\n  .replace(/\\s{3,}/g, '\\n\\n')\n  .trim();\n\nconst wasTruncated = cleanText.length > 4000;\ncleanText = cleanText.substring(0, 4000);\nif (wasTruncated) cleanText += '\\n[Content cut off at 4000 characters]';\n\nreturn [{\n  json: {\n    pageUrl: pageData.pageUrl,\n    pageName: pageData.pageName,\n    businessType: pageData.businessType,\n    auditorName: pageData.auditorName,\n    pageContent: cleanText,\n    sheetId: pageData.sheetId,\n    sheetName: pageData.sheetName,\n    alertEmail: pageData.alertEmail,\n    senderName: pageData.senderName,\n    scoreThreshold: pageData.scoreThreshold\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "621b6317-9fea-4e7d-ab3e-510aba4bdcae",
+          "name": "6. AI Agent — CRO Audit",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            352,
+            1568
+          ],
+          "parameters": {
+            "text": "=You are an expert in Conversion Rate Optimization with 15 years of experience auditing landing pages.\n\nBusiness Type: {{ $json.businessType }}\nPage Name: {{ $json.pageName }}\nPage URL: {{ $json.pageUrl }}\n\nLanding Page Content:\n{{ $json.pageContent }}\n\nAudit this landing page. Return ONLY a valid JSON object. No extra text. No markdown. No backticks.\n\nJSON fields required:\n\noverallScore\nA number from 1 to 10 based on overall conversion potential.\n1 to 3 means critical problems losing most visitors.\n4 to 5 means poor with major improvements needed.\n6 to 7 means average with noticeable gaps.\n8 to 9 means good with minor improvements needed.\n10 means excellent and fully optimized.\n\ngrade\nOne letter grade matching the score.\nF for 1 to 2, D for 3 to 4, C for 5 to 6, B for 7 to 8, A for 9, A+ for 10.\n\nctaStrength\nA number from 1 to 10. How clear and compelling is the main call to action button or link?\n\ntrustScore\nA number from 1 to 10. How strong is the social proof, testimonials, and trust signals?\n\nmessageClarity\nA number from 1 to 10. Can a visitor understand what this page offers within 5 seconds?\n\ntopIssue\nOne sentence. The single biggest problem hurting conversions on this page. Reference something specific from the page content. Keep it under 20 words.\n\nquickWin\nOne sentence. The single change that would boost conversions the fastest. Be specific and practical. Keep it under 25 words.\n\nfixList\nAn array of exactly 5 strings. Each string is one specific improvement for this page.\nEach fix must reference actual elements from the page.\nEach fix must be doable within 1 to 2 days.\nEach fix must be specific to this page and this business type.\nDo not write generic advice. Keep each fix under 30 words.\n\npriority\nOne word showing urgency level.\nCRITICAL for score 1 to 4.\nHIGH for score 5 to 6.\nMEDIUM for score 7 to 8.\nLOW for score 9 to 10.",
+            "options": {},
+            "promptType": "define",
+            "hasOutputParser": true
+          },
+          "typeVersion": 1.7
+        },
+        {
+          "id": "029b0cf7-0312-47de-8d13-c9dfa6f75e1d",
+          "name": "7. OpenAI — GPT-4o-mini Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            352,
+            1872
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini"
+            },
+            "options": {
+              "maxTokens": 800,
+              "temperature": 0.3
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "a68050d6-eb20-4c96-bd5f-6a81c45ab279",
+          "name": "8. Parser — Structured CRO Output",
+          "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+          "position": [
+            496,
+            2016
+          ],
+          "parameters": {
+            "schemaType": "manual",
+            "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"overallScore\": { \"type\": \"number\", \"description\": \"CRO score from 1 to 10\" },\n    \"grade\": { \"type\": \"string\", \"description\": \"F, D, C, B, A, or A+\" },\n    \"ctaStrength\": { \"type\": \"number\", \"description\": \"CTA quality from 1 to 10\" },\n    \"trustScore\": { \"type\": \"number\", \"description\": \"Trust and social proof from 1 to 10\" },\n    \"messageClarity\": { \"type\": \"number\", \"description\": \"Value proposition clarity from 1 to 10\" },\n    \"topIssue\": { \"type\": \"string\", \"description\": \"The biggest conversion problem on the page\" },\n    \"quickWin\": { \"type\": \"string\", \"description\": \"The single fastest fix to boost conversions\" },\n    \"fixList\": { \"type\": \"array\", \"items\": { \"type\": \"string\" }, \"description\": \"List of 5 specific improvements\" },\n    \"priority\": { \"type\": \"string\", \"description\": \"CRITICAL, HIGH, MEDIUM, or LOW\" }\n  },\n  \"required\": [\"overallScore\", \"grade\", \"ctaStrength\", \"trustScore\", \"messageClarity\", \"topIssue\", \"quickWin\", \"fixList\", \"priority\"]\n}"
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "150018b6-35e2-4b13-852f-9a5cfe323075",
+          "name": "9. Code — Prepare Audit Results",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            864,
+            1568
+          ],
+          "parameters": {
+            "jsCode": "const aiOutput = $input.first().json.output;\nconst pageData = $('5. Code — Clean HTML to Text').item.json;\n\nconst score = aiOutput?.overallScore || 0;\nconst grade = aiOutput?.grade || 'N/A';\nconst priority = aiOutput?.priority || 'HIGH';\nconst threshold = pageData.scoreThreshold || 6;\n\nconst scoreEmoji = score >= 8 ? 'Good' : score >= 6 ? 'Average' : score >= 4 ? 'Poor' : 'Critical';\n\nconst priorityLabel = {\n  'LOW': 'Low',\n  'MEDIUM': 'Medium',\n  'HIGH': 'High',\n  'CRITICAL': 'Critical'\n}[priority] || 'High';\n\nconst fixListForSheet = (aiOutput?.fixList || []).map((f, i) => (i + 1) + '. ' + f).join(' | ');\nconst fixListForEmail = (aiOutput?.fixList || []).map((f, i) => (i + 1) + '. ' + f).join('\\n');\n\nconst today = new Date().toLocaleDateString('en-GB', {\n  day: '2-digit', month: 'short', year: 'numeric'\n});\nconst loggedAt = new Date().toISOString().replace('T', ' ').substring(0, 16);\n\nconst emailSubject = 'CRO Alert — ' + pageData.pageName + ' scored ' + score + ' out of 10 (' + grade + ')';\nconst emailBody =\n  'Hi ' + pageData.senderName + ',\\n\\n' +\n  'One of your landing pages scored below your alert threshold.\\n\\n' +\n  'Page name: ' + pageData.pageName + '\\n' +\n  'Page URL: ' + pageData.pageUrl + '\\n' +\n  'CRO score: ' + score + ' out of 10 — ' + grade + ' — ' + scoreEmoji + '\\n' +\n  'Priority level: ' + priorityLabel + '\\n\\n' +\n  'Top issue:\\n' + (aiOutput?.topIssue || 'Not available') + '\\n\\n' +\n  'Fastest fix:\\n' + (aiOutput?.quickWin || 'Not available') + '\\n\\n' +\n  '5 specific fixes for this page:\\n' + fixListForEmail + '\\n\\n' +\n  'Sub-scores:\\n' +\n  'CTA strength: ' + (aiOutput?.ctaStrength || 'N/A') + ' out of 10\\n' +\n  'Trust score: ' + (aiOutput?.trustScore || 'N/A') + ' out of 10\\n' +\n  'Message clarity: ' + (aiOutput?.messageClarity || 'N/A') + ' out of 10\\n\\n' +\n  'Please fix this page before your next campaign.\\n\\n' +\n  'Best regards,\\n' + pageData.senderName;\n\nreturn [{\n  json: {\n    date: today,\n    pageUrl: pageData.pageUrl,\n    pageName: pageData.pageName,\n    croScore: score + ' out of 10 — ' + scoreEmoji,\n    grade: grade,\n    topIssue: aiOutput?.topIssue || 'Not available',\n    quickWin: aiOutput?.quickWin || 'Not available',\n    ctaStrength: (aiOutput?.ctaStrength || 0) + ' out of 10',\n    trustScore: (aiOutput?.trustScore || 0) + ' out of 10',\n    messageClarity: (aiOutput?.messageClarity || 0) + ' out of 10',\n    priority: priorityLabel,\n    fixList: fixListForSheet,\n    auditorName: pageData.auditorName,\n    loggedAt: loggedAt,\n    needsAlert: score < threshold,\n    rawScore: score,\n    emailSubject: emailSubject,\n    emailBody: emailBody,\n    alertEmail: pageData.alertEmail,\n    sheetId: pageData.sheetId,\n    sheetName: pageData.sheetName\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "df4698c7-e277-4816-ad85-b65aae9463a7",
+          "name": "10. Google Sheets — Log CRO Audit",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            1088,
+            1408
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "Date": "={{ $json.date }}",
+                "Grade": "={{ $json.grade }}",
+                "Fix List": "={{ $json.fixList }}",
+                "Page URL": "={{ $json.pageUrl }}",
+                "Priority": "={{ $json.priority }}",
+                "CRO Score": "={{ $json.croScore }}",
+                "Logged At": "={{ $json.loggedAt }}",
+                "Page Name": "={{ $json.pageName }}",
+                "Quick Win": "={{ $json.quickWin }}",
+                "Top Issue": "={{ $json.topIssue }}",
+                "Audited By": "={{ $json.auditorName }}",
+                "Trust Score": "={{ $json.trustScore }}",
+                "CTA Strength": "={{ $json.ctaStrength }}",
+                "Message Clarity": "={{ $json.messageClarity }}"
+              },
+              "mappingMode": "defineBelow"
+            },
+            "options": {
+              "cellFormat": "USER_ENTERED"
+            },
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "={{ $json.sheetName }}"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $json.sheetId }}"
+            }
+          },
+          "typeVersion": 4.5
+        },
+        {
+          "id": "7af7a8cd-e81d-49bc-9958-774b0a8fc500",
+          "name": "11. IF — Score Below Threshold?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            1088,
+            1728
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-alert",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $('9. Code — Prepare Audit Results').item.json.needsAlert }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "1c0b3364-a4ed-4521-b088-f96720479548",
+          "name": "12. Gmail — Send CRO Alert",
+          "type": "n8n-nodes-base.gmail",
+          "position": [
+            1312,
+            1568
+          ],
+          "webhookId": "037981c7-cad6-4fc2-99ac-82322cba7335",
+          "parameters": {
+            "sendTo": "={{ $('9. Code — Prepare Audit Results').item.json.alertEmail }}",
+            "message": "={{ $('9. Code — Prepare Audit Results').item.json.emailBody }}",
+            "options": {
+              "appendAttribution": false
+            },
+            "subject": "={{ $('9. Code — Prepare Audit Results').item.json.emailSubject }}"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "bd2b72d6-e542-480d-bd70-7397b9981205",
+          "name": "13. Set — No Alert Needed",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            1312,
+            1888
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "no-alert-001",
+                  "name": "result",
+                  "type": "string",
+                  "value": "=Page passed — {{ $('9. Code — Prepare Audit Results').item.json.pageName }} scored {{ $('9. Code — Prepare Audit Results').item.json.rawScore }} out of 10. Logged to Sheets. No email sent."
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "2. Set — Config Values": {
+          "main": [
+            [
+              {
+                "node": "3. Code — Build Pages List",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. AI Agent — CRO Audit": {
+          "main": [
+            [
+              {
+                "node": "9. Code — Prepare Audit Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "3. Code — Build Pages List": {
+          "main": [
+            [
+              {
+                "node": "4. HTTP — Scrape Landing Page",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. Code — Clean HTML to Text": {
+          "main": [
+            [
+              {
+                "node": "6. AI Agent — CRO Audit",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "4. HTTP — Scrape Landing Page": {
+          "main": [
+            [
+              {
+                "node": "5. Code — Clean HTML to Text",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. OpenAI — GPT-4o-mini Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "6. AI Agent — CRO Audit",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Form — Multi-Page CRO Audit": {
+          "main": [
+            [
+              {
+                "node": "2. Set — Config Values",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "11. IF — Score Below Threshold?": {
+          "main": [
+            [
+              {
+                "node": "12. Gmail — Send CRO Alert",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "13. Set — No Alert Needed",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "9. Code — Prepare Audit Results": {
+          "main": [
+            [
+              {
+                "node": "10. Google Sheets — Log CRO Audit",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "11. IF — Score Below Threshold?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. Parser — Structured CRO Output": {
+          "ai_outputParser": [
+            [
+              {
+                "node": "6. AI Agent — CRO Audit",
+                "type": "ai_outputParser",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 17,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.set": {
+          "count": 2
+        },
+        "n8n-nodes-base.code": {
+          "count": 3
+        },
+        "n8n-nodes-base.gmail": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 4
+        },
+        "n8n-nodes-base.formTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 1
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.outputParserStructured": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Incrementors",
+      "username": "incrementors",
+      "bio": "",
+      "verified": true,
+      "links": [
+        "https://www.incrementors.com/"
+      ],
+      "avatar": "https://gravatar.com/avatar/e09b4b6a8c5a00f886a9eedf3be23a4af5a50cc216cd6b2aee2a12c2dfba99dd?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 356,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmail",
+        "codex": {
+          "data": {
+            "alias": [
+              "email",
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.gmail/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Gmail"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1179,
+        "icon": "fa:code",
+        "name": "@n8n/n8n-nodes-langchain.outputParserStructured",
+        "codex": {
+          "data": {
+            "alias": [
+              "json",
+              "zod"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.outputparserstructured/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Output Parsers"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Structured Output Parser"
+        },
+        "iconData": {
+          "icon": "code",
+          "type": "icon"
+        },
+        "displayName": "Structured Output Parser",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1225,
+        "icon": "file:form.svg",
+        "name": "n8n-nodes-base.formTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "table",
+              "submit",
+              "post"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.formtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Other Trigger Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "On form submission"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NiIgaGVpZ2h0PSI0MCIgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iIzAwQjdCQyIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMzQuOTc4IDM3LjczMmExLjU2IDEuNTYgMCAwIDEtMS41NjIgMS41NjNINi4yNmExLjU2IDEuNTYgMCAwIDEtMS41NjMtMS41NjNWOS42MDdjMC0uNDA1LjE1Ny0uNzk0LjQzOC0xLjA4Nmw2LjMwNC02LjUzMXY1LjM0NEg4LjIxM2ExLjE3MiAxLjE3MiAwIDEgMCAwIDIuMzQzaDQuNDNhMS4xNyAxLjE3IDAgMCAwIDEuMTcxLTEuMTcxVi4yMzJoMTkuNjAyYTEuNTYgMS41NiAwIDAgMSAxLjU2MiAxLjU2M3YxMC4zMjdsLTIuODYgMi44Ni04LjI1MiA4LjI3NmE0MTMuMDA2IDQxMy4wMDYgMCAwIDEtMS42NTQgMS42NjJsLS4zMzcuMzM3YTIgMiAwIDAgMC0uNTU3IDEuMDhMMjAuMyAzMS45MjJjLS4xMDguNjM4LS4yMTUgMS4wNzkuMjExIDEuNDE4LjQwMy4zMi45LjE3NCAxLjU0LjA2Nmw1LjQwOC0uOTI4YTIgMiAwIDAgMCAxLjA4LS41NTZsNi40NC02LjQyOXptLTI0LjAzLTIxLjI2NWExLjE4IDEuMTggMCAwIDAgMS4xNzEgMS4xNzJoMTMuMTYzYTEuMTcyIDEuMTcyIDAgMSAwIDAtMi4zNDRIMTIuMTE5YTEuMTcgMS4xNyAwIDAgMC0xLjE3MiAxLjE3Mm03LjI5NCAxNC43NjZhMS4xNyAxLjE3IDAgMCAwLTEuMTcyLTEuMTcySDEyLjEyYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNC45NTFhMS4xNyAxLjE3IDAgMCAwIDEuMTcyLTEuMTcybS44Ni03LjM5MWExLjE3IDEuMTcgMCAwIDAtMS4xNzItMS4xNzJoLTUuODExYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNS44MWExLjE2NCAxLjE2NCAwIDAgMCAxLjE3My0xLjE3MSIgY2xpcC1ydWxlPSJldmVub2RkIi8+PHBhdGggZmlsbD0iIzAwQjdCQyIgZD0ibTMzLjUzMiAxNi4zOTcgNC4yODktNC4yODkgMy43NTggMy43MSAxLjYxNy0xLjYxNiAyLjI1OCAyLjI1N2MuMjE4LjIxOC4zNC41MTMuMzQzLjgyLS4wMDIuMzExLS4xMjUuNjA4LS4zNDQuODNsLTYuODA0IDYuNzk2YTEuMTMgMS4xMyAwIDAgMS0uODI4LjM0MyAxLjE1IDEuMTUgMCAwIDEtLjgyOC0uMzQzIDEuMTggMS4xOCAwIDAgMSAwLTEuNjU3bDUuOTc2LTUuOTY4LTEuMzEyLTEuMzEzLTEuMzgzIDEuNDE0LTEzLjE0OSAxMy4xMjUtNC42MTcuNzgyLjc4Mi00LjYxNy4zMzYtLjMzNyAyLjU2MiAyLjU1NWExLjEgMS4xIDAgMCAwIC44MjguMzQ0Yy4zMTIuMDA1LjYxMi0uMTIuODI4LS4zNDRhMS4xOCAxLjE4IDAgMCAwIDAtMS42NTZsLTIuNTYyLTIuNTYyek00NC43MzYgMTIuMjRjMCAuNDE0LS4xNjMuODEtLjQ1NCAxLjEwMmwtLjkyMi45MTQtMy44NTItMy44MjguOTMtLjkzYTEuNTYzIDEuNTYzIDAgMCAxIDIuMjAzIDBsMS42NCAxLjY0MWMuMjkxLjI5My40NTUuNjkuNDU1IDEuMTAyIi8+PC9zdmc+"
+        },
+        "displayName": "n8n Form Trigger",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 32,
+        "name": "Market Research"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

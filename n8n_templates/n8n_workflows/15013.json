@@ -1,0 +1,1694 @@
+{
+  "workflow": {
+    "id": 15013,
+    "name": "Analyze weekly Fireflies sales calls with GPT-4o-mini, Google Sheets and Slack",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-13T11:17:31.438Z",
+    "description": "### Description\n\nConnect your Fireflies account once and activate the workflow — every Monday at 9AM it runs automatically without any input from you. It pulls all sales call transcripts from the past 7 days, analyzes each one with GPT-4o-mini, and extracts six intelligence fields: pricing mentions, objections, buying signals, competitor mentions, a key takeaway, and a recommended next action. Every call is logged as one row in Google Sheets and a full weekly digest is posted to your Slack channel. Built for sales managers and revenue teams who want structured call intelligence delivered without manual review.\n\n---\n\n## What This Workflow Does\n\n- **Fetches last 7 days of calls automatically** — Pulls up to 50 recent transcripts from Fireflies and filters to only those recorded in the past week\n- **Analyzes every call individually** — GPT-4o-mini reads each transcript and extracts six structured fields per call, not a generic summary\n- **Detects objections and buying signals** — Surfaces exactly what concerns were raised and what positive signals suggest the deal is moving forward\n- **Flags competitor mentions** — Identifies any competitor names or alternative products that came up across all calls this week\n- **Logs each call to Google Sheets** — Appends one 13-column row per call so your team has a permanent, searchable record of every sales conversation\n- **Delivers a weekly Slack digest** — Aggregates all calls into one report covering totals, top objections, top buying signals, and a call-by-call overview\n- **Exits cleanly when no calls exist** — If no transcripts are found for the week, the workflow stops silently without errors or empty Slack messages\n\n---\n\n## Setup Requirements\n\n### Tools Needed\n- n8n instance (self-hosted or cloud)\n- Fireflies.ai account with API access\n- OpenAI account with GPT-4o-mini API access\n- Google Sheets (one sheet with a tab named **Sales Call Analysis**)\n- Slack workspace with OAuth2 app configured\n\n### Credentials Required\n- Fireflies API key (pasted directly into **2. Set — Config Values** — no n8n credential needed)\n- OpenAI API key\n- Google Sheets OAuth2\n- Slack OAuth2\n\n**Estimated Setup Time: 15–20 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Import the workflow** — Open n8n → Workflows → Import from JSON → paste the workflow JSON → click Import\n\n2. **Get your Fireflies API key** — Log in to fireflies.ai → go to Settings → Integrations → copy your API key\n\n3. **Fill in Config Values** — Open node **2. Set — Config Values** → replace all placeholders:\n\n| Field | What to enter |\n|---|---|\n| `YOUR_FIREFLIES_API_KEY` | Your Fireflies API key from step 2 |\n| `YOUR_GOOGLE_SHEET_ID` | The ID from your Google Sheet URL (the string between `/d/` and `/edit`) |\n| `Sales Call Analysis` | Leave as-is, or change to match your sheet tab name exactly |\n| `#sales-team` | Your Slack channel name including the `#` |\n| `YOUR COMPANY NAME` | Your company name (used in the AI prompt and Slack report) |\n| `salesKeywords` | Comma-separated keywords to identify sales calls (default: `sales,client,demo,proposal,pricing,onboarding,deal,contract`) |\n\n4. **Connect OpenAI** — Open node **10. OpenAI — GPT-4o-mini Model** → click the credential dropdown → add your OpenAI API key → test the connection\n\n5. **Create your Google Sheet** — Open Google Sheets → create a new sheet → add a tab named exactly **Sales Call Analysis** → add these 13 column headers in row 1: `Call Date`, `Meeting Title`, `Duration (min)`, `Participants`, `Overall Sentiment`, `Pricing Mentions`, `Objections`, `Buying Signals`, `Competitor Mentions`, `Key Takeaway`, `Recommended Action`, `Transcript URL`, `Logged At`\n\n6. **Connect Google Sheets** — Open node **13. Google Sheets — Log Call Analysis** → click the credential dropdown → add Google Sheets OAuth2 → sign in with your Google account → authorize access\n\n7. **Connect Slack** — Open node **15. Slack — Send Weekly Report** → click the credential dropdown → connect your Slack workspace via OAuth2 → invite the n8n bot to your sales channel in Slack (`/invite @n8n`)\n\n8. **Activate the workflow** — Toggle the workflow to Active — it will run automatically every Monday at 9AM\n\n&gt; ⚠️ **Test before Monday** — To test immediately without waiting for Monday, open node **1. Schedule — Every Monday 9AM**, click \"Execute step\", then run the full workflow manually from there.\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Schedule: Every Monday 9AM**\nThis step fires the workflow automatically every Monday morning at 9AM. No manual trigger is needed. Once the workflow is active, this runs on its own every week.\n\n**Step 2 — Set: Config Values**\nYour Fireflies API key, Google Sheet ID, sheet tab name, Slack channel, company name, sales keywords, and the 7-day date window are all stored here. The week start and end dates are calculated automatically based on today's date so you never need to update them manually.\n\n**Step 3 — HTTP: Fetch Recent Transcripts**\nA request is sent to the Fireflies API using your API key. It retrieves the 50 most recent transcripts from your account, including each call's ID, title, date, duration, and participants. This is a lightweight fetch — full transcript content comes later.\n\n**Step 4 — Code: Filter Last 7 Days**\nThe 50 transcripts are filtered down to only those recorded in the past 7 days. Each transcript that passes the filter becomes its own separate item so the next steps process each call individually. If no transcripts exist at all, a fallback result is passed forward.\n\n**Step 5 — IF: Any Transcripts Found?**\nThis is the gate check. If transcripts were found (YES path), each one moves forward to full analysis. If no transcripts were found this week (NO path), the workflow routes to **6. Set — No Calls This Week** and stops cleanly — no errors, no empty reports.\n\n**Step 6 — Set: No Calls This Week**\nThis step handles the empty-week case. It sets a simple message confirming no calls were recorded and the workflow ends here for that run.\n\n**Step 7 — HTTP: Fetch Full Transcript**\nFor each call that passed the filter, a second Fireflies API request is made to retrieve the complete transcript details: all sentences with speaker labels, AI-detected pricing sentences, questions, tasks, keyword summary, overview, and sentiment percentages.\n\n**Step 8 — Code: Extract Transcript Data**\nThe full transcript is processed here. Sentences are assembled into readable text (limited to 4,000 characters for GPT efficiency). Fireflies AI-flagged pricing sentences and question sentences are extracted separately. Sentiment percentages are converted into a single label: Positive, Mostly Positive, Mixed, or Negative. All data is packaged cleanly for the AI step.\n\n**Step 9 — AI Agent: Analyze Sales Call**\nGPT-4o-mini receives the call details, sentiment data, Fireflies-detected pricing sentences, keywords, overview, and the transcript excerpt. It returns exactly six fields: pricing mentions, objections, buying signals, competitor mentions, a key takeaway under 25 words, and a recommended action for the sales rep to take within 48 hours.\n\n**Step 10 — OpenAI: GPT-4o-mini Model**\nThis is the language model powering the analysis step. It runs at temperature 0.3 for consistent, factual extraction and is capped at 800 tokens per call to keep costs predictable across the full week's batch.\n\n**Step 11 — Parser: Structured Call Analysis**\nThis step enforces the exact six-field schema GPT-4o-mini must return. It validates that all required fields are present and correctly typed before the results move forward, preventing malformed output from reaching your sheet.\n\n**Step 12 — Code: Combine Analysis Results**\nThe AI output is merged with the original transcript metadata (date, title, duration, participants, sentiment, transcript URL). A log timestamp is also added. This creates the complete data row that goes to both Google Sheets and the Slack aggregation step.\n\n**Step 13 — Google Sheets: Log Call Analysis**\nOne row is appended to your Sales Call Analysis tab for every call analyzed. All 13 columns are populated: date, title, duration, participants, sentiment, pricing, objections, buying signals, competitors, key takeaway, recommended action, transcript URL, and logged-at timestamp.\n\n**Step 14 — Code: Build Weekly Slack Summary**\nAll analyzed calls are aggregated into a single weekly digest. The code counts total calls, positive calls, calls with objections, calls with buying signals, and compiles unique competitor mentions. The top 3 objections and top 3 buying signals are pulled from across all calls. A call-by-call overview line is added for every transcript.\n\n**Step 15 — Slack: Send Weekly Report**\nThe complete weekly digest is posted to your Slack channel. The message includes the week date range, summary totals, top objections, top buying signals, competitor mentions, and a one-line overview of every call. A footer confirms the full analysis is logged in Google Sheets.\n\n---\n\n## Key Features\n\n✅ **Fully automated weekly cadence** — Runs every Monday at 9AM with zero manual input after setup\n✅ **Per-call AI intelligence** — Each call gets its own six-field analysis, not a rolled-up average\n✅ **Fireflies AI signals as input** — Pricing sentences and questions detected by Fireflies are fed directly into GPT for more accurate extraction\n✅ **Structured output enforced** — A schema parser validates every AI response before it reaches your sheet — no broken rows\n✅ **Sentiment scoring per call** — Each call is rated Positive, Mostly Positive, Mixed, or Negative based on Fireflies sentiment percentages\n✅ **Competitor tracking built in** — Competitor mentions are collected across all calls and deduplicated into one list in the Slack report\n✅ **48-hour action item per call** — Every call ends with one concrete action the sales rep should take — not a vague suggestion\n✅ **Clean empty-week handling** — No transcripts this week means a clean stop, not an error or blank Slack message\n\n---\n\n## Customisation Options\n\n**Change the schedule day or time** — In node **1. Schedule — Every Monday 9AM**, edit the cron expression `0 9 * * 1` to run on a different day or time. For example, `0 8 * * 5` runs every Friday at 8AM for an end-of-week review instead.\n\n**Increase the transcript fetch limit** — In node **3. HTTP — Fetch Recent Transcripts**, change `limit: 50` in the GraphQL query body to `100` if your team records more than 50 calls per week to ensure no calls are missed.\n\n**Expand the date window beyond 7 days** — In node **2. Set — Config Values**, change `{days: 7}` in both the `weekStart` and `sevenDaysAgoMs` fields to `{days: 14}` for a bi-weekly analysis window.\n\n**Add a Slack alert for high-objection calls** — After node **12. Code — Combine Analysis Results**, add an IF check: if the `objections` field does not contain \"No objections\", post an immediate Slack alert to a `#deal-risk` channel so the sales manager can follow up same day.\n\n**Add a Gmail summary to the sales manager** — After node **15. Slack — Send Weekly Report**, add a Gmail node to also email the full weekly digest to your sales manager's inbox as a backup record outside of Slack.\n\n**Filter to specific call types using keywords** — In node **2. Set — Config Values**, edit the `salesKeywords` field to narrow analysis to specific call types — for example, change to `demo,discovery,closing` to analyze only those pipeline stages.\n\n---\n\n## Troubleshooting\n\n**Fireflies returning no transcripts or an auth error:**\n- Confirm `YOUR_FIREFLIES_API_KEY` in node **2. Set — Config Values** is replaced with your actual key — not the placeholder text\n- Get your key from fireflies.ai → Settings → Integrations → API Key\n- Make sure your Fireflies plan includes API access — some free plans do not\n\n**Workflow not triggering on Monday:**\n- Confirm the workflow is toggled to Active — it will not run on a schedule if inactive\n- Check that the cron expression in node **1. Schedule — Every Monday 9AM** is `0 9 * * 1` — any edit to this field can break the schedule\n- To test immediately, click on node 1 and use the manual Execute option\n\n**Google Sheets not logging rows:**\n- Confirm the Google Sheets OAuth2 credential in node **13. Google Sheets — Log Call Analysis** is connected and not expired\n- Check that `YOUR_GOOGLE_SHEET_ID` in node **2. Set — Config Values** matches the ID in your sheet URL exactly\n- Confirm the tab is named **Sales Call Analysis** exactly — capitalization and spacing must match `sheetName` in Config Values\n\n**AI returning incomplete or missing fields:**\n- The schema parser in node **11. Parser — Structured Call Analysis** enforces all six fields — if output is missing fields, check the execution log of node **9. AI Agent — Analyze Sales Call** for the raw GPT response\n- Confirm the OpenAI credential in node **10. OpenAI — GPT-4o-mini Model** is connected and your account has available credits\n- If transcripts are very short, GPT may have little content to extract — the fallback text (\"No objections detected\", etc.) will be used automatically\n\n**Slack report not arriving:**\n- Confirm the Slack OAuth2 credential in node **15. Slack — Send Weekly Report** is connected and authorized\n- Check that the channel name in node **2. Set — Config Values** includes the `#` prefix and matches your actual Slack channel name exactly\n- Type `/invite @n8n` in your Slack channel to ensure the bot has posting permission\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email: [info@isawow.com](info@isawow.com)\n🌐 Website: [https://isawow.com/](https://isawow.com/)",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2"
+      },
+      "nodes": [
+        {
+          "id": "8ee866e7-c499-4868-8e70-83d1e9e8a815",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2448,
+            -240
+          ],
+          "parameters": {
+            "width": 540,
+            "height": 1140,
+            "content": "## Weekly Sales Call Intelligence — Fireflies + GPT-4o-mini + Sheets + Slack\n\nFor sales managers and revenue teams who want automatic AI analysis of every sales call transcript every Monday morning. The workflow connects to your Fireflies account, fetches all transcripts from the past 7 days, and for each call uses GPT-4o-mini to extract six intelligence fields: pricing mentions, objections, buying signals, competitor mentions, key takeaway, and a recommended next action. Every call is logged as one row in Google Sheets. Slack receives a weekly aggregated report covering all calls, top objections, top buying signals, and competitor mentions.\n\n## How it works\n- **1. Schedule — Every Monday 9AM** triggers the workflow each week\n- **2. Set — Config Values** stores Fireflies API key, Sheet ID, Slack channel, and keywords\n- **3. HTTP — Fetch Recent Transcripts** pulls the 50 most recent transcripts from Fireflies\n- **4. Code — Filter Last 7 Days** filters to the past 7 days and outputs one item per transcript\n- **5. IF — Any Transcripts Found?** stops cleanly if no calls were recorded this week\n- **7. HTTP — Fetch Full Transcript** fetches complete transcript details for each call\n- **8. Code — Extract Transcript Data** extracts sentences, sentiment, keywords, and action items\n- **9. AI Agent — Analyze Sales Call** uses GPT-4o-mini to produce 6 structured intelligence fields\n- **12. Code — Combine Analysis Results** merges AI output with transcript metadata\n- **13. Google Sheets — Log Call Analysis** appends one row per call to the tracker sheet\n- **14. Code — Build Weekly Slack Summary** aggregates all calls into one weekly digest\n- **15. Slack — Send Weekly Report** delivers the weekly intelligence report to your channel\n\n## Set up steps\n1. In **2. Set — Config Values** — replace YOUR_FIREFLIES_API_KEY, YOUR_GOOGLE_SHEET_ID, sheet tab name, Slack channel, company name, and sales keywords\n2. In **10. OpenAI — GPT-4o-mini Model** — connect your OpenAI credential\n3. In **13. Google Sheets — Log Call Analysis** — connect your Google Sheets OAuth2 credential\n4. In **15. Slack — Send Weekly Report** — connect your Slack OAuth2 credential\n5. Create a Google Sheet tab named Sales Call Analysis with columns: Call Date, Meeting Title, Duration (min), Participants, Overall Sentiment, Pricing Mentions, Objections, Buying Signals, Competitor Mentions, Key Takeaway, Recommended Action, Transcript URL, Logged At\n6. Activate the workflow — it runs every Monday at 9AM automatically"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "382c29df-3cb0-4eef-9848-01a07636d098",
+          "name": "Section — Schedule and Config",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1888,
+            -48
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 436,
+            "height": 452,
+            "content": "## Schedule and Config\nWorkflow triggers every Monday at 9AM. Config stores Fireflies API key, Sheet ID, Slack channel, company name, sales filter keywords, and the 7-day date window used throughout."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "1328aa41-8111-4195-84a2-f67436edf426",
+          "name": "Section — Transcript Fetch, Filter, and Gate",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1424,
+            -48
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 612,
+            "height": 756,
+            "content": "## Transcript Fetch, Filter, and Gate\nFetches the 50 most recent Fireflies transcripts then filters to the past 7 days. Outputs one item per transcript. The IF node checks if any calls exist — no calls this week exits cleanly via the Set node below."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9bab136a-fd82-443b-9b88-37b2d0f56b93",
+          "name": "Section — Full Transcript Fetch and AI Analysis",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -720,
+            -48
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 836,
+            "height": 852,
+            "content": "## Full Transcript Fetch and AI Analysis\nFor each transcript, fetches complete details including sentences, ai_filters (pricing, questions, tasks), summary, and sentiment analytics. GPT-4o-mini produces 6 structured intelligence fields per call via Structured Output Parser."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "a1188f3a-8c16-487d-a743-1e5fff3f80aa",
+          "name": "Section — Results Assembly and Output",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            224,
+            -48
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 660,
+            "height": 852,
+            "content": "## Results Assembly and Output\nMerges AI output with metadata. Google Sheets logs one row per call. Code node aggregates all calls into a weekly digest covering objections, buying signals, and competitors. Slack delivers the report."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "0e2b31bb-4dc9-4f1a-a2c4-76950f8100bc",
+          "name": "Note — Edit Config Before Activating",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1584,
+            848
+          ],
+          "parameters": {
+            "color": 3,
+            "width": 892,
+            "content": "## ⚠️ Edit This Node Before Activating\nReplace all six values: Fireflies API key (from fireflies.ai Settings then Integrations), Google Sheet ID, sheet tab name, Slack channel, company name, and comma-separated sales keywords used to identify relevant calls."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f5b5751c-2d3b-41cd-a6d0-4c08329f936b",
+          "name": "1. Schedule — Every Monday 9AM",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            -1840,
+            224
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "field": "cronExpression",
+                  "expression": "0 9 * * 1"
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "ab84aac9-cdae-4a90-8690-5611b4026c9c",
+          "name": "2. Set — Config Values",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -1616,
+            224
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "cfg-001",
+                  "name": "firefliesApiKey",
+                  "type": "string",
+                  "value": "YOUR_FIREFLIES_API_KEY"
+                },
+                {
+                  "id": "cfg-002",
+                  "name": "sheetId",
+                  "type": "string",
+                  "value": "YOUR_GOOGLE_SHEET_ID"
+                },
+                {
+                  "id": "cfg-003",
+                  "name": "sheetName",
+                  "type": "string",
+                  "value": "Sales Call Analysis"
+                },
+                {
+                  "id": "cfg-004",
+                  "name": "slackChannel",
+                  "type": "string",
+                  "value": "#sales-team"
+                },
+                {
+                  "id": "cfg-005",
+                  "name": "companyName",
+                  "type": "string",
+                  "value": "YOUR COMPANY NAME"
+                },
+                {
+                  "id": "cfg-006",
+                  "name": "salesKeywords",
+                  "type": "string",
+                  "value": "sales,client,demo,proposal,pricing,onboarding,deal,contract"
+                },
+                {
+                  "id": "cfg-007",
+                  "name": "weekStart",
+                  "type": "string",
+                  "value": "={{ $now.minus({days: 7}).toFormat('dd MMM yyyy') }}"
+                },
+                {
+                  "id": "cfg-008",
+                  "name": "weekEnd",
+                  "type": "string",
+                  "value": "={{ $now.toFormat('dd MMM yyyy') }}"
+                },
+                {
+                  "id": "cfg-009",
+                  "name": "sevenDaysAgoMs",
+                  "type": "number",
+                  "value": "={{ $now.minus({days: 7}).toMillis() }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "fad8ef6e-3d7e-49f9-a792-d27c507bf31c",
+          "name": "3. HTTP — Fetch Recent Transcripts",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -1392,
+            224
+          ],
+          "parameters": {
+            "url": "https://api.fireflies.ai/graphql",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"query\": \"query GetRecentTranscripts { transcripts(limit: 50) { id title date duration participants } }\"\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $json.firefliesApiKey }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "65ad4e9b-2f9f-4a9b-92f5-6c4a7c95973c",
+          "name": "4. Code — Filter Last 7 Days",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -1168,
+            224
+          ],
+          "parameters": {
+            "jsCode": "// Filter transcripts from last 7 days that match sales keywords\nconst response = $input.first().json;\nconst config = $('2. Set — Config Values').item.json;\n\n// Extract transcripts array from GraphQL response\nconst transcripts = response.data?.transcripts || [];\n\nif (transcripts.length === 0) {\n  return [{\n    json: {\n      hasTranscripts: false,\n      message: 'No transcripts found in Fireflies account.',\n      weekStart: config.weekStart,\n      weekEnd: config.weekEnd,\n      slackChannel: config.slackChannel,\n      companyName: config.companyName\n    }\n  }];\n}\n\n// Filter to last 7 days\nconst sevenDaysAgo = config.sevenDaysAgoMs;\nconst keywords = config.salesKeywords.toLowerCase().split(',').map(k => k.trim());\n\nconst recentSalesCalls = transcripts.filter(t => {\n  const transcriptDate = t.date || 0;\n  return transcriptDate >= sevenDaysAgo;\n});\n\nif (recentSalesCalls.length === 0) {\n  return [{\n    json: {\n      hasTranscripts: false,\n      message: `No transcripts found in the last 7 days (${config.weekStart} to ${config.weekEnd}).`,\n      weekStart: config.weekStart,\n      weekEnd: config.weekEnd,\n      slackChannel: config.slackChannel,\n      companyName: config.companyName\n    }\n  }];\n}\n\n// Return one item per transcript for the loop\nreturn recentSalesCalls.map(t => ({\n  json: {\n    hasTranscripts: true,\n    transcriptId: t.id,\n    transcriptTitle: t.title || 'Untitled Meeting',\n    transcriptDate: t.date\n      ? new Date(t.date).toISOString().split('T')[0]\n      : 'Unknown Date',\n    durationMinutes: Math.round((t.duration || 0) / 60),\n    participants: (t.participants || []).join(', ') || 'Unknown',\n    firefliesApiKey: config.firefliesApiKey,\n    sheetId: config.sheetId,\n    sheetName: config.sheetName,\n    slackChannel: config.slackChannel,\n    companyName: config.companyName,\n    weekStart: config.weekStart,\n    weekEnd: config.weekEnd,\n    totalCallsThisWeek: recentSalesCalls.length\n  }\n}));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "57c4228d-5638-403f-b160-0c73913297b1",
+          "name": "5. IF — Any Transcripts Found?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -960,
+            224
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-has-transcripts",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $json.hasTranscripts }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "da124254-5cb9-473f-826d-237b29d83d72",
+          "name": "6. Set — No Calls This Week",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -960,
+            432
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "noop-001",
+                  "name": "result",
+                  "type": "string",
+                  "value": "=No sales calls found this week. Nothing to analyze."
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "97e93b4b-7b7e-4e23-9740-c59dbdb63abd",
+          "name": "7. HTTP — Fetch Full Transcript",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -688,
+            208
+          ],
+          "parameters": {
+            "url": "https://api.fireflies.ai/graphql",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"query\": \"query GetTranscriptDetails($id: String!) { transcript(id: $id) { id title date duration participants transcript_url sentences { speaker_name text ai_filters { task pricing metric question date_and_time sentiment } } summary { keywords action_items overview } analytics { sentiments { positive_pct neutral_pct negative_pct } } } }\",\n  \"variables\": {\n    \"id\": \"{{ $json.transcriptId }}\"\n  }\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $json.firefliesApiKey }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "dd1c274e-b3f8-4125-b98d-57d1b64dcf7f",
+          "name": "8. Code — Extract Transcript Data",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -464,
+            208
+          ],
+          "parameters": {
+            "jsCode": "// Extract and prepare transcript data for AI analysis\nconst response = $input.first().json;\nconst prevData = $('4. Code — Filter Last 7 Days').item.json;\n\n// Extract transcript from GraphQL response\nconst transcript = response.data?.transcript || {};\n\n// Build full text from sentences — limit to 4000 chars for GPT\nconst sentences = transcript.sentences || [];\nlet fullText = '';\nlet pricingSentences = [];\nlet questionSentences = [];\nlet taskSentences = [];\n\nsentences.forEach(s => {\n  const speaker = s.speaker_name || 'Unknown';\n  const text = s.text || '';\n  fullText += `${speaker}: ${text}\\n`;\n\n  if (s.ai_filters?.pricing) pricingSentences.push(`${speaker}: ${text}`);\n  if (s.ai_filters?.question) questionSentences.push(`${speaker}: ${text}`);\n  if (s.ai_filters?.task) taskSentences.push(`${speaker}: ${text}`);\n});\n\nconst truncatedText = fullText.substring(0, 4000);\n\nconst summary = transcript.summary || {};\nconst keywords = (summary.keywords || []).slice(0, 10).join(', ');\nconst actionItems = (summary.action_items || []).slice(0, 5).join(' | ');\nconst overview = summary.overview || 'No overview available';\n\nconst sentiments = transcript.analytics?.sentiments || {};\nconst positivePct = Math.round(sentiments.positive_pct || 0);\nconst neutralPct = Math.round(sentiments.neutral_pct || 0);\nconst negativePct = Math.round(sentiments.negative_pct || 0);\n\nlet overallSentiment = 'Neutral';\nif (positivePct > 60) overallSentiment = 'Positive';\nelse if (negativePct > 40) overallSentiment = 'Negative';\nelse if (positivePct > negativePct) overallSentiment = 'Mostly Positive';\nelse overallSentiment = 'Mixed';\n\nreturn [{\n  json: {\n    transcriptId: transcript.id || prevData.transcriptId,\n    transcriptTitle: transcript.title || prevData.transcriptTitle,\n    transcriptDate: prevData.transcriptDate,\n    durationMinutes: Math.round((transcript.duration || 0) / 60) || prevData.durationMinutes,\n    participants: (transcript.participants || []).join(', ') || prevData.participants,\n    transcriptUrl: transcript.transcript_url || 'Not available',\n    truncatedText,\n    pricingSentences: pricingSentences.slice(0, 5).join(' | ') || 'None detected',\n    questionSentences: questionSentences.slice(0, 5).join(' | ') || 'None detected',\n    taskSentences: taskSentences.slice(0, 5).join(' | ') || 'None detected',\n    keywords,\n    actionItems,\n    overview,\n    overallSentiment,\n    positivePct,\n    negativePct,\n    firefliesApiKey: prevData.firefliesApiKey,\n    sheetId: prevData.sheetId,\n    sheetName: prevData.sheetName,\n    slackChannel: prevData.slackChannel,\n    companyName: prevData.companyName,\n    weekStart: prevData.weekStart,\n    weekEnd: prevData.weekEnd,\n    totalCallsThisWeek: prevData.totalCallsThisWeek\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "c2d49ee9-0a04-4ede-a49f-31c01e6e4459",
+          "name": "9. AI Agent — Analyze Sales Call",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            -240,
+            208
+          ],
+          "parameters": {
+            "text": "=You are a sales intelligence analyst at {{ $json.companyName }}.\n\nAnalyze this sales call transcript and extract structured intelligence.\n\nCALL DETAILS:\nTitle: {{ $json.transcriptTitle }}\nDate: {{ $json.transcriptDate }}\nDuration: {{ $json.durationMinutes }} minutes\nParticipants: {{ $json.participants }}\nOverall Sentiment: {{ $json.overallSentiment }} (Positive: {{ $json.positivePct }}%, Negative: {{ $json.negativePct }}%)\n\nFIREFLIES AI-DETECTED PRICING SENTENCES:\n{{ $json.pricingSentences }}\n\nFIREFLIES AI-DETECTED QUESTIONS:\n{{ $json.questionSentences }}\n\nFIREFLIES KEYWORDS: {{ $json.keywords }}\n\nFIREFLIES OVERVIEW: {{ $json.overview }}\n\nTRANSCRIPT EXCERPT:\n{{ $json.truncatedText }}\n\nReturn ONLY a valid JSON object with exactly these 6 fields. No extra text. No markdown. No backticks.\n\npricingMentions — List the specific prices, packages, budgets, or cost discussions mentioned. If none, write: No pricing discussed. Keep under 80 words.\n\nobjections — List every objection or concern raised by the prospect or client. Each objection on a new line starting with a dash. If none found, write: No objections detected.\n\nbuyingSignals — List every positive signal showing the prospect is interested or moving toward a decision. Examples: asked about timeline, requested proposal, mentioned budget availability. If none, write: No buying signals detected.\n\ncompetitorMentions — List any competitor names or alternative products mentioned. If none, write: No competitors mentioned.\n\nkeyTakeaway — One clear sentence summarizing what happened in this call and what the next step should be. Under 25 words.\n\nrecommendedAction — One specific action the sales rep should take within 48 hours based on this call. Be concrete and direct. Under 20 words.",
+            "options": {},
+            "promptType": "define",
+            "hasOutputParser": true
+          },
+          "typeVersion": 1.7
+        },
+        {
+          "id": "48d48105-3f0b-49f4-b723-ba4468036b06",
+          "name": "10. OpenAI — GPT-4o-mini Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            -240,
+            416
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini"
+            },
+            "options": {
+              "maxTokens": 800,
+              "temperature": 0.3
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "5d09b2aa-97c4-42be-9425-24cbce6c3abd",
+          "name": "11. Parser — Structured Call Analysis",
+          "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+          "position": [
+            -96,
+            624
+          ],
+          "parameters": {
+            "schemaType": "manual",
+            "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"pricingMentions\": {\n      \"type\": \"string\",\n      \"description\": \"Specific prices, packages, budgets discussed in the call\"\n    },\n    \"objections\": {\n      \"type\": \"string\",\n      \"description\": \"Objections and concerns raised by the prospect, one per line starting with dash\"\n    },\n    \"buyingSignals\": {\n      \"type\": \"string\",\n      \"description\": \"Positive signals showing interest or movement toward a decision\"\n    },\n    \"competitorMentions\": {\n      \"type\": \"string\",\n      \"description\": \"Competitor names or alternative products mentioned\"\n    },\n    \"keyTakeaway\": {\n      \"type\": \"string\",\n      \"description\": \"One sentence summary of what happened and next step. Under 25 words.\"\n    },\n    \"recommendedAction\": {\n      \"type\": \"string\",\n      \"description\": \"One specific action sales rep should take within 48 hours. Under 20 words.\"\n    }\n  },\n  \"required\": [\"pricingMentions\", \"objections\", \"buyingSignals\", \"competitorMentions\", \"keyTakeaway\", \"recommendedAction\"]\n}"
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "18669f4a-cfae-4653-854d-1a12e048661b",
+          "name": "12. Code — Combine Analysis Results",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            272,
+            208
+          ],
+          "parameters": {
+            "jsCode": "// Combine AI analysis output with transcript metadata\nconst aiOutput = $input.first().json.output;\nconst transcriptData = $('8. Code — Extract Transcript Data').item.json;\n\nreturn [{\n  json: {\n    callDate: transcriptData.transcriptDate,\n    callTitle: transcriptData.transcriptTitle,\n    durationMinutes: transcriptData.durationMinutes,\n    participants: transcriptData.participants,\n    overallSentiment: transcriptData.overallSentiment,\n    transcriptUrl: transcriptData.transcriptUrl,\n    pricingMentions: aiOutput.pricingMentions || 'No pricing discussed',\n    objections: aiOutput.objections || 'No objections detected',\n    buyingSignals: aiOutput.buyingSignals || 'No buying signals detected',\n    competitorMentions: aiOutput.competitorMentions || 'No competitors mentioned',\n    keyTakeaway: aiOutput.keyTakeaway || 'No takeaway generated',\n    recommendedAction: aiOutput.recommendedAction || 'No action recommended',\n    sheetId: transcriptData.sheetId,\n    sheetName: transcriptData.sheetName,\n    slackChannel: transcriptData.slackChannel,\n    companyName: transcriptData.companyName,\n    weekStart: transcriptData.weekStart,\n    weekEnd: transcriptData.weekEnd,\n    totalCallsThisWeek: transcriptData.totalCallsThisWeek,\n    loggedAt: new Date().toISOString().replace('T', ' ').substring(0, 16)\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "d0fd31a0-e4f5-4f7a-8fb1-298d43165082",
+          "name": "13. Google Sheets — Log Call Analysis",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            496,
+            64
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "Call Date": "={{ $json.callDate }}",
+                "Logged At": "={{ $json.loggedAt }}",
+                "Objections": "={{ $json.objections }}",
+                "Key Takeaway": "={{ $json.keyTakeaway }}",
+                "Participants": "={{ $json.participants }}",
+                "Meeting Title": "={{ $json.callTitle }}",
+                "Buying Signals": "={{ $json.buyingSignals }}",
+                "Duration (min)": "={{ $json.durationMinutes }}",
+                "Transcript URL": "={{ $json.transcriptUrl }}",
+                "Pricing Mentions": "={{ $json.pricingMentions }}",
+                "Overall Sentiment": "={{ $json.overallSentiment }}",
+                "Recommended Action": "={{ $json.recommendedAction }}",
+                "Competitor Mentions": "={{ $json.competitorMentions }}"
+              },
+              "mappingMode": "defineBelow"
+            },
+            "options": {
+              "cellFormat": "USER_ENTERED"
+            },
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "={{ $json.sheetName }}"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $json.sheetId }}"
+            }
+          },
+          "typeVersion": 4.5
+        },
+        {
+          "id": "2ac71792-f76e-42e7-ba82-9125b39efd79",
+          "name": "14. Code — Build Weekly Slack Summary",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            496,
+            336
+          ],
+          "parameters": {
+            "jsCode": "// Aggregate all analyzed calls into weekly summary for Slack\nconst allItems = $input.all();\n\nif (!allItems || allItems.length === 0) {\n  return [{\n    json: {\n      slackMessage: 'No sales calls analyzed this week.',\n      slackChannel: '#sales-team'\n    }\n  }];\n}\n\nconst config = allItems[0].json;\nconst totalCalls = allItems.length;\n\nconst allObjections = [];\nconst allBuyingSignals = [];\nconst allCompetitors = [];\nconst callSummaries = [];\nlet positiveCallCount = 0;\nlet negativeCallCount = 0;\n\nallItems.forEach(item => {\n  const d = item.json;\n\n  if (d.overallSentiment === 'Positive' || d.overallSentiment === 'Mostly Positive') positiveCallCount++;\n  if (d.overallSentiment === 'Negative') negativeCallCount++;\n\n  if (d.objections && !d.objections.toLowerCase().includes('no objection')) {\n    allObjections.push(`[${d.callTitle}]: ${d.objections.substring(0, 100)}`);\n  }\n\n  if (d.buyingSignals && !d.buyingSignals.toLowerCase().includes('no buying')) {\n    allBuyingSignals.push(`[${d.callTitle}]: ${d.buyingSignals.substring(0, 100)}`);\n  }\n\n  if (d.competitorMentions && !d.competitorMentions.toLowerCase().includes('no competitor')) {\n    allCompetitors.push(d.competitorMentions.substring(0, 60));\n  }\n\n  callSummaries.push(`${d.callDate} | ${d.callTitle} | ${d.durationMinutes}min | ${d.overallSentiment} | ${d.keyTakeaway}`);\n});\n\nconst uniqueCompetitors = [...new Set(allCompetitors)].join(', ') || 'None mentioned';\n\nconst slackMessage = `*Weekly Sales Call Intelligence Report*\n*${config.companyName} | ${config.weekStart} to ${config.weekEnd}*\n\n*SUMMARY*\nTotal Calls Analyzed: ${totalCalls}\nPositive Calls: ${positiveCallCount}\nCalls with Objections: ${allObjections.length}\nCalls with Buying Signals: ${allBuyingSignals.length}\nCompetitors Mentioned: ${uniqueCompetitors}\n\n*TOP OBJECTIONS THIS WEEK*\n${allObjections.slice(0, 3).join('\\n') || 'No objections recorded this week'}\n\n*TOP BUYING SIGNALS*\n${allBuyingSignals.slice(0, 3).join('\\n') || 'No buying signals recorded this week'}\n\n*CALL BY CALL OVERVIEW*\n${callSummaries.join('\\n')}\n\n_Full analysis logged to Google Sheets_`;\n\nreturn [{\n  json: {\n    slackMessage,\n    slackChannel: config.slackChannel\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "4166a1ec-7058-4e53-af36-c52268ce377d",
+          "name": "15. Slack — Send Weekly Report",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            720,
+            336
+          ],
+          "webhookId": "40cdf39e-a38b-4c5c-ab63-74a5d526a847",
+          "parameters": {
+            "text": "={{ $json.slackMessage }}",
+            "otherOptions": {
+              "mrkdwn": true
+            },
+            "authentication": "oAuth2"
+          },
+          "typeVersion": 2.2
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "2. Set — Config Values": {
+          "main": [
+            [
+              {
+                "node": "3. HTTP — Fetch Recent Transcripts",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "4. Code — Filter Last 7 Days": {
+          "main": [
+            [
+              {
+                "node": "5. IF — Any Transcripts Found?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Schedule — Every Monday 9AM": {
+          "main": [
+            [
+              {
+                "node": "2. Set — Config Values",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "10. OpenAI — GPT-4o-mini Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "9. AI Agent — Analyze Sales Call",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. IF — Any Transcripts Found?": {
+          "main": [
+            [
+              {
+                "node": "7. HTTP — Fetch Full Transcript",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "6. Set — No Calls This Week",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. HTTP — Fetch Full Transcript": {
+          "main": [
+            [
+              {
+                "node": "8. Code — Extract Transcript Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "9. AI Agent — Analyze Sales Call": {
+          "main": [
+            [
+              {
+                "node": "12. Code — Combine Analysis Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. Code — Extract Transcript Data": {
+          "main": [
+            [
+              {
+                "node": "9. AI Agent — Analyze Sales Call",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "3. HTTP — Fetch Recent Transcripts": {
+          "main": [
+            [
+              {
+                "node": "4. Code — Filter Last 7 Days",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "12. Code — Combine Analysis Results": {
+          "main": [
+            [
+              {
+                "node": "13. Google Sheets — Log Call Analysis",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "14. Code — Build Weekly Slack Summary",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "11. Parser — Structured Call Analysis": {
+          "ai_outputParser": [
+            [
+              {
+                "node": "9. AI Agent — Analyze Sales Call",
+                "type": "ai_outputParser",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "14. Code — Build Weekly Slack Summary": {
+          "main": [
+            [
+              {
+                "node": "15. Slack — Send Weekly Report",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 21,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.set": {
+          "count": 2
+        },
+        "n8n-nodes-base.code": {
+          "count": 4
+        },
+        "n8n-nodes-base.slack": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 2
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.outputParserStructured": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "isaWOW",
+      "username": "isawow",
+      "bio": "",
+      "verified": true,
+      "links": [
+        ""
+      ],
+      "avatar": "https://gravatar.com/avatar/8e8c1f17a2be80c0d1b0248585660dff3062cefeda523bbafeafcdb813f52ffa?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1179,
+        "icon": "fa:code",
+        "name": "@n8n/n8n-nodes-langchain.outputParserStructured",
+        "codex": {
+          "data": {
+            "alias": [
+              "json",
+              "zod"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.outputparserstructured/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Output Parsers"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Structured Output Parser"
+        },
+        "iconData": {
+          "icon": "code",
+          "type": "icon"
+        },
+        "displayName": "Structured Output Parser",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 39,
+        "name": "CRM"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

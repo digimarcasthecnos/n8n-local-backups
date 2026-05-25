@@ -1,0 +1,2050 @@
+{
+  "workflow": {
+    "id": 15463,
+    "name": "Track daily job applications from Gmail to Google Sheets via GPT-4o-mini with approval",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-05-04T10:17:37.673Z",
+    "description": "## Who's it for\n\nActive job-seekers who apply to 10–30 roles a week and lose track of which application is at what stage. Built for anyone tired of manually updating a spreadsheet every time a recruiter replies — or worse, realizing their tracker has been lying to them for two weeks.\n\n## What it does\n\nThis workflow runs every morning at 9 AM, scans your Gmail for job-application emails, and uses GPT-4o-mini to extract three things from each one:\n\n- **Company** (the actual hiring company, not the ATS platform)\n- **Position** (cleaned of boilerplate like \"the role of\")\n- **Status** (Applied, Interview, Offer, Rejected, or Other)\n\nIt then writes structured rows into a Google Sheet — one row per application, identified by a `Match Key` of `Company | Position`. New applications get appended automatically. Status changes for existing rows (Applied → Interview, Interview → Offer / Rejected) are gated behind a one-tap email approval, so an LLM misclassification can never silently demote a row.\n\n\n## How it works\nDaily 9 AM Trigger\n↓\nFetch Gmail (filtered by ATS senders & job-keyword subjects, last 2 days)\n↓\nProcess Email Data (clean & truncate body to 4000 chars)\n↓\nExtract Key Information (GPT-4o-mini, structured JSON output)\n↓\nFormat Data (build Match Key)\n↓\nFilter Valid Job Updates ──→ Other ──→ \"Other app\" sheet tab\n↓\nBranch by Status\n├─ Applied  ──→ Track New Application (append row)\n└─ Interview / Offer / Rejected\n↓\nAggregate into single digest\n↓\nEmail & Wait for Approval (sendAndWait)\n↓\nMerge → Split → Update Application (match by Match Key)\n\nKey design choices:\n\n- **Match Key, not Thread ID, drives deduplication.** Recruiters often start new threads for interview scheduling, but the same `Company | Position` should stay one row.\n- **Approval gate only on updates, not appends.** New applications go in directly to keep your inbox quiet. Only status changes — where misclassification matters — require your tap.\n- **Aggregation before approval.** You get one digest email per morning, not one per status change. Skim, approve, done.\n\n## Setup\n\n**Prerequisites:**\n- n8n 1.x (cloud or self-hosted)\n- Gmail account connected via OAuth2\n- Google Sheets account (same OAuth2 credential works)\n- OpenAI API key with `gpt-4o-mini` access\n\n**Steps:**\n\n1. **Create your tracker sheet.** Make a Google Sheet with two tabs:\n   - `Sheet1` — columns: `Thread ID | Match Key | Date | Company | Position | Status | Modified Date`\n   - `Other app` — same columns (used for unclassifiable emails)\n\n2. **Import this template.** Open n8n → Workflows → Import from File. n8n will flag missing credentials.\n\n3. **Configure three credentials:**\n   - OpenAI → used by the `Open AI` node\n   - Gmail OAuth2 → used by `Fetch Job Application Emails` and `Email Updates & Wait for Approval`\n   - Google Sheets OAuth2 → used by all three Sheets nodes\n\n4. **Replace placeholders** (search the workflow for these strings):\n   - `YOUR_GOOGLE_SHEET_ID` → your real sheet ID (from the sheet's URL)\n   - `YOUR_EMAIL@example.com` → the address that should receive approval digests\n\n5. **Test it manually.** Click \"Execute workflow\" and verify the Gmail node returns recent emails, the LLM extracts clean JSON, and a sample appears in your sheet.\n\n6. **Activate.** Toggle the workflow to active and it will run daily at 9 AM.\n\n## Customization\n\n- **Schedule.** Change `Daily 9 AM Trigger` to any cron expression.\n- **Lookback window.** The Gmail filter ends with `newer_than:2d`. Bump to `7d` if your daily run sometimes fails — the workflow handles re-processed emails idempotently because Match Key updates are no-ops on identical data.\n- **Languages.** The prompt in `Extract Key Information` includes English and French status phrases. Add your language's equivalents to each section (`Rejected`, `Applied`, etc.).\n- **ATS coverage.** The Gmail query covers ~25 ATS providers (Lever, Greenhouse, Ashby, Workday, SmartRecruiters, Welcome to the Jungle, etc.). Add or remove domains to match your job market.\n- **Approval timeout.** Add `options.limitWaitTime.values.resumeAmount` (in hours) to the approval node if you want stale digests to auto-cancel.\n\n## Honest caveats\n\n- **It's only as accurate as the emails it reads.** Recruiters don't follow a standard format. Misclassifications happen — the human-in-the-loop approval step is your safety net. Read the digest before tapping approve.\n- **Status downgrades are possible.** A delayed \"thank you for applying\" email arriving after an interview invite will offer to demote the row. The approval gate exists for exactly this case.\n- **Privacy.** Email subjects and bodies are sent to OpenAI for processing. Don't use this if your job-search emails contain NDAs or confidential info — swap in a local LLM instead.\n- **Cost.** Roughly $0.01–0.05 per day at typical job-search volume. Gmail and Google Sheets API calls stay within free quotas.\n\n## Why I built this\n\nManual spreadsheet tracking lasted me two weeks before it became the chore I'd skip on busy days. By week three the sheet was lying to me — half the \"Applied\" rows were rejections I hadn't logged yet. So I built this. It's not a system of record; it's a guided draft I skim once a week. The bones might be useful to someone else.",
+    "workflow": {
+      "id": "PYI6OI1u3qTlAzm2",
+      "meta": {
+        "templateCredsSetupCompleted": false
+      },
+      "name": "daily-job-application-tracker",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "7336e7f2-6d28-4a07-a3c1-86be45b5d186",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1904,
+            -1568
+          ],
+          "parameters": {
+            "width": 720,
+            "height": 384,
+            "content": "## Daily Job Application Tracker\n\n### The purpose of this tracker is to automatically maintain a clean, up-to-date record of your job applications without manually checking every email.\nIt helps you:\n- Track every job application in one place, including the company, role, date, and current status.\n- Avoid duplicate entries by keeping one row per application, identified by the company and position.\n- Automatically update application progress when new emails arrive, such as changing a role from Applied to Rejected, Interview, or Offer.\n- Filter out irrelevant emails like OTPs, job alerts, newsletters, and account confirmations so the tracker stays focused.\n- Add human approval before updating existing statuses, so important changes are reviewed before they are written to Google Sheets.\n\nOverall, the tracker acts as a lightweight job-search CRM that turns messy inbox updates into a structured application pipeline."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "8ace736e-0ce8-454f-b9e4-971b6a77e811",
+          "name": "Process Email Data",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -752,
+            -432
+          ],
+          "parameters": {
+            "mode": "raw",
+            "options": {},
+            "jsonOutput": "={{\n{\n  email_id: $json.id,\n  thread_id: $json.threadId,\n  date: $json.date,\n  subject: $json.subject,\n  body: ($json.text || '')\n    .replace(/https?:\\/\\/\\S+/g, '')\n    .replace(/\\s+/g, ' ')\n    .trim()\n    .slice(0, 4000)\n}\n}}"
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "f73d86ad-b173-442e-bfa0-99d1095dcdaa",
+          "name": "Format Data",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            80,
+            -416
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "1b191471-5e0a-4948-b9c7-94df4964850d",
+                  "name": "receivedDate",
+                  "type": "string",
+                  "value": "={{ $('Fetch Job Application Emails').item.json.date.split('T')[0] }}"
+                },
+                {
+                  "id": "b71092c2-f681-4677-b93b-3eaf06b6a09d",
+                  "name": "Company",
+                  "type": "string",
+                  "value": "={{ JSON.parse($json.text).company }}"
+                },
+                {
+                  "id": "2ee9f61d-a1ad-477b-ad50-887bbb70b12d",
+                  "name": "Position",
+                  "type": "string",
+                  "value": "={{ JSON.parse($json.text).position }}"
+                },
+                {
+                  "id": "85bb4978-8c94-4b57-8f57-71880fe0df1e",
+                  "name": "Status",
+                  "type": "string",
+                  "value": "={{ JSON.parse($json.text).status }}"
+                },
+                {
+                  "id": "daa08683-390a-4b1c-8ec8-a32907b33d3a",
+                  "name": "ID",
+                  "type": "string",
+                  "value": "={{ $('Fetch Job Application Emails').item.json.threadId }}"
+                },
+                {
+                  "id": "cb28e3ee-0bc1-4aa1-aec3-22d7eed06ccd",
+                  "name": "MatchKey",
+                  "type": "string",
+                  "value": "={{ JSON.parse($json.text).company }} | {{ JSON.parse($json.text).position }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "placeholder-openai-node",
+          "name": "Open AI",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            -400,
+            -256
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini",
+              "cachedResultName": "gpt-4o-mini"
+            },
+            "options": {
+              "temperature": 0.1
+            },
+            "builtInTools": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "credential-id",
+              "name": "YOUR_OPENAI_CREDENTIAL_NAME"
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "3ca1a667-b91f-4e6b-919e-5a3754502134",
+          "name": "Merge",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            1664,
+            -16
+          ],
+          "parameters": {
+            "mode": "combine",
+            "options": {},
+            "combineBy": "combineByPosition"
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "39e5894f-93ae-4354-b850-2c58107f8fad",
+          "name": "Filter Valid Job Updates",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            336,
+            0
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "ba4a9f90-3974-4711-8910-6ab263692acb",
+                  "operator": {
+                    "type": "string",
+                    "operation": "notEquals"
+                  },
+                  "leftValue": "={{ $json.Status }}",
+                  "rightValue": "Other"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "1fc7b9b3-214e-42c5-a1fc-29423ad0dde1",
+          "name": "Daily 9 AM Trigger",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            -1632,
+            -432
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "triggerAtHour": 9
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "c74c59c7-3120-47a5-a679-4ee0e9dd3fd4",
+          "name": "Extract Key Information",
+          "type": "@n8n/n8n-nodes-langchain.chainLlm",
+          "position": [
+            -400,
+            -432
+          ],
+          "parameters": {
+            "text": "=You are an expert job-application email parser.\n\nExtract job application information from the email data below.\n\nReturn ONLY one valid raw JSON object.\nDo not include markdown, explanations, comments, or code fences.\n\nRequired JSON shape:\n{\n  \"company\": string or null,\n  \"position\": string or null,\n  \"status\": \"Applied\" | \"Rejected\" | \"Interview\" | \"Offer\" | \"Other\"\n}\n\nEmail fields:\nSubject: {{ $('Process Email Data').item.json.subject }}\nDate: {{ $('Process Email Data').item.json.date }}\nBody: {{ $('Process Email Data').item.json.body}}\n\nExtraction rules:\n\n1. Status classification\n\nChoose exactly one Status.\n\nUse \"Offer\" if the email clearly extends or discusses a job offer, offer letter, employment offer, compensation package, start date, or joining instructions.\n\nUse \"Rejected\" if the email says the application will not continue, the company chose other candidates, the role was filled, the candidate was not selected, or similar.\nExamples:\n- \"we will not be moving forward\"\n- \"we will not be proceeding\"\n- \"we won’t be moving forward\"\n- \"we have decided to move forward with other candidates\"\n- \"we have given preference to candidates\"\n- \"not selected\"\n- \"position has been filled\"\n- \"unfortunately\"\n- French equivalents:\n  - \"nous ne poursuivrons pas\"\n  - \"nous avons choisi de poursuivre le processus avec d’autres profils\"\n  - \"candidature non retenue\"\n\nUse \"Interview\" if the email invites the candidate to interview, schedule a call, book a time, meet the recruiter/team, complete a phone screen, video interview, technical interview, case study discussion, or next-round conversation.\nExamples:\n- \"schedule an interview\"\n- \"book a time\"\n- \"schedule a call\"\n- \"meet with\"\n- \"next round\"\n- \"recruiter screen\"\n- \"technical interview\"\n- \"phone interview\"\n- \"video interview\"\n- \"availability\"\n- \"calendly\"\n\nUse \"Applied\" if the email confirms the application was submitted, received, acknowledged, or is under review.\nExamples:\n- \"we received your application\"\n- \"we have received your application\"\n- \"thank you for applying\"\n- \"thanks for applying\"\n- \"thank you for your application\"\n- \"your application has been submitted\"\n- \"we are reviewing your application\"\n- \"we will review your application\"\n- \"application confirmation\"\n- French equivalents:\n  - \"candidature bien reçue\"\n  - \"nous avons bien reçu votre candidature\"\n  - \"nous avons bien reçu ta candidature\"\n  - \"merci pour votre candidature\"\n  - \"nous l'étudions avec attention\"\n\nUse \"Other\" for job-related emails that are not a clear application status.\nExamples:\n- one-time passcodes\n- email verification\n- job alerts\n- newsletters\n- profile updates\n- application portal login links\n- generic recruiting platform emails\n- reminders without an application outcome\n\nPriority rule:\n- If the email contains a rejection, Status must be \"Rejected\", even if it also says \"thank you for applying\" or \"we received your application\".\n- Else if it contains an offer, use \"Offer\".\n- Else if it contains an interview invitation or scheduling request, use \"Interview\".\n- Else if it confirms receipt/submission/review of an application, use \"Applied\".\n- Else use \"Other\".\n\n2. Company extraction\n\nExtract the actual hiring company, not the recruiting platform.\n\nPrefer company names from:\n- Subject\n- From name\n- Body/signature\n- From email domain only if clear\n\nExamples:\n- Subject \"Contexte - Thank you...\" → company \"Contexte\"\n- From name \"Gaspard Hauff - Contexte\" → company \"Contexte\"\n- From name \"C12 Quantum Electronics\" → company \"C12 Quantum Electronics\"\n- Body \"position at C12\" → company \"C12\"\n- From name \"Dashdoc's HR Team\" → company \"Dashdoc\"\n- From name \"Équipe RH de Parallel\" → company \"Parallel\"\n- From name \"Deloitte Netherlands\" → company \"Deloitte\"\n- From name \"Coty Recruiting\" → company \"Coty\"\n- From name \"Nassi - Spiko\" → company \"Spiko\"\n\nRemove generic recruiter/team words:\n- Hiring Team\n- HR Team\n- Recruiting\n- Recruitment\n- Talent Team\n- Talent Acquisition Team\n- People Team\n- Notifications\n- no-reply\n- notification\n- candidates\n\nNever use these as the company unless the email is actually about a job at that company:\n- Lever\n- Greenhouse\n- Ashby\n- AshbyHQ\n- SmartRecruiters\n- Workday\n- SuccessFactors\n- Teamtailor\n- Welcome to the Jungle\n- Indeed\n- LinkedIn\n- Mailgun\n- SendGrid\n- AmazonSES\n\nIf the company is not confidently identifiable, return null.\n\n3. Position extraction\n\nExtract the job title/role related to this application.\n\nPriority order — check sources in this order, stop at the first hit:\n1. Subject line — usually contains the role explicitly. Examples:\n   - \"Contexte - Thank you for applying for the position of Go-to-Market (GTM) Engineer H/F\" → \"Go-to-Market (GTM) Engineer H/F\"\n   - \"Your application for Senior Data Analyst at Stripe\" → \"Senior Data Analyst\"\n   - \"Re: Product Manager role\" → \"Product Manager\"\n\n2. Body text — look for phrases like:\n   - \"for the [position] position\"\n   - \"for the job of [position] at [company]\"\n   - \"application for [position]\"\n   - \"candidature au poste de [position]\"\n   - \"candidature bien reçue pour [position]\"\n   - \"recruiter in charge of [position]\"\n   - \"we will review your application for [position]\"\n   - \"interested in the [position] role\"\n\n3. From-name signature — sometimes contains the role context.\n\nCleanup rules — return ONLY the clean role title. Remove:\n- \"position\", \"role\", \"job\", \"job of\"\n- \"application for\", \"candidature au poste de\", \"candidature pour\"\n- \"at [company]\", \"with [company]\", \"@ [company]\"\n- Leading/trailing whitespace, quotes, or punctuation\n\nExamples (input → output):\n- \"the Forward Deployment Engineer position\" → \"Forward Deployment Engineer\"\n- \"for the job of Data Analyst at BlaBlaCar\" → \"Data Analyst\"\n- \"candidature au poste de RevOps Associate\" → \"RevOps Associate\"\n- \"Client Data & Analytics Associate (f/m/d) position\" → \"Client Data & Analytics Associate (f/m/d)\"\n\nReturn null ONLY if:\n- The email is a one-time passcode (OTP)\n- The email is an email/account verification\n- The email is a generic platform notification (login, password reset, profile update)\n- No specific role is mentioned anywhere in subject OR body\n\nImportant: if the email mentions ANY job title in the subject or body, extract it. Do NOT return null just because the format is unusual. Talent pool / spontaneous application emails should extract the pool name (e.g. \"Spiko Talent Pool\") instead of null.\n\n4. Output requirements\n\n- Return valid JSON only.\n- Use double quotes for all keys and string values.\n- Use null, not \"null\", for unknown values.\n- Do not add extra keys.\n- The \"Status\" value must never be null.",
+            "batching": {
+              "batchSize": 1,
+              "delayBetweenBatches": 2000
+            },
+            "promptType": "define"
+          },
+          "retryOnFail": false,
+          "typeVersion": 1.9
+        },
+        {
+          "id": "placeholder-sheets-append-node",
+          "name": "Track New Application",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            1008,
+            -48
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "Date": "={{ $('Format Data').item.json.receivedDate }}",
+                "Status": "={{ $('Format Data').item.json.Status }}",
+                "Company": "={{ $('Format Data').item.json.Company }}",
+                "Position": "={{ $('Format Data').item.json.Position }}",
+                "Match Key": "={{ $json.MatchKey }}",
+                "Thread ID": "={{ $('Fetch Job Application Emails').item.json.threadId }}"
+              },
+              "schema": [
+                {
+                  "id": "Thread ID",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Thread ID",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Match Key",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "Match Key",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Date",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "Date",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Company",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Company",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Position",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Position",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Status",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Modified Date",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "Modified Date",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gid=0",
+              "cachedResultUrl": "YOUR_GOOGLE_SHEET_URL",
+              "cachedResultName": "Sheet1"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "YOUR_GOOGLE_SHEET_ID",
+              "cachedResultUrl": "YOUR_GOOGLE_SHEET_URL",
+              "cachedResultName": "Job Application Tracker"
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "id": "credential-id",
+              "name": "YOUR_GOOGLE_SHEET_NAME"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "id": "abcae0ac-f135-460c-83e6-b4b89c9b6ebd",
+          "name": "Aggregate Data",
+          "type": "n8n-nodes-base.aggregate",
+          "position": [
+            1008,
+            288
+          ],
+          "parameters": {
+            "options": {},
+            "aggregate": "aggregateAllItemData",
+            "destinationFieldName": "updates"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "placeholder-gmail-approval-node",
+          "name": "Email Updates & Wait for Approval",
+          "type": "n8n-nodes-base.gmail",
+          "position": [
+            1344,
+            256
+          ],
+          "webhookId": "YOUR_WEBHOOK_ID",
+          "parameters": {
+            "sendTo": "user@example.com",
+            "message": "=Morning! ☕\n\nHere's what landed in your inbox while you were sleeping — {{ $json.updates.length }} update{{ $json.updates.length === 1 ? '' : 's' }} on your applications:\n\n{{ $json.updates.map(u => `${u.Status === 'Offer' ? '🎉' : u.Status === 'Interview' ? '📞' : u.Status === 'Rejected' ? '❌' : '📝'} ${u.Company || 'Unknown'}${u.Position ? ' — ' + u.Position : ''} → ${u.Status || 'unclear'}`).join('\\n')}}\n\nTap \"Update tracker\" to log these changes, or skip if you'd like to review them yourself.\n\nKeep going 💪",
+            "options": {
+              "appendAttribution": false
+            },
+            "subject": "={{ $json.updates.length }} job application update{{ $json.updates.length === 1 ? '' : 's' }} - approve?",
+            "operation": "sendAndWait",
+            "approvalOptions": {
+              "values": {}
+            }
+          },
+          "credentials": {
+            "gmailOAuth2": {
+              "id": "credential-id",
+              "name": "YOUR_GOOGLE_MAIL_NAME"
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "790b9d8e-0b0e-41ba-a14f-de5dc0f68cb2",
+          "name": "Split Data",
+          "type": "n8n-nodes-base.splitOut",
+          "position": [
+            1968,
+            -16
+          ],
+          "parameters": {
+            "options": {},
+            "fieldToSplitOut": "=updates"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "placeholder-sheets-update-node",
+          "name": "Update Application",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            2288,
+            -16
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "Status": "={{ $json.Status }}",
+                "Match Key": "={{ $json.MatchKey }}",
+                "Thread ID": "={{ $json.ID }}",
+                "Modified Date": "={{ new Date().toISOString().split('T')[0] }}"
+              },
+              "schema": [
+                {
+                  "id": "Thread ID",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "Thread ID",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Match Key",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "Match Key",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Date",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "required": false,
+                  "displayName": "Date",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Company",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "required": false,
+                  "displayName": "Company",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Position",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "required": false,
+                  "displayName": "Position",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Status",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Modified Date",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Modified Date",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "row_number",
+                  "type": "number",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": true,
+                  "required": false,
+                  "displayName": "row_number",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [
+                "Match Key"
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "update",
+            "sheetName": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gid=0",
+              "cachedResultUrl": "YOUR_GOOGLE_SHEET_URL",
+              "cachedResultName": "Sheet1"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "YOUR_GOOGLE_SHEET_ID",
+              "cachedResultUrl": "YOUR_GOOGLE_SHEET_URL",
+              "cachedResultName": "Job Application Tracker"
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "id": "credential-id",
+              "name": "YOUR_GOOGLE_SHEET_NAME"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "id": "placeholder-gmail-fetch-node",
+          "name": "Fetch Job Application Emails",
+          "type": "n8n-nodes-base.gmail",
+          "position": [
+            -1184,
+            -432
+          ],
+          "webhookId": "YOUR_WEBHOOK_ID",
+          "parameters": {
+            "limit": 100,
+            "simple": false,
+            "filters": {
+              "q": "=(from:(linkedin.com OR indeed.com OR welcometothejungle.com OR greenhouse.io OR boards.greenhouse.io OR lever.co OR hire.lever.co OR jobs.lever.co OR ashbyhq.com OR workday.com OR myworkdayjobs.com OR icims.com OR smartrecruiters.com OR taleo.net OR successfactors.com OR breezy.hr OR jobvite.com OR teamtailor.com OR personio.com OR personio.de OR wellfound.com OR recruitee.com OR pinpointhq.com OR ripplematch.com OR notion.so OR figma.com) OR subject:(\"your application\" OR \"thank you for applying\" OR \"thank you for your interest\" OR \"interview\" OR \"regret to inform\" OR \"unfortunately\" OR \"next step\" OR \"take-home\" OR \"schedule a call\" OR \"candidature\" OR \"entretien\")) newer_than:25h",
+              "sender": "="
+            },
+            "options": {},
+            "operation": "getAll"
+          },
+          "credentials": {
+            "gmailOAuth2": {
+              "id": "credential-id",
+              "name": "YOUR_GOOGLE_MAIL_NAME"
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "a136f19c-0e99-4e92-b6e1-10d42a452e2e",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1792,
+            -656
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 416,
+            "height": 368,
+            "content": "Starts the workflow automatically every morning.\n\nPurpose:\n• Run once per day\n• Check recent job-related emails\n• Avoid manual execution\n\nRecommended:\nKeep Gmail query limited to newer_than:25h so each daily run only checks emails received since the previous run."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "05547c78-f006-4bd4-91b8-2225060f05ca",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1344,
+            -592
+          ],
+          "parameters": {
+            "width": 416,
+            "height": 336,
+            "content": "Fetches recent Gmail messages that are likely related to job applications. Uses Gmail search operators to find:\n• ATS emails, Application confirmations, Rejections, Interview invites, Offer-related emails\n\nImportant:\nThis node may still fetch some irrelevant platform emails, OTPs, or promotional emails. Those are filtered later."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f6295469-1be0-4818-91f1-2387c5d96b5e",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -912,
+            -512
+          ],
+          "parameters": {
+            "width": 400,
+            "height": 256,
+            "content": "Cleans and normalizes raw Gmail output before sending it to the LLM, keeping only useful fields."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ce02ff9a-65d3-4295-9d94-6865dd4b5de1",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -496,
+            -512
+          ],
+          "parameters": {
+            "color": 3,
+            "width": 400,
+            "height": 368,
+            "content": "LLM node that extracts structured job application data. Define batch size and delays to avoid API rate limiting. "
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "134fe1ee-2c99-4b79-8cb8-3e1123d63759",
+          "name": "Sticky Note5",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -80,
+            -512
+          ],
+          "parameters": {
+            "width": 400,
+            "height": 256,
+            "content": "Converts LLM output into the final structure used by Google Sheets. Creates/normalizes key informations.\n\nMatch Key is used to identify one unique job application across multiple emails."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "980249ac-d380-4ccf-8d94-b491913c5718",
+          "name": "Sticky Note6",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            224,
+            -96
+          ],
+          "parameters": {
+            "width": 336,
+            "height": 256,
+            "content": "Prevents irrelevant emails from appearing in the approval email or Google Sheet."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "placeholder-sheets-other-node",
+          "name": "Track Invalid Application Status",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            688,
+            256
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "Date": "={{ $('Format Data').item.json.receivedDate }}",
+                "Status": "={{ $('Format Data').item.json.Status }}",
+                "Company": "={{ $('Format Data').item.json.Company }}",
+                "Position": "={{ $('Format Data').item.json.Position }}",
+                "Match Key": "={{ $json.MatchKey }}",
+                "Thread ID": "={{ $('Fetch Job Application Emails').item.json.threadId }}"
+              },
+              "schema": [
+                {
+                  "id": "Thread ID",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Thread ID",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Match Key",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "Match Key",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Date",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "Date",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Company",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Company",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Position",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Position",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Status",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Modified Date",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "required": false,
+                  "displayName": "Modified Date",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "list",
+              "value": 509226883,
+              "cachedResultUrl": "YOUR_GOOGLE_SHEET_URL",
+              "cachedResultName": "Other app"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "YOUR_GOOGLE_SHEET_ID",
+              "cachedResultUrl": "YOUR_GOOGLE_SHEET_URL",
+              "cachedResultName": "Job Application Tracker"
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "id": "credential-id",
+              "name": "YOUR_GOOGLE_SHEET_NAME"
+            }
+          },
+          "typeVersion": 4.7
+        },
+        {
+          "id": "b867a3ff-4a7c-41e9-a036-b97c2942fb2b",
+          "name": "Branch Valid Application Status",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            688,
+            -32
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "d00bc4af-5739-4732-b0b0-812e7355a172",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ $json.Status.toLowerCase() }}",
+                  "rightValue": "applied"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "7d5acd69-dfa3-4390-9f0a-680f750feadc",
+          "name": "Sticky Note7",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            592,
+            -112
+          ],
+          "parameters": {
+            "width": 304,
+            "height": 256,
+            "content": "Decides whether a valid job email should create a new application row or update an existing one."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "0751eb05-1a73-433e-955b-41d5a38c6913",
+          "name": "Sticky Note8",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            592,
+            160
+          ],
+          "parameters": {
+            "width": 304,
+            "height": 272,
+            "content": "Logs ignored or unclear emails for debugging/review. Used when an email is job-related but not a valid application status update."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "5d04a9e7-8f46-496d-94fa-13fbe01efe12",
+          "name": "Sticky Note9",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            912,
+            -160
+          ],
+          "parameters": {
+            "width": 304,
+            "height": 288,
+            "content": "Adds a new row to the main Google Sheet when the job application does not already exist. Usually used for first-time Applied emails or applications not already in the tracker."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "5361d23b-ade2-4641-bbf7-2e3bb9bf4dce",
+          "name": "Sticky Note10",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            912,
+            144
+          ],
+          "parameters": {
+            "width": 304,
+            "height": 288,
+            "content": "Groups multiple application updates into one array before sending the approval email. Instead of sending one approval email per update, this node creates one summary email containing all pending updates.\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "bc2257ff-acac-4848-b07a-caa5c7a0120c",
+          "name": "Sticky Note11",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1232,
+            144
+          ],
+          "parameters": {
+            "width": 304,
+            "height": 288,
+            "content": "Sends one Gmail approval email summarizing all pending application updates, adding human-in-the-loop control before changing existing application statuses.\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "21ef08b2-822f-4c0c-a860-e2fb9690011f",
+          "name": "Sticky Note12",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1552,
+            -112
+          ],
+          "parameters": {
+            "width": 304,
+            "height": 256,
+            "content": "The approval node does not preserve the original updates array by itself.\nMerge brings the updates array back after approval so the workflow can continue."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "b30ca2a6-359e-4248-8e70-aacc26517c50",
+          "name": "Sticky Note13",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1872,
+            -112
+          ],
+          "parameters": {
+            "width": 304,
+            "height": 256,
+            "content": "Splits the aggregated updates array back into individual items. Google Sheets update node needs individual items to update individual rows."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f732e1e7-3363-4e40-960f-958daeef0977",
+          "name": "Sticky Note14",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2208,
+            -112
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 304,
+            "height": 256,
+            "content": "Updates existing rows in the main Google Sheet after human approval. All should update the same row using the same Match Key.\n\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "67e5aceb-ff77-43f0-88ed-54fe255bb5de",
+          "name": "Sticky Note15",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1904,
+            -1152
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 528,
+            "height": 368,
+            "content": "## Workflow Summary\n\n1. Run daily at 9 AM\n2. Fetch recent job emails from Gmail\n3. Clean email data\n4. Extract company, position, and status with LLM\n5. Format output and create Match Key\n6. Filter out invalid/Other emails\n7. Add new applications directly\n8. Aggregate existing status updates\n9. Send one approval email\n10. Merge approval response with original updates\n11. Split updates back into individual items\n12. Update existing Google Sheet rows"
+          },
+          "typeVersion": 1
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "binaryMode": "separate",
+        "executionOrder": "v1"
+      },
+      "versionId": "a3f9d595-61db-4309-832c-ca8fa7db7ff1",
+      "connections": {
+        "Merge": {
+          "main": [
+            [
+              {
+                "node": "Split Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Open AI": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Extract Key Information",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Split Data": {
+          "main": [
+            [
+              {
+                "node": "Update Application",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Format Data": {
+          "main": [
+            [
+              {
+                "node": "Filter Valid Job Updates",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Aggregate Data": {
+          "main": [
+            [
+              {
+                "node": "Email Updates & Wait for Approval",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Daily 9 AM Trigger": {
+          "main": [
+            [
+              {
+                "node": "Fetch Job Application Emails",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Process Email Data": {
+          "main": [
+            [
+              {
+                "node": "Extract Key Information",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Extract Key Information": {
+          "main": [
+            [
+              {
+                "node": "Format Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Filter Valid Job Updates": {
+          "main": [
+            [
+              {
+                "node": "Branch Valid Application Status",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Track Invalid Application Status",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Fetch Job Application Emails": {
+          "main": [
+            [
+              {
+                "node": "Process Email Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Branch Valid Application Status": {
+          "main": [
+            [
+              {
+                "node": "Track New Application",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Aggregate Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Email Updates & Wait for Approval": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 1
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 31,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 2
+        },
+        "n8n-nodes-base.set": {
+          "count": 2
+        },
+        "n8n-nodes-base.gmail": {
+          "count": 2
+        },
+        "n8n-nodes-base.merge": {
+          "count": 1
+        },
+        "n8n-nodes-base.splitOut": {
+          "count": 1
+        },
+        "n8n-nodes-base.aggregate": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 16
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 3
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.chainLlm": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Missy Learns AI",
+      "username": "missylearnsai",
+      "bio": "Building agentic AI workflows that actually work in the real world. Founder of Missy Learns AI · AI Automation · Business Process Design · AI Deployment Strategy",
+      "verified": false,
+      "links": [
+        "https://www.linkedin.com/in/thepratisthathapa/"
+      ],
+      "avatar": "https://gravatar.com/avatar/ee4d6d874ebe9ef15ec246e712a54443aa019bbb0937fbc66d524c562f7c9658?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 24,
+        "icon": "file:merge.svg",
+        "name": "n8n-nodes-base.merge",
+        "codex": {
+          "data": {
+            "alias": [
+              "Join",
+              "Concatenate",
+              "Wait"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-sync-data-between-two-systems/",
+                  "icon": "🏬",
+                  "label": "How to synchronize data between two systems (one-way vs. two-way sync"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.merge/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Merge"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTc3XzUxOCkiPgo8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTAgNDhDMCAyMS40OTAzIDIxLjQ5MDMgMCA0OCAwSDExMkMxMzguNTEgMCAxNjAgMjEuNDkwMyAxNjAgNDhWNTZIMTk2LjI1MkMyNDAuNDM1IDU2IDI3Ni4yNTIgOTEuODE3MiAyNzYuMjUyIDEzNlYxOTJDMjc2LjI1MiAyMTQuMDkxIDI5NC4xNjEgMjMyIDMxNi4yNTIgMjMySDM1MlYyMjRDMzUyIDE5Ny40OSAzNzMuNDkgMTc2IDQwMCAxNzZINDY0QzQ5MC41MSAxNzYgNTEyIDE5Ny40OSA1MTIgMjI0VjI4OEM1MTIgMzE0LjUxIDQ5MC41MSAzMzYgNDY0IDMzNkg0MDBDMzczLjQ5IDMzNiAzNTIgMzE0LjUxIDM1MiAyODhWMjgwSDMxNi4yNTJDMjk0LjE2MSAyODAgMjc2LjI1MiAyOTcuOTA5IDI3Ni4yNTIgMzIwVjM3NkMyNzYuMjUyIDQyMC4xODMgMjQwLjQzNSA0NTYgMTk2LjI1MiA0NTZIMTYwVjQ2NEMxNjAgNDkwLjUxIDEzOC41MSA1MTIgMTEyIDUxMkg0OEMyMS40OTAzIDUxMiAwIDQ5MC41MSAwIDQ2NFY0MDBDMCAzNzMuNDkgMjEuNDkwMyAzNTIgNDggMzUySDExMkMxMzguNTEgMzUyIDE2MCAzNzMuNDkgMTYwIDQwMFY0MDhIMTk2LjI1MkMyMTMuOTI1IDQwOCAyMjguMjUyIDM5My42NzMgMjI4LjI1MiAzNzZWMzIwQzIyOC4yNTIgMjk0Ljc4NCAyMzguODU5IDI3Mi4wNDQgMjU1Ljg1MyAyNTZDMjM4Ljg1OSAyMzkuOTU2IDIyOC4yNTIgMjE3LjIxNiAyMjguMjUyIDE5MlYxMzZDMjI4LjI1MiAxMTguMzI3IDIxMy45MjUgMTA0IDE5Ni4yNTIgMTA0SDE2MFYxMTJDMTYwIDEzOC41MSAxMzguNTEgMTYwIDExMiAxNjBINDhDMjEuNDkwMyAxNjAgMCAxMzguNTEgMCAxMTJWNDhaTTEwNCA0OEMxMDguNDE4IDQ4IDExMiA1MS41ODE3IDExMiA1NlYxMDRDMTEyIDEwOC40MTggMTA4LjQxOCAxMTIgMTA0IDExMkg1NkM1MS41ODE3IDExMiA0OCAxMDguNDE4IDQ4IDEwNFY1NkM0OCA1MS41ODE3IDUxLjU4MTcgNDggNTYgNDhIMTA0Wk00NTYgMjI0QzQ2MC40MTggMjI0IDQ2NCAyMjcuNTgyIDQ2NCAyMzJWMjgwQzQ2NCAyODQuNDE4IDQ2MC40MTggMjg4IDQ1NiAyODhINDA4QzQwMy41ODIgMjg4IDQwMCAyODQuNDE4IDQwMCAyODBWMjMyQzQwMCAyMjcuNTgyIDQwMy41ODIgMjI0IDQwOCAyMjRINDU2Wk0xMTIgNDA4QzExMiA0MDMuNTgyIDEwOC40MTggNDAwIDEwNCA0MDBINTZDNTEuNTgxNyA0MDAgNDggNDAzLjU4MiA0OCA0MDhWNDU2QzQ4IDQ2MC40MTggNTEuNTgxNyA0NjQgNTYgNDY0SDEwNEMxMDguNDE4IDQ2NCAxMTIgNDYwLjQxOCAxMTIgNDU2VjQwOFoiIGZpbGw9IiM1NEI4QzkiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTc3XzUxOCI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Merge",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 356,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmail",
+        "codex": {
+          "data": {
+            "alias": [
+              "email",
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.gmail/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Gmail"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1123,
+        "icon": "fa:link",
+        "name": "@n8n/n8n-nodes-langchain.chainLlm",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.chainllm/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Chains",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Basic LLM Chain",
+          "color": "#909298"
+        },
+        "iconData": {
+          "icon": "link",
+          "type": "icon"
+        },
+        "displayName": "Basic LLM Chain",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1236,
+        "icon": "file:aggregate.svg",
+        "name": "n8n-nodes-base.aggregate",
+        "codex": {
+          "data": {
+            "alias": [
+              "Aggregate",
+              "Combine",
+              "Flatten",
+              "Transform",
+              "Array",
+              "List",
+              "Item"
+            ],
+            "details": "",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.aggregate/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Aggregate"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJub25lIj48ZyBmaWxsPSIjRkY2RDVBIiBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTMyIDE0OGMwLTYuNjI3IDUuMzczLTEyIDEyLTEyaDE0NmM2LjYyNyAwIDEyIDUuMzczIDEyIDEydjI0YzAgNi42MjctNS4zNzMgMTItMTIgMTJINDRjLTYuNjI3IDAtMTItNS4zNzMtMTItMTJ6bTAgOTZjMC02LjYyNyA1LjM3My0xMiAxMi0xMmgxNDZjNi42MjcgMCAxMiA1LjM3MyAxMiAxMnYyNGMwIDYuNjI3LTUuMzczIDEyLTEyIDEySDQ0Yy02LjYyNyAwLTEyLTUuMzczLTEyLTEyem0wIDk2YzAtNi42MjcgNS4zNzMtMTIgMTItMTJoMTQ2YzYuNjI3IDAgMTIgNS4zNzMgMTIgMTJ2MjRjMCA2LjYyNy01LjM3MyAxMi0xMiAxMkg0NGMtNi42MjcgMC0xMi01LjM3My0xMi0xMnoiIGNsaXAtcnVsZT0iZXZlbm9kZCIvPjxwYXRoIGQ9Ik03NCA3NmMwIDYuNjI3IDUuMzczIDEyIDEyIDEyaDExNi4yMTdjMTcuNjczIDAgMzIgMTQuMzI3IDMyIDMydjU2YzAgMjYuOTc4IDEwLjI3MiA1MS41NTcgMjcuMTE5IDcwLjAzOSA1LjA1NSA1LjU0NSA1LjA1NSAxNC4zNzcgMCAxOS45MjItMTYuODQ3IDE4LjQ4Mi0yNy4xMTkgNDMuMDYxLTI3LjExOSA3MC4wMzl2NTZjMCAxNy42NzMtMTQuMzI3IDMyLTMyIDMySDg2Yy02LjYyNyAwLTEyIDUuMzczLTEyIDEydjI0YzAgNi42MjcgNS4zNzMgMTIgMTIgMTJoMTE2LjIxN2M0NC4xODMgMCA4MC0zNS44MTcgODAtODB2LTU2YzAtMzAuOTI4IDI1LjA3Mi01NiA1Ni01NmE1Ljc4MyA1Ljc4MyAwIDAgMCA1Ljc4My01Ljc4M3YtMzYuNDM0YTUuNzgzIDUuNzgzIDAgMCAwLTUuNzgzLTUuNzgzYy0zMC45MjggMC01Ni0yNS4wNzItNTYtNTZ2LTU2YzAtNDQuMTgzLTM1LjgxNy04MC04MC04MEg4NmMtNi42MjcgMC0xMiA1LjM3My0xMiAxMnoiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0zNzYgMjQ0YzAtNi42MjcgNS4zNzMtMTIgMTItMTJoMTEyYzYuNjI3IDAgMTIgNS4zNzMgMTIgMTJ2MjRjMCA2LjYyNy01LjM3MyAxMi0xMiAxMkgzODhjLTYuNjI3IDAtMTItNS4zNzMtMTItMTJ6IiBjbGlwLXJ1bGU9ImV2ZW5vZGQiLz48L2c+PGRlZnM+PGNsaXBQYXRoIGlkPSJhIj48cGF0aCBmaWxsPSIjZmZmIiBkPSJNMCAwaDUxMnY1MTJIMHoiLz48L2NsaXBQYXRoPjwvZGVmcz48L3N2Zz4="
+        },
+        "displayName": "Aggregate",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1239,
+        "icon": "file:splitOut.svg",
+        "name": "n8n-nodes-base.splitOut",
+        "codex": {
+          "data": {
+            "alias": [
+              "Split",
+              "Nested",
+              "Transform",
+              "Array",
+              "List",
+              "Item"
+            ],
+            "details": "",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.splitout/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Split Out"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJub25lIj48ZyBmaWxsPSIjOUI2REQ1IiBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTQ4MCAxNDhjMC02LjYyNy01LjM3My0xMi0xMi0xMkgzMjJjLTYuNjI3IDAtMTIgNS4zNzMtMTIgMTJ2MjRjMCA2LjYyNyA1LjM3MyAxMiAxMiAxMmgxNDZjNi42MjcgMCAxMi01LjM3MyAxMi0xMnptMCA5NmMwLTYuNjI3LTUuMzczLTEyLTEyLTEySDMyMmMtNi42MjcgMC0xMiA1LjM3My0xMiAxMnYyNGMwIDYuNjI3IDUuMzczIDEyIDEyIDEyaDE0NmM2LjYyNyAwIDEyLTUuMzczIDEyLTEyem0wIDk2YzAtNi42MjctNS4zNzMtMTItMTItMTJIMzIyYy02LjYyNyAwLTEyIDUuMzczLTEyIDEydjI0YzAgNi42MjcgNS4zNzMgMTIgMTIgMTJoMTQ2YzYuNjI3IDAgMTItNS4zNzMgMTItMTJ6IiBjbGlwLXJ1bGU9ImV2ZW5vZGQiLz48cGF0aCBkPSJNNDM4IDc2YzAgNi42MjctNS4zNzMgMTItMTIgMTJIMzA5Ljc4M2MtMTcuNjczIDAtMzIgMTQuMzI3LTMyIDMydjU2YzAgMjYuOTc4LTEwLjI3MiA1MS41NTctMjcuMTE5IDcwLjAzOS01LjA1NSA1LjU0NS01LjA1NSAxNC4zNzcgMCAxOS45MjIgMTYuODQ3IDE4LjQ4MiAyNy4xMTkgNDMuMDYxIDI3LjExOSA3MC4wMzl2NTZjMCAxNy42NzMgMTQuMzI3IDMyIDMyIDMySDQyNmM2LjYyNyAwIDEyIDUuMzczIDEyIDEydjI0YzAgNi42MjctNS4zNzMgMTItMTIgMTJIMzA5Ljc4M2MtNDQuMTgzIDAtODAtMzUuODE3LTgwLTgwdi01NmMwLTMwLjkyOC0yNS4wNzItNTYtNTYtNTZhNS43ODMgNS43ODMgMCAwIDEtNS43ODMtNS43ODN2LTM2LjQzNGE1Ljc4MyA1Ljc4MyAwIDAgMSA1Ljc4My01Ljc4M2MzMC45MjggMCA1Ni0yNS4wNzIgNTYtNTZ2LTU2YzAtNDQuMTgzIDM1LjgxNy04MCA4MC04MEg0MjZjNi42MjcgMCAxMiA1LjM3MyAxMiAxMnoiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0xMzYgMjQ0YzAtNi42MjctNS4zNzMtMTItMTItMTJIMTJjLTYuNjI3IDAtMTIgNS4zNzMtMTIgMTJ2MjRjMCA2LjYyNyA1LjM3MyAxMiAxMiAxMmgxMTJjNi42MjcgMCAxMi01LjM3MyAxMi0xMnoiIGNsaXAtcnVsZT0iZXZlbm9kZCIvPjwvZz48ZGVmcz48Y2xpcFBhdGggaWQ9ImEiPjxwYXRoIGZpbGw9IiNmZmYiIGQ9Ik01MTIgMEgwdjUxMmg1MTJ6Ii8+PC9jbGlwUGF0aD48L2RlZnM+PC9zdmc+"
+        },
+        "displayName": "Split Out",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 43,
+        "name": "Personal Productivity"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

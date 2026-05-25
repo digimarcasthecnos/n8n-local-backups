@@ -1,0 +1,2121 @@
+{
+  "workflow": {
+    "id": 15183,
+    "name": "Analyze YouTube videos with GPT-4o-mini and get relevance-ranked insights",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-21T07:06:03.586Z",
+    "description": "### Description\n\nSubmit up to 3 YouTube video URLs using a simple form and the workflow handles everything automatically. It fetches each video's title, channel, views, and duration from YouTube, submits each video to WayinVideo for accurate speaker-labeled transcription, then sends the transcript to GPT-4o-mini for a 6-field analysis tailored to your niche. Every video is logged to Google Sheets and a single Gmail report arrives sorted by relevance score when all videos are processed. Built for content marketers, SEO strategists, and research teams who want structured intelligence from YouTube videos — not just auto-captions.\n\n---\n\n## What This Workflow Does\n\n- **Fetches real YouTube metadata** — Pulls title, channel name, view count, duration, and publish date from the YouTube Data API for each video submitted\n- **Transcribes with speaker labels** — Submits each video to WayinVideo for accurate transcription grouped by speaker, not just a flat block of auto-captions\n- **Falls back to video description** — If the transcript is empty or too short, the workflow automatically uses the video description so the analysis never fails silently\n- **Scores each video for your niche** — GPT-4o-mini rates every video from 1–10 on relevance to your specific industry so you know which videos are worth acting on\n- **Identifies competitor content gaps** — For every video, GPT surfaces one thing the video did not cover that would make it more useful for your niche — ready to use as a content brief\n- **Logs every video to Google Sheets** — Appends a 15-column row per video with metadata, summary, key topics, best quote, target audience, and relevance score\n- **Sends one Gmail report sorted by relevance** — All analyzed videos arrive in a single email ranked from most to least relevant to your niche\n\n---\n\n## Setup Requirements\n\n### Tools Needed\n- n8n instance (self-hosted or cloud)\n- Google Cloud account with YouTube Data API v3 enabled\n- WayinVideo account with API access\n- OpenAI account with GPT-4o-mini API access\n- Google Sheets (one sheet with a tab named **YouTube Intelligence**)\n- Gmail account (the account you want to receive the report)\n\n### Credentials Required\n- YouTube Data API key (pasted into **2. Set — Config Values**)\n- WayinVideo API key (pasted into **2. Set — Config Values**)\n- OpenAI API key\n- Google Sheets OAuth2\n- Gmail OAuth2\n\n**Estimated Setup Time: 15–20 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Import the workflow** — Open n8n → Workflows → Import from JSON → paste the workflow JSON → click Import\n\n2. **Get your YouTube Data API key** — Go to console.cloud.google.com → create or open a project → enable the YouTube Data API v3 → go to Credentials → Create API Key → copy the key\n\n3. **Get your WayinVideo API key** — Log in to your WayinVideo account → go to Account Settings → copy your API key\n\n4. **Fill in Config Values** — Open node **2. Set — Config Values** → replace all placeholders:\n\n| Field | What to enter |\n|---|---|\n| `PASTE_YOUR_YOUTUBE_DATA_API_KEY_HERE` | Your YouTube Data API key from step 2 |\n| `PASTE_YOUR_WAYINVIDEO_API_KEY_HERE` | Your WayinVideo API key from step 3 |\n| `PASTE_YOUR_GOOGLE_SHEET_ID_HERE` | The ID from your Google Sheet URL (the string between `/d/` and `/edit`) |\n| `PASTE_YOUR_EMAIL_HERE` | The email address where the Gmail report should be sent |\n| `PASTE_YOUR_NAME_HERE` | Your name for the email greeting and sign-off |\n| `yourNiche` | Your industry or focus area (default: `SEO and digital marketing`) — change to match your niche e.g. `personal injury law`, `medical aesthetics`, `e-commerce` |\n\n5. **Connect OpenAI** — Open node **14. OpenAI — GPT-4o-mini Model** → click the credential dropdown → add your OpenAI API key → test the connection\n\n6. **Create your Google Sheet tab** — Open your Google Sheet → add a tab named exactly **YouTube Intelligence** → add these 15 column headers in row 1: `Date`, `Video URL`, `Title`, `Channel`, `Views`, `Duration`, `Published`, `Summary`, `Key Topics`, `Best Quote`, `Target Audience`, `Relevance Score`, `Content Gap`, `Submitted By`, `Logged At`\n\n7. **Connect Google Sheets** — Open node **17. Google Sheets — Log Video Analysis** → click the credential dropdown → add Google Sheets OAuth2 → sign in with your Google account → authorize access\n\n8. **Connect Gmail** — Open node **20. Gmail — Send Intelligence Report** → click the credential dropdown → add Gmail OAuth2 → sign in with the Gmail account that matches your email address → authorize access\n\n9. **Activate the workflow** — Toggle the workflow to Active → copy the Form URL from node **1. Form — YouTube Video Intelligence** → open it in a browser to submit your first videos\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Form: YouTube Video Intelligence**\nYou open the form URL in a browser and paste up to 3 YouTube video URLs. Only Video 1 is required — Videos 2 and 3 can be left blank. Your name is optional. Submitting the form starts the workflow.\n\n**Step 2 — Set: Config Values**\nYour YouTube API key, WayinVideo API key, Google Sheet ID, recipient email, sender name, niche, and all three video URLs are stored here. Today's date is auto-generated. Your name is also captured from the form.\n\n**Step 3 — Code: Extract Video IDs**\nThe three URL fields are filtered — any blank entries or non-YouTube links are removed. Valid YouTube URLs (both `youtube.com/watch?v=` and `youtu.be/` formats) are parsed to extract the video ID. Each valid video becomes its own separate entry so the rest of the workflow processes each video independently. If no valid YouTube URLs are found, the workflow stops with a clear error.\n\n**Step 4 — HTTP: Fetch YouTube Metadata**\nA request is sent to the YouTube Data API v3 for each video ID. It retrieves the video's snippet (title, channel, description, publish date), statistics (view count), and content details (duration in ISO 8601 format). If the video is private or does not exist, the workflow stops with an error for that video.\n\n**Step 5 — Code: Process Video Metadata**\nThe ISO 8601 duration (e.g. `PT1H23M45S`) is converted into a readable format (e.g. `1h 23m 45s`). The view count is formatted with comma separators (e.g. `1,234,567`). The publish date is formatted as day-month-year. All metadata is packaged for the transcription step.\n\n**Step 6 — HTTP: Submit Transcription Task**\nEach video URL is submitted to the WayinVideo transcription API with the target language set to English. WayinVideo returns a task ID confirming the transcription job was accepted and is processing.\n\n**Step 7 — Code: Save Transcript Task ID**\nThe WayinVideo task ID is saved along with all video metadata. A poll counter is initialized at zero to track how many times the transcript status has been checked.\n\n**Step 8 — Wait: 45 Seconds**\nThe workflow pauses for 45 seconds before checking the transcription status for the first time, giving WayinVideo time to begin processing.\n\n**Step 9 — HTTP: Poll Transcript Results**\nA GET request checks the WayinVideo results endpoint using the task ID. It returns the current status and, once complete, the full transcript with speaker labels and text segments.\n\n**Step 10 — Code: Check Transcript Status**\nThe poll counter is incremented and the status is evaluated. If SUCCEEDED, the transcript segments are grouped by speaker into readable text (e.g. `Speaker A: text here`). The transcript is capped at 5,000 characters. If the transcript is empty or under 50 characters, the workflow uses the video description as a fallback with a clear label. FAILED throws an error and stops. Still processing continues the loop. If 15 polls pass without success (approximately 11 minutes), the workflow times out.\n\n**Step 11 — IF: Transcript Ready?**\nThis is the transcription gate. If the transcript is ready (YES path), the workflow moves to AI analysis. If still processing (NO path), the workflow routes to **12. Set — Still Processing Loop Back** which carries all the video data forward and loops back to **8. Wait — 45 Seconds** for another cycle.\n\n**Step 12 — Set: Still Processing Loop Back**\nThis step preserves all video metadata and config values while looping back to the wait step. This is necessary because the wait step resets the context — all fields are explicitly re-set here so nothing is lost between polling cycles.\n\n**Step 13 — AI Agent: Analyze Video**\nGPT-4o-mini receives the video metadata and transcript. It returns six structured fields: a 3–4 sentence summary of what the video covers, an array of 5 key topics, the single most memorable quote from the transcript, a one-sentence description of who the video is best for, a relevance score from 1–10 for your specific niche, and one content gap the video missed that would be valuable for your niche audience.\n\n**Step 14 — OpenAI: GPT-4o-mini Model**\nThis is the language model powering the analysis. It runs at temperature 0.2 for consistent, factual output and is capped at 600 tokens to keep analyses concise and costs low.\n\n**Step 15 — Parser: Structured Video Analysis**\nThis step enforces the exact six-field schema GPT-4o-mini must return. It validates that all required fields are present and correctly typed before results move forward.\n\n**Step 16 — Code: Prepare Results**\nThe AI output is merged with all video metadata. The relevance score is formatted as \"X out of 10 — High/Medium/Low\" using the labels High (8–10), Medium (5–7), and Low (1–4). The key topics array is joined as a comma-separated string for the sheet column. A logged-at timestamp is generated.\n\n**Step 17 — Google Sheets: Log Video Analysis**\nOne row is appended to your YouTube Intelligence tab with all 15 columns populated.\n\n**Step 18 — IF: Last Video?**\nAfter each video is logged, this check reads the `isLastVideo` flag. If true (YES path — all videos processed), the workflow moves to build and send the Gmail report. If false (NO path — more videos still processing), the workflow routes to **21. Set — More Videos** and continues.\n\n**Step 19 — Code: Build Gmail Report**\nAll processed video results are collected and sorted by relevance score from highest to lowest. The email subject includes the number of videos analyzed and today's date. The body includes a full breakdown for each video: title, channel, view count, duration, publish date, URL, relevance score, summary, key topics, best quote, target audience, and content gap.\n\n**Step 20 — Gmail: Send Intelligence Report**\nThe complete report is sent to your email address. One email covers all videos, sorted by relevance, with no attribution footer.\n\n---\n\n## Key Features\n\n✅ **Real YouTube metadata** — Title, channel, views, duration, and publish date are pulled directly from the YouTube Data API — not scraped or guessed\n✅ **Speaker-labeled transcription** — WayinVideo groups the transcript by speaker so GPT receives structured dialogue, not a wall of undifferentiated text\n✅ **Transcript fallback to description** — If WayinVideo returns an empty transcript, the video description is used automatically so no video analysis ever fails silently\n✅ **Niche-specific relevance scoring** — You set your niche once in Config Values and every video is scored on how useful it is specifically for that industry\n✅ **Content gap per video** — Every analysis includes one thing the video missed — ready to use as a content brief or competitive edge\n✅ **Retry loop with 11-minute timeout** — The workflow polls every 45 seconds for up to 15 attempts before stopping — long videos never hang the workflow indefinitely\n✅ **Gmail report sorted by relevance** — All videos arrive ranked from most to least relevant so you always know which one to act on first\n✅ **Permanent research library in Sheets** — Every video you submit is logged permanently — over time you build a searchable database of analyzed YouTube content sorted by niche relevance\n\n---\n\n## Customisation Options\n\n**Change your niche between submissions** — In node **2. Set — Config Values**, update `yourNiche` before each batch submission to score videos against a different industry — useful for agencies analyzing videos for multiple client verticals in one workflow instance.\n\n**Increase the polling timeout for very long videos** — In node **10. Code — Check Transcript Status**, change `pollCount &gt;= 15` to `pollCount &gt;= 25` to allow up to approximately 19 minutes for transcription — useful for videos over 60 minutes long.\n\n**Add a Slack notification when the report is ready** — After node **20. Gmail — Send Intelligence Report**, add a Slack step that posts the top-scoring video title, relevance score, and the content gap to a `#content-team` or `#research` channel so your team sees the headline insight immediately.\n\n**Filter to only high-relevance videos in the email** — In node **19. Code — Build Gmail Report**, add a filter before sorting: `const sorted = [...allItems].filter(v =&gt; v.rawScore &gt;= 7).sort(...)` to include only videos scoring 7 or above in the email — keeping the report focused on the most actionable content.\n\n**Log to a separate sheet tab per niche** — In node **2. Set — Config Values**, make `sheetName` dynamic by appending your niche value (e.g. `YouTube Intelligence — SEO`) so different niche batches automatically log to their own dedicated tabs.\n\n---\n\n## Troubleshooting\n\n**Form submission not starting the workflow:**\n- Confirm the workflow is Active — inactive workflows do not receive form submissions\n- Copy the Form URL fresh from node **1. Form — YouTube Video Intelligence** after activating\n- Make sure at least one URL is a valid YouTube link — node **3. Code — Extract Video IDs** filters out any URL that does not contain `youtube.com` or `youtu.be`\n\n**YouTube API returning no video data:**\n- Confirm `PASTE_YOUR_YOUTUBE_DATA_API_KEY_HERE` in node **2. Set — Config Values** is replaced with your actual API key\n- Make sure the YouTube Data API v3 is enabled in your Google Cloud project — go to console.cloud.google.com → APIs and Services → Library → search YouTube Data API v3 → Enable\n- Private, unlisted, or deleted videos will return no results — the workflow throws an error for these and stops cleanly\n\n**WayinVideo transcription timing out or failing:**\n- If the polling loop times out after 15 polls (approximately 11 minutes), check your WayinVideo dashboard to see if the job is still processing or failed on their end\n- Confirm `PASTE_YOUR_WAYINVIDEO_API_KEY_HERE` in node **2. Set — Config Values** is your actual WayinVideo API key\n- Very long videos (over 90 minutes) may exceed the 11-minute timeout — increase the poll limit in node **10. Code — Check Transcript Status** from 15 to 20 for longer content\n\n**OpenAI not generating the analysis:**\n- Confirm the API key is connected in node **14. OpenAI — GPT-4o-mini Model** and your account has available credits\n- Check the execution log of node **13. AI Agent — Analyze Video** for the raw GPT response\n- If the schema parser in node **15. Parser — Structured Video Analysis** is throwing errors, GPT returned an unexpected format — re-run the submission to see if the issue is consistent\n\n**Google Sheets not logging rows or Gmail not arriving:**\n- Confirm the Google Sheets OAuth2 credential in node **17. Google Sheets — Log Video Analysis** is connected and not expired\n- Check that `PASTE_YOUR_GOOGLE_SHEET_ID_HERE` is replaced with the actual sheet ID from the URL — not the full URL\n- Confirm the tab is named **YouTube Intelligence** exactly and all 15 column headers in row 1 match exactly\n- For Gmail, confirm the OAuth2 credential in node **20. Gmail — Send Intelligence Report** is connected and check your spam folder on the first send\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email: [info@incrementors.com](info@incrementors.com)\n🌐 Website: [https://www.incrementors.com/](https://www.incrementors.com/)",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "8f61aa3f-eeef-441f-904e-f28864fa2f54",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -6336,
+            -304
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 572,
+            "height": 1360,
+            "content": "## YouTube Video Intelligence Tracker — YouTube API + WayinVideo + GPT-4o-mini + Sheets + Gmail\n\nFor content marketers, SEO strategists, and research teams who want structured intelligence from YouTube videos — not just auto-captions, but real speaker-labeled transcripts with GPT analysis tailored to your niche. Submit up to 3 YouTube URLs via the form. The workflow fetches title, channel, views, and duration from the YouTube Data API, submits each video to WayinVideo for accurate transcription, then sends the transcript to GPT-4o-mini for a 6-field analysis: summary, key topics, best quote, target audience, a relevance score for your niche, and a content gap your competitors missed. All results are logged to Google Sheets and emailed in a single report sorted by relevance.\n\n## How it works\n- **1. Form — YouTube Video Intelligence** collects up to 3 YouTube video URLs and your name\n- **2. Set — Config Values** stores both API keys, Sheet ID, email, niche, and form values\n- **3. Code — Extract Video IDs** parses video IDs from youtube.com and youtu.be URL formats and outputs one item per video\n- **4. HTTP — Fetch YouTube Metadata** calls the YouTube Data API v3 for title, channel, views, duration, and published date\n- **5. Code — Process Video Metadata** formats ISO 8601 duration to readable text and adds comma-formatted view counts\n- **6. HTTP — Submit Transcription Task** sends each video URL to WayinVideo for real speaker-labeled transcription\n- **7. Code — Save Transcript Task ID** saves the task ID and initializes the poll counter\n- **8–11. Transcription Polling Loop** polls every 45 seconds until SUCCEEDED — up to 15 polls (11 minutes). Groups transcript by speaker. Falls back to video description if empty\n- **13. AI Agent — Analyze Video** uses GPT-4o-mini to return summary, key topics, best quote, target audience, relevance score for your niche, and content gap\n- **16. Code — Prepare Results** formats all fields and adds a High/Medium/Low score label\n- **17. Google Sheets — Log Video Analysis** logs one row per video permanently\n- **18. IF — Last Video?** gates the Gmail report so it fires exactly once after all videos are logged\n- **19. Code — Build Gmail Report** collects all video results, sorts by relevance score, and builds the email\n- **20. Gmail — Send Intelligence Report** delivers the complete report to your inbox\n\n## Set up steps\n1. In **2. Set — Config Values** — replace PASTE_YOUR_YOUTUBE_DATA_API_KEY_HERE (from Google Cloud Console, enable YouTube Data API v3), PASTE_YOUR_WAYINVIDEO_API_KEY_HERE (from wayin.ai Account Settings), PASTE_YOUR_GOOGLE_SHEET_ID_HERE, PASTE_YOUR_EMAIL_HERE, PASTE_YOUR_NAME_HERE, and set yourNiche to your industry\n2. In **14. OpenAI — GPT-4o-mini Model** — connect your OpenAI credential\n3. In **17. Google Sheets — Log Video Analysis** — connect your Google Sheets OAuth2 credential\n4. In **20. Gmail — Send Intelligence Report** — connect your Gmail OAuth2 credential\n5. Create a Google Sheet tab named YouTube Intelligence with columns: Date, Video URL, Title, Channel, Views, Duration, Published, Summary, Key Topics, Best Quote, Target Audience, Relevance Score, Content Gap, Submitted By, Logged At"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9ed92566-d766-4399-840c-cab58e2d3c75",
+          "name": "Section — Form Input, Config, and Video ID Extraction",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -5728,
+            -32
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 660,
+            "height": 388,
+            "content": "## Form Input, Config, and Video ID Extraction\nUser submits up to 3 YouTube video URLs. Config stores both API keys, sheet settings, email, and niche. A Code node extracts video IDs from both youtube.com and youtu.be URL formats and outputs one item per valid video."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "b4a6bdc6-a104-464d-81a8-6e80b77eb55e",
+          "name": "Section — YouTube Metadata Fetch and WayinVideo Submission",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -5040,
+            -32
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 852,
+            "height": 388,
+            "content": "## YouTube Metadata Fetch and WayinVideo Transcription Submission\nYouTube Data API v3 fetches title, channel, views, duration (converted from ISO 8601), and published date. WayinVideo receives the video URL for real speaker-labeled transcription. Task ID is saved for polling."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "5027e054-1cab-4638-a17a-00505f7549e6",
+          "name": "Section — Transcription Polling Loop",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -4128,
+            -32
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 916,
+            "height": 564,
+            "content": "## Transcription Polling Loop\nPolls WayinVideo every 45 seconds until SUCCEEDED. Groups transcript segments by speaker. Falls back to video description if transcript is empty. Caps at 5000 characters for GPT. Loops back via Set node to preserve all data. Hard timeout after 15 polls (approximately 11 minutes)."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "bf7357e3-b939-45bd-b730-d653534a313e",
+          "name": "Section — AI Video Analysis",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -3152,
+            -144
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 484,
+            "height": 836,
+            "content": "## AI Video Analysis\nGPT-4o-mini (temperature 0.2) analyzes the transcript and returns 6 fields: a 3–4 sentence summary, 5 key topics, the best quote, target audience, a relevance score from 1 to 10 for your niche, and a content gap your competitors missed."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "a9c7c118-b4fd-425f-9111-1fdf2608ef7f",
+          "name": "Section — Results Assembly, Sheet Logging, and Gmail Report",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2608,
+            -304
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 932,
+            "height": 932,
+            "content": "## Results Assembly, Sheet Logging, and Gmail Report\nPrepares all fields with score labels. Google Sheets logs one row per video. The IF node checks isLastVideo — only the final video triggers Gmail. The report collects all processed videos using .all(), sorts by relevance score, and emails a complete intelligence digest."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "7be1b7fa-0f45-4230-a63a-6cb724717f2d",
+          "name": "1. Form — YouTube Video Intelligence",
+          "type": "n8n-nodes-base.formTrigger",
+          "position": [
+            -5664,
+            112
+          ],
+          "webhookId": "65967991-a903-4408-bb78-2acbb4be619a",
+          "parameters": {
+            "options": {},
+            "formTitle": "YouTube Video Intelligence Tracker",
+            "formFields": {
+              "values": [
+                {
+                  "fieldLabel": "Video 1 URL",
+                  "placeholder": "https://www.youtube.com/watch?v=...",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Video 2 URL",
+                  "placeholder": "https://www.youtube.com/watch?v=... (leave blank to skip)"
+                },
+                {
+                  "fieldLabel": "Video 3 URL",
+                  "placeholder": "https://www.youtube.com/watch?v=... (leave blank to skip)"
+                },
+                {
+                  "fieldLabel": "Your Name",
+                  "placeholder": "Example: Rahul Dutt"
+                }
+              ]
+            },
+            "formDescription": "Analyze up to 3 YouTube videos at once. Get structured summaries, key topics, best quotes, and relevance scores. All saved to Google Sheets and emailed to you."
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "9d44ae70-fbcf-40f0-810c-d39436c590c7",
+          "name": "2. Set — Config Values",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -5440,
+            112
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "cfg-001",
+                  "name": "youtubeApiKey",
+                  "type": "string",
+                  "value": "PASTE_YOUR_YOUTUBE_DATA_API_KEY_HERE"
+                },
+                {
+                  "id": "cfg-002",
+                  "name": "wayinVideoApiKey",
+                  "type": "string",
+                  "value": "PASTE_YOUR_WAYINVIDEO_API_KEY_HERE"
+                },
+                {
+                  "id": "cfg-003",
+                  "name": "sheetId",
+                  "type": "string",
+                  "value": "PASTE_YOUR_GOOGLE_SHEET_ID_HERE"
+                },
+                {
+                  "id": "cfg-004",
+                  "name": "sheetName",
+                  "type": "string",
+                  "value": "YouTube Intelligence"
+                },
+                {
+                  "id": "cfg-005",
+                  "name": "recipientEmail",
+                  "type": "string",
+                  "value": "PASTE_YOUR_EMAIL_HERE"
+                },
+                {
+                  "id": "cfg-006",
+                  "name": "senderName",
+                  "type": "string",
+                  "value": "PASTE_YOUR_NAME_HERE"
+                },
+                {
+                  "id": "cfg-007",
+                  "name": "yourNiche",
+                  "type": "string",
+                  "value": "SEO and digital marketing"
+                },
+                {
+                  "id": "cfg-008",
+                  "name": "video1Url",
+                  "type": "string",
+                  "value": "={{ $json['Video 1 URL']?.trim() || '' }}"
+                },
+                {
+                  "id": "cfg-009",
+                  "name": "video2Url",
+                  "type": "string",
+                  "value": "={{ $json['Video 2 URL']?.trim() || '' }}"
+                },
+                {
+                  "id": "cfg-010",
+                  "name": "video3Url",
+                  "type": "string",
+                  "value": "={{ $json['Video 3 URL']?.trim() || '' }}"
+                },
+                {
+                  "id": "cfg-011",
+                  "name": "submittedBy",
+                  "type": "string",
+                  "value": "={{ $json['Your Name'] || 'Unknown' }}"
+                },
+                {
+                  "id": "cfg-012",
+                  "name": "today",
+                  "type": "string",
+                  "value": "={{ $now.toFormat('dd MMM yyyy') }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "441b2f7c-35a4-4f5f-86a0-55119391d926",
+          "name": "3. Code — Extract Video IDs",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -5216,
+            112
+          ],
+          "parameters": {
+            "jsCode": "const config = $input.first().json;\n\nconst videos = [\n  config.video1Url,\n  config.video2Url,\n  config.video3Url\n].filter(url => url && (url.includes('youtube.com') || url.includes('youtu.be')));\n\nif (videos.length === 0) {\n  throw new Error('No valid YouTube URLs found. Please submit at least one YouTube URL.');\n}\n\nconst extractVideoId = (url) => {\n  try {\n    if (url.includes('youtu.be/')) {\n      return url.split('youtu.be/')[1].split('?')[0].split('&')[0];\n    }\n    const urlObj = new URL(url);\n    return urlObj.searchParams.get('v') || '';\n  } catch (e) {\n    return '';\n  }\n};\n\nreturn videos.map((url, index) => {\n  const videoId = extractVideoId(url);\n  return {\n    json: {\n      originalUrl: url,\n      videoId,\n      videoIndex: index + 1,\n      totalVideos: videos.length,\n      isLastVideo: index === videos.length - 1,\n      youtubeApiKey: config.youtubeApiKey,\n      wayinVideoApiKey: config.wayinVideoApiKey,\n      sheetId: config.sheetId,\n      sheetName: config.sheetName,\n      recipientEmail: config.recipientEmail,\n      senderName: config.senderName,\n      yourNiche: config.yourNiche,\n      submittedBy: config.submittedBy,\n      today: config.today\n    }\n  };\n});"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "0f7d5825-9725-44c8-8f79-8a983b293843",
+          "name": "4. HTTP — Fetch YouTube Metadata",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -4992,
+            112
+          ],
+          "parameters": {
+            "url": "=https://www.googleapis.com/youtube/v3/videos",
+            "options": {},
+            "sendQuery": true,
+            "queryParameters": {
+              "parameters": [
+                {
+                  "name": "id",
+                  "value": "={{ $json.videoId }}"
+                },
+                {
+                  "name": "part",
+                  "value": "snippet,statistics,contentDetails"
+                },
+                {
+                  "name": "key",
+                  "value": "={{ $json.youtubeApiKey }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "9a7ef8e3-5c48-4034-a3ec-66aa91f16239",
+          "name": "5. Code — Process Video Metadata",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -4784,
+            112
+          ],
+          "parameters": {
+            "jsCode": "const response = $input.first().json;\nconst videoData = $('3. Code — Extract Video IDs').item.json;\n\nconst item = response?.items?.[0];\n\nif (!item) {\n  throw new Error('Video not found or is private: ' + videoData.originalUrl);\n}\n\nconst snippet = item.snippet || {};\nconst stats = item.statistics || {};\nconst details = item.contentDetails || {};\n\nconst rawDuration = details.duration || 'PT0S';\nconst durationMatch = rawDuration.match(/PT(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?/);\nconst hours = parseInt(durationMatch?.[1] || 0);\nconst minutes = parseInt(durationMatch?.[2] || 0);\nconst seconds = parseInt(durationMatch?.[3] || 0);\nconst duration = (hours > 0 ? hours + 'h ' : '') + (minutes > 0 ? minutes + 'm ' : '') + seconds + 's';\n\nconst views = parseInt(stats.viewCount || 0).toLocaleString('en-US');\n\nconst publishedDate = snippet.publishedAt\n  ? new Date(snippet.publishedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })\n  : 'Unknown';\n\nreturn [{\n  json: {\n    videoId: videoData.videoId,\n    originalUrl: videoData.originalUrl,\n    title: snippet.title || 'Unknown Title',\n    channel: snippet.channelTitle || 'Unknown Channel',\n    description: (snippet.description || '').substring(0, 500),\n    views,\n    duration,\n    publishedDate,\n    videoIndex: videoData.videoIndex,\n    totalVideos: videoData.totalVideos,\n    isLastVideo: videoData.isLastVideo,\n    wayinVideoApiKey: videoData.wayinVideoApiKey,\n    sheetId: videoData.sheetId,\n    sheetName: videoData.sheetName,\n    recipientEmail: videoData.recipientEmail,\n    senderName: videoData.senderName,\n    yourNiche: videoData.yourNiche,\n    submittedBy: videoData.submittedBy,\n    today: videoData.today\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "bdfb566c-fb7c-4038-a84e-3b5a1231ad0f",
+          "name": "6. HTTP — Submit Transcription Task",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -4560,
+            112
+          ],
+          "parameters": {
+            "url": "https://wayinvideo-api.wayin.ai/api/v2/transcripts",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"video_url\": \"{{ $json.originalUrl }}\",\n  \"target_lang\": \"en\"\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $json.wayinVideoApiKey }}"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "c61a55b0-21d1-40a6-9183-29c977012713",
+          "name": "7. Code — Save Transcript Task ID",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -4336,
+            112
+          ],
+          "parameters": {
+            "jsCode": "const response = $input.first().json;\nconst videoData = $('5. Code — Process Video Metadata').item.json;\n\nconst transcriptId = response?.data?.id;\n\nif (!transcriptId) {\n  throw new Error('WayinVideo did not return a task ID. Check your WayinVideo API key.');\n}\n\nreturn [{\n  json: {\n    transcriptId,\n    transcriptStatus: response?.data?.status || 'CREATED',\n    pollCount: 0,\n    videoId: videoData.videoId,\n    originalUrl: videoData.originalUrl,\n    title: videoData.title,\n    channel: videoData.channel,\n    description: videoData.description,\n    views: videoData.views,\n    duration: videoData.duration,\n    publishedDate: videoData.publishedDate,\n    videoIndex: videoData.videoIndex,\n    totalVideos: videoData.totalVideos,\n    isLastVideo: videoData.isLastVideo,\n    wayinVideoApiKey: videoData.wayinVideoApiKey,\n    sheetId: videoData.sheetId,\n    sheetName: videoData.sheetName,\n    recipientEmail: videoData.recipientEmail,\n    senderName: videoData.senderName,\n    yourNiche: videoData.yourNiche,\n    submittedBy: videoData.submittedBy,\n    today: videoData.today\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "35796446-d847-4ffe-8902-587517b7fca6",
+          "name": "8. Wait — 45 Seconds",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            -4064,
+            112
+          ],
+          "webhookId": "db724b1b-7dd5-4661-b979-50d0b1b2bda5",
+          "parameters": {
+            "amount": 45
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "28f7701f-1ab0-45b7-8eec-c8774f657187",
+          "name": "9. HTTP — Poll Transcript Results",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -3840,
+            112
+          ],
+          "parameters": {
+            "url": "=https://wayinvideo-api.wayin.ai/api/v2/transcripts/results/{{ $json.transcriptId }}",
+            "options": {},
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $json.wayinVideoApiKey }}"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "67eeba6c-532f-4d28-8c6b-2c35b0353115",
+          "name": "10. Code — Check Transcript Status",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -3616,
+            112
+          ],
+          "parameters": {
+            "jsCode": "const pollResponse = $input.first().json;\nconst prev = $('7. Code — Save Transcript Task ID').item.json;\n\nconst status = pollResponse?.data?.status || 'UNKNOWN';\nconst pollCount = (prev.pollCount || 0) + 1;\n\nif (pollCount >= 15 && status !== 'SUCCEEDED') {\n  throw new Error('WayinVideo transcription timed out after 15 polls (about 11 minutes). Task ID: ' + prev.transcriptId);\n}\n\nif (status === 'FAILED') {\n  const errorMsg = pollResponse?.data?.error_message || 'Unknown error';\n  throw new Error('WayinVideo transcription failed: ' + errorMsg);\n}\n\nlet transcriptText = '';\nif (status === 'SUCCEEDED') {\n  const segments = pollResponse?.data?.transcript || [];\n  let currentSpeaker = '';\n  segments.forEach(seg => {\n    const speaker = seg.speaker || 'Speaker';\n    const text = (seg.text || '').trim();\n    if (!text) return;\n    if (speaker !== currentSpeaker) {\n      transcriptText += '\\n' + speaker + ': ';\n      currentSpeaker = speaker;\n    }\n    transcriptText += text + ' ';\n  });\n  transcriptText = transcriptText.trim();\n}\n\nif (!transcriptText || transcriptText.length < 50) {\n  transcriptText = 'Transcript not available. Using video description instead:\\n\\n' + (prev.description || 'No description available.');\n}\n\ntranscriptText = transcriptText.substring(0, 5000);\n\nreturn [{\n  json: {\n    transcriptId: prev.transcriptId,\n    transcriptStatus: status,\n    transcriptText,\n    pollCount,\n    isReady: status === 'SUCCEEDED',\n    videoId: prev.videoId,\n    originalUrl: prev.originalUrl,\n    title: prev.title,\n    channel: prev.channel,\n    views: prev.views,\n    duration: prev.duration,\n    publishedDate: prev.publishedDate,\n    videoIndex: prev.videoIndex,\n    totalVideos: prev.totalVideos,\n    isLastVideo: prev.isLastVideo,\n    wayinVideoApiKey: prev.wayinVideoApiKey,\n    sheetId: prev.sheetId,\n    sheetName: prev.sheetName,\n    recipientEmail: prev.recipientEmail,\n    senderName: prev.senderName,\n    yourNiche: prev.yourNiche,\n    submittedBy: prev.submittedBy,\n    today: prev.today\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "14ace53f-2c39-45e8-8271-533fdc442c48",
+          "name": "11. IF — Transcript Ready?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -3392,
+            112
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-ready",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $json.isReady }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "8fe22f57-11ee-46d3-a01e-897374d699be",
+          "name": "12. Set — Still Processing Loop Back",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -3392,
+            336
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "loop-transcript-001",
+                  "name": "transcriptId",
+                  "type": "string",
+                  "value": "={{ $json.transcriptId }}"
+                },
+                {
+                  "id": "loop-transcript-002",
+                  "name": "pollCount",
+                  "type": "number",
+                  "value": "={{ $json.pollCount }}"
+                },
+                {
+                  "id": "loop-transcript-003",
+                  "name": "wayinVideoApiKey",
+                  "type": "string",
+                  "value": "={{ $json.wayinVideoApiKey }}"
+                },
+                {
+                  "id": "loop-transcript-004",
+                  "name": "videoId",
+                  "type": "string",
+                  "value": "={{ $json.videoId }}"
+                },
+                {
+                  "id": "loop-transcript-005",
+                  "name": "originalUrl",
+                  "type": "string",
+                  "value": "={{ $json.originalUrl }}"
+                },
+                {
+                  "id": "loop-transcript-006",
+                  "name": "title",
+                  "type": "string",
+                  "value": "={{ $json.title }}"
+                },
+                {
+                  "id": "loop-transcript-007",
+                  "name": "channel",
+                  "type": "string",
+                  "value": "={{ $json.channel }}"
+                },
+                {
+                  "id": "loop-transcript-008",
+                  "name": "description",
+                  "type": "string",
+                  "value": "={{ $json.description }}"
+                },
+                {
+                  "id": "loop-transcript-009",
+                  "name": "views",
+                  "type": "string",
+                  "value": "={{ $json.views }}"
+                },
+                {
+                  "id": "loop-transcript-010",
+                  "name": "duration",
+                  "type": "string",
+                  "value": "={{ $json.duration }}"
+                },
+                {
+                  "id": "loop-transcript-011",
+                  "name": "publishedDate",
+                  "type": "string",
+                  "value": "={{ $json.publishedDate }}"
+                },
+                {
+                  "id": "loop-transcript-012",
+                  "name": "videoIndex",
+                  "type": "number",
+                  "value": "={{ $json.videoIndex }}"
+                },
+                {
+                  "id": "loop-transcript-013",
+                  "name": "totalVideos",
+                  "type": "number",
+                  "value": "={{ $json.totalVideos }}"
+                },
+                {
+                  "id": "loop-transcript-014",
+                  "name": "isLastVideo",
+                  "type": "boolean",
+                  "value": "={{ $json.isLastVideo }}"
+                },
+                {
+                  "id": "loop-transcript-015",
+                  "name": "sheetId",
+                  "type": "string",
+                  "value": "={{ $json.sheetId }}"
+                },
+                {
+                  "id": "loop-transcript-016",
+                  "name": "sheetName",
+                  "type": "string",
+                  "value": "={{ $json.sheetName }}"
+                },
+                {
+                  "id": "loop-transcript-017",
+                  "name": "recipientEmail",
+                  "type": "string",
+                  "value": "={{ $json.recipientEmail }}"
+                },
+                {
+                  "id": "loop-transcript-018",
+                  "name": "senderName",
+                  "type": "string",
+                  "value": "={{ $json.senderName }}"
+                },
+                {
+                  "id": "loop-transcript-019",
+                  "name": "yourNiche",
+                  "type": "string",
+                  "value": "={{ $json.yourNiche }}"
+                },
+                {
+                  "id": "loop-transcript-020",
+                  "name": "submittedBy",
+                  "type": "string",
+                  "value": "={{ $json.submittedBy }}"
+                },
+                {
+                  "id": "loop-transcript-021",
+                  "name": "today",
+                  "type": "string",
+                  "value": "={{ $json.today }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "5536ec22-e588-4b36-9e13-e9312d711f0f",
+          "name": "13. AI Agent — Analyze Video",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            -3008,
+            96
+          ],
+          "parameters": {
+            "text": "=You are a content intelligence analyst for a {{ $json.yourNiche }} professional.\n\nAnalyze this YouTube video and return ONLY a valid JSON object. No extra text. No markdown. No backticks.\n\nVideo details:\nTitle: {{ $json.title }}\nChannel: {{ $json.channel }}\nViews: {{ $json.views }}\nDuration: {{ $json.duration }}\nPublished: {{ $json.publishedDate }}\nURL: {{ $json.originalUrl }}\n\nTranscript:\n{{ $json.transcriptText }}\n\nReturn exactly these 6 fields:\n\nsummary\n3 to 4 sentences summarizing what this video covers. Be specific — mention the actual topics and any key data points. Under 80 words.\n\nkeyTopics\nAn array of exactly 5 strings. The most important topics, concepts, or tactics covered in this video. Each under 8 words.\n\nbestQuote\nThe single most memorable or insightful statement from the transcript. One sentence under 25 words. If no clear quote is found write: No standout quote identified.\n\ntargetAudience\nOne sentence describing who this video is most useful for. Under 15 words.\n\nrelevanceScore\nA number from 1 to 10 showing how relevant this video is for a {{ $json.yourNiche }} professional.\n10 means directly actionable and highly relevant.\n7 to 9 means strong relevance with useful insights.\n4 to 6 means general interest or partial relevance.\n1 to 3 means low relevance for this niche.\n\ncontentGap\nOne thing this video did NOT cover that would make it more useful for a {{ $json.yourNiche }} professional. One sentence under 20 words.",
+            "options": {},
+            "promptType": "define",
+            "hasOutputParser": true
+          },
+          "typeVersion": 1.7
+        },
+        {
+          "id": "efac5738-e1da-4d61-b242-ef24c5db3949",
+          "name": "14. OpenAI — GPT-4o-mini Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            -3008,
+            304
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini"
+            },
+            "options": {
+              "maxTokens": 600,
+              "temperature": 0.2
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "d26db9e9-1728-4daf-bc36-5706b23dd85f",
+          "name": "15. Parser — Structured Video Analysis",
+          "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+          "position": [
+            -2864,
+            528
+          ],
+          "parameters": {
+            "schemaType": "manual",
+            "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"summary\": { \"type\": \"string\", \"description\": \"3 to 4 sentence video summary\" },\n    \"keyTopics\": { \"type\": \"array\", \"items\": { \"type\": \"string\" }, \"description\": \"5 key topics covered\" },\n    \"bestQuote\": { \"type\": \"string\", \"description\": \"Most memorable statement from video\" },\n    \"targetAudience\": { \"type\": \"string\", \"description\": \"Who this video is for\" },\n    \"relevanceScore\": { \"type\": \"number\", \"description\": \"Relevance from 1 to 10\" },\n    \"contentGap\": { \"type\": \"string\", \"description\": \"What the video did not cover\" }\n  },\n  \"required\": [\"summary\", \"keyTopics\", \"bestQuote\", \"targetAudience\", \"relevanceScore\", \"contentGap\"]\n}"
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "0c96f07e-2284-44cc-aaae-a7ac5ea7d72b",
+          "name": "16. Code — Prepare Results",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -2576,
+            96
+          ],
+          "parameters": {
+            "jsCode": "const aiOutput = $input.first().json.output;\nconst videoData = $('10. Code — Check Transcript Status').item.json;\n\nconst score = aiOutput?.relevanceScore || 0;\nconst scoreLabel = score >= 8 ? 'High' : score >= 5 ? 'Medium' : 'Low';\nconst keyTopics = (aiOutput?.keyTopics || []).join(', ');\n\nconst loggedAt = new Date().toISOString().replace('T', ' ').substring(0, 16);\n\nreturn [{\n  json: {\n    today: videoData.today,\n    originalUrl: videoData.originalUrl,\n    title: videoData.title,\n    channel: videoData.channel,\n    views: videoData.views,\n    duration: videoData.duration,\n    publishedDate: videoData.publishedDate,\n    summary: aiOutput?.summary || 'Not available',\n    keyTopics,\n    bestQuote: aiOutput?.bestQuote || 'Not available',\n    targetAudience: aiOutput?.targetAudience || 'Not available',\n    relevanceScore: score + ' out of 10 — ' + scoreLabel,\n    contentGap: aiOutput?.contentGap || 'Not available',\n    submittedBy: videoData.submittedBy,\n    loggedAt,\n    rawScore: score,\n    isLastVideo: videoData.isLastVideo,\n    sheetId: videoData.sheetId,\n    sheetName: videoData.sheetName,\n    recipientEmail: videoData.recipientEmail,\n    senderName: videoData.senderName,\n    yourNiche: videoData.yourNiche\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "f7232287-4520-42e9-b78e-6c04ae757e91",
+          "name": "17. Google Sheets — Log Video Analysis",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            -2352,
+            -80
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "Date": "={{ $json.today }}",
+                "Title": "={{ $json.title }}",
+                "Views": "={{ $json.views }}",
+                "Channel": "={{ $json.channel }}",
+                "Summary": "={{ $json.summary }}",
+                "Duration": "={{ $json.duration }}",
+                "Logged At": "={{ $json.loggedAt }}",
+                "Published": "={{ $json.publishedDate }}",
+                "Video URL": "={{ $json.originalUrl }}",
+                "Best Quote": "={{ $json.bestQuote }}",
+                "Key Topics": "={{ $json.keyTopics }}",
+                "Content Gap": "={{ $json.contentGap }}",
+                "Submitted By": "={{ $json.submittedBy }}",
+                "Relevance Score": "={{ $json.relevanceScore }}",
+                "Target Audience": "={{ $json.targetAudience }}"
+              },
+              "mappingMode": "defineBelow"
+            },
+            "options": {
+              "cellFormat": "USER_ENTERED"
+            },
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "={{ $json.sheetName }}"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $json.sheetId }}"
+            }
+          },
+          "typeVersion": 4.5
+        },
+        {
+          "id": "5e21fd30-2635-4af3-8df3-6691b250b9cb",
+          "name": "18. IF — Last Video?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -2352,
+            240
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-last",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $('16. Code — Prepare Results').item.json.isLastVideo }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "512aecdc-ec17-4951-a331-822bc8c9872c",
+          "name": "19. Code — Build Gmail Report",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -2128,
+            80
+          ],
+          "parameters": {
+            "jsCode": "const lastItem = $('16. Code — Prepare Results').item.json;\n\nlet allItems = [];\ntry {\n  allItems = $('16. Code — Prepare Results').all().map(i => i.json);\n} catch (e) {\n  allItems = [lastItem];\n}\n\nconst today = lastItem.today;\nconst senderName = lastItem.senderName;\nconst recipientEmail = lastItem.recipientEmail;\n\nconst sorted = [...allItems].sort((a, b) => (b.rawScore || 0) - (a.rawScore || 0));\n\nlet body = 'Hello ' + senderName + ',\\n\\n';\nbody += 'Here is your YouTube Video Intelligence Report for ' + today + '.\\n\\n';\nbody += 'Total videos analyzed: ' + sorted.length + '\\n\\n';\nbody += '============================================================\\n\\n';\n\nsorted.forEach((v, i) => {\n  body +=\n    (i + 1) + '. ' + (v.title || 'Unknown') + '\\n' +\n    'Channel: ' + (v.channel || 'Unknown') + '\\n' +\n    'Views: ' + (v.views || 'Unknown') + ' | Duration: ' + (v.duration || 'Unknown') + ' | Published: ' + (v.publishedDate || 'Unknown') + '\\n' +\n    'URL: ' + (v.originalUrl || 'Unknown') + '\\n' +\n    'Relevance score: ' + (v.relevanceScore || 'Unknown') + '\\n\\n' +\n    'Summary:\\n' + (v.summary || 'Not available') + '\\n\\n' +\n    'Key topics: ' + (v.keyTopics || 'Not available') + '\\n\\n' +\n    'Best quote: ' + (v.bestQuote || 'Not available') + '\\n\\n' +\n    'Best for: ' + (v.targetAudience || 'Not available') + '\\n\\n' +\n    'Content gap to exploit: ' + (v.contentGap || 'Not available') + '\\n\\n' +\n    '------------------------------------------------------------\\n\\n';\n});\n\nbody += 'All video analyses are saved in your Google Sheets YouTube Intelligence tab.\\n\\n';\nbody += 'Best regards,\\n' + senderName;\n\nreturn [{\n  json: {\n    emailSubject: 'YouTube Video Intelligence Report — ' + sorted.length + ' videos — ' + today,\n    emailBody: body,\n    recipientEmail\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "347ca99f-8e53-4025-bb84-7ce59a2a8ba0",
+          "name": "20. Gmail — Send Intelligence Report",
+          "type": "n8n-nodes-base.gmail",
+          "position": [
+            -1920,
+            80
+          ],
+          "webhookId": "6adaaae3-a971-4976-8e7b-8d1b26d023fb",
+          "parameters": {
+            "sendTo": "={{ $json.recipientEmail }}",
+            "message": "={{ $json.emailBody }}",
+            "options": {
+              "appendAttribution": false
+            },
+            "subject": "={{ $json.emailSubject }}"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "857f7752-a729-45e3-afbc-8498871a16b6",
+          "name": "21. Set — More Videos",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -2128,
+            400
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "more-001",
+                  "name": "result",
+                  "type": "string",
+                  "value": "More videos still being processed — loop continues."
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "18. IF — Last Video?": {
+          "main": [
+            [
+              {
+                "node": "19. Code — Build Gmail Report",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "21. Set — More Videos",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. Wait — 45 Seconds": {
+          "main": [
+            [
+              {
+                "node": "9. HTTP — Poll Transcript Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "2. Set — Config Values": {
+          "main": [
+            [
+              {
+                "node": "3. Code — Extract Video IDs",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "11. IF — Transcript Ready?": {
+          "main": [
+            [
+              {
+                "node": "13. AI Agent — Analyze Video",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "12. Set — Still Processing Loop Back",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "16. Code — Prepare Results": {
+          "main": [
+            [
+              {
+                "node": "17. Google Sheets — Log Video Analysis",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "18. IF — Last Video?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "3. Code — Extract Video IDs": {
+          "main": [
+            [
+              {
+                "node": "4. HTTP — Fetch YouTube Metadata",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "13. AI Agent — Analyze Video": {
+          "main": [
+            [
+              {
+                "node": "16. Code — Prepare Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "19. Code — Build Gmail Report": {
+          "main": [
+            [
+              {
+                "node": "20. Gmail — Send Intelligence Report",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "14. OpenAI — GPT-4o-mini Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "13. AI Agent — Analyze Video",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "4. HTTP — Fetch YouTube Metadata": {
+          "main": [
+            [
+              {
+                "node": "5. Code — Process Video Metadata",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. Code — Process Video Metadata": {
+          "main": [
+            [
+              {
+                "node": "6. HTTP — Submit Transcription Task",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. Code — Save Transcript Task ID": {
+          "main": [
+            [
+              {
+                "node": "8. Wait — 45 Seconds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "9. HTTP — Poll Transcript Results": {
+          "main": [
+            [
+              {
+                "node": "10. Code — Check Transcript Status",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "10. Code — Check Transcript Status": {
+          "main": [
+            [
+              {
+                "node": "11. IF — Transcript Ready?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. HTTP — Submit Transcription Task": {
+          "main": [
+            [
+              {
+                "node": "7. Code — Save Transcript Task ID",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Form — YouTube Video Intelligence": {
+          "main": [
+            [
+              {
+                "node": "2. Set — Config Values",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "12. Set — Still Processing Loop Back": {
+          "main": [
+            [
+              {
+                "node": "8. Wait — 45 Seconds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "15. Parser — Structured Video Analysis": {
+          "ai_outputParser": [
+            [
+              {
+                "node": "13. AI Agent — Analyze Video",
+                "type": "ai_outputParser",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 27,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 2
+        },
+        "n8n-nodes-base.set": {
+          "count": 3
+        },
+        "n8n-nodes-base.code": {
+          "count": 6
+        },
+        "n8n-nodes-base.wait": {
+          "count": 1
+        },
+        "n8n-nodes-base.gmail": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.formTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 3
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.outputParserStructured": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Incrementors",
+      "username": "incrementors",
+      "bio": "",
+      "verified": true,
+      "links": [
+        "https://www.incrementors.com/"
+      ],
+      "avatar": "https://gravatar.com/avatar/e09b4b6a8c5a00f886a9eedf3be23a4af5a50cc216cd6b2aee2a12c2dfba99dd?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 356,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmail",
+        "codex": {
+          "data": {
+            "alias": [
+              "email",
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.gmail/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Gmail"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1179,
+        "icon": "fa:code",
+        "name": "@n8n/n8n-nodes-langchain.outputParserStructured",
+        "codex": {
+          "data": {
+            "alias": [
+              "json",
+              "zod"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.outputparserstructured/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Output Parsers"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Structured Output Parser"
+        },
+        "iconData": {
+          "icon": "code",
+          "type": "icon"
+        },
+        "displayName": "Structured Output Parser",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1225,
+        "icon": "file:form.svg",
+        "name": "n8n-nodes-base.formTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "table",
+              "submit",
+              "post"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.formtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Other Trigger Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "On form submission"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NiIgaGVpZ2h0PSI0MCIgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iIzAwQjdCQyIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMzQuOTc4IDM3LjczMmExLjU2IDEuNTYgMCAwIDEtMS41NjIgMS41NjNINi4yNmExLjU2IDEuNTYgMCAwIDEtMS41NjMtMS41NjNWOS42MDdjMC0uNDA1LjE1Ny0uNzk0LjQzOC0xLjA4Nmw2LjMwNC02LjUzMXY1LjM0NEg4LjIxM2ExLjE3MiAxLjE3MiAwIDEgMCAwIDIuMzQzaDQuNDNhMS4xNyAxLjE3IDAgMCAwIDEuMTcxLTEuMTcxVi4yMzJoMTkuNjAyYTEuNTYgMS41NiAwIDAgMSAxLjU2MiAxLjU2M3YxMC4zMjdsLTIuODYgMi44Ni04LjI1MiA4LjI3NmE0MTMuMDA2IDQxMy4wMDYgMCAwIDEtMS42NTQgMS42NjJsLS4zMzcuMzM3YTIgMiAwIDAgMC0uNTU3IDEuMDhMMjAuMyAzMS45MjJjLS4xMDguNjM4LS4yMTUgMS4wNzkuMjExIDEuNDE4LjQwMy4zMi45LjE3NCAxLjU0LjA2Nmw1LjQwOC0uOTI4YTIgMiAwIDAgMCAxLjA4LS41NTZsNi40NC02LjQyOXptLTI0LjAzLTIxLjI2NWExLjE4IDEuMTggMCAwIDAgMS4xNzEgMS4xNzJoMTMuMTYzYTEuMTcyIDEuMTcyIDAgMSAwIDAtMi4zNDRIMTIuMTE5YTEuMTcgMS4xNyAwIDAgMC0xLjE3MiAxLjE3Mm03LjI5NCAxNC43NjZhMS4xNyAxLjE3IDAgMCAwLTEuMTcyLTEuMTcySDEyLjEyYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNC45NTFhMS4xNyAxLjE3IDAgMCAwIDEuMTcyLTEuMTcybS44Ni03LjM5MWExLjE3IDEuMTcgMCAwIDAtMS4xNzItMS4xNzJoLTUuODExYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNS44MWExLjE2NCAxLjE2NCAwIDAgMCAxLjE3My0xLjE3MSIgY2xpcC1ydWxlPSJldmVub2RkIi8+PHBhdGggZmlsbD0iIzAwQjdCQyIgZD0ibTMzLjUzMiAxNi4zOTcgNC4yODktNC4yODkgMy43NTggMy43MSAxLjYxNy0xLjYxNiAyLjI1OCAyLjI1N2MuMjE4LjIxOC4zNC41MTMuMzQzLjgyLS4wMDIuMzExLS4xMjUuNjA4LS4zNDQuODNsLTYuODA0IDYuNzk2YTEuMTMgMS4xMyAwIDAgMS0uODI4LjM0MyAxLjE1IDEuMTUgMCAwIDEtLjgyOC0uMzQzIDEuMTggMS4xOCAwIDAgMSAwLTEuNjU3bDUuOTc2LTUuOTY4LTEuMzEyLTEuMzEzLTEuMzgzIDEuNDE0LTEzLjE0OSAxMy4xMjUtNC42MTcuNzgyLjc4Mi00LjYxNy4zMzYtLjMzNyAyLjU2MiAyLjU1NWExLjEgMS4xIDAgMCAwIC44MjguMzQ0Yy4zMTIuMDA1LjYxMi0uMTIuODI4LS4zNDRhMS4xOCAxLjE4IDAgMCAwIDAtMS42NTZsLTIuNTYyLTIuNTYyek00NC43MzYgMTIuMjRjMCAuNDE0LS4xNjMuODEtLjQ1NCAxLjEwMmwtLjkyMi45MTQtMy44NTItMy44MjguOTMtLjkzYTEuNTYzIDEuNTYzIDAgMCAxIDIuMjAzIDBsMS42NCAxLjY0MWMuMjkxLjI5My40NTUuNjkuNDU1IDEuMTAyIi8+PC9zdmc+"
+        },
+        "displayName": "n8n Form Trigger",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 32,
+        "name": "Market Research"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

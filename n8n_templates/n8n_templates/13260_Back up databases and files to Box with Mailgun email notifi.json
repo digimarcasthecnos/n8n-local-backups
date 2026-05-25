@@ -1,0 +1,338 @@
+{
+  "id": 13260,
+  "name": "Back up databases and files to Box with Mailgun email notifications",
+  "totalViews": 0,
+  "price": 0,
+  "purchaseUrl": null,
+  "user": {
+    "id": 96590,
+    "name": "vinci-king-01",
+    "username": "vinci-king-01",
+    "bio": "",
+    "verified": true,
+    "links": "[\"https://www.linkedin.com/in/marco-vinciguerra-7ba365242/\"]",
+    "avatar": "https://gravatar.com/avatar/d939eeef03a5fcb5df08bee8196f12ccb248c38209487414e419032004f0c014?r=pg&d=retro&size=200"
+  },
+  "description": "Scheduled Backup Automation – Mailgun & Box\n\nThis workflow automatically schedules, packages, and uploads backups of your databases, files, or configuration exports to Box cloud storage, then sends a completion email via Mailgun. It is ideal for small-to-medium businesses or solo developers who want hands-off, verifiable backups without writing custom scripts.\n\nPre-conditions/Requirements\n\nPrerequisites\nn8n instance (self-hosted or n8n.cloud)\nBox account with a folder dedicated to backups\nMailgun account & verified domain\nAccess to the target database/server you intend to back up\nBasic knowledge of environment variables to store secrets\n\nRequired Credentials\nBox OAuth2** – For uploading the backup file(s)\nMailgun API Key** – For sending backup status notifications\n(Optional) Database Credentials** – Only if the backup includes a DB dump triggered from inside n8n\n\nSpecific Setup Requirements\n| Variable                | Example                                  | Purpose                               |\n|-------------------------|------------------------------------------|---------------------------------------|\n| BOX_FOLDER_ID         | 1234567890                             | ID of the Box folder that stores backups |\n| MAILGUN_DOMAIN        | mg.example.com                         | Mailgun domain used for sending email |\n| MAILGUN_FROM          | Backups &lt;backup@mg.example.com&gt;        | “From” address in status emails       |\n| NOTIFY_EMAIL          | admin@example.com                      | Recipient of backup status emails     |\n\nHow it works\n\nThis workflow automatically schedules, packages, and uploads backups of your databases, files, or configuration exports to Box cloud storage, then sends a completion email via Mailgun. It is ideal for small-to-medium businesses or solo developers who want hands-off, verifiable backups without writing custom scripts.\n\nKey Steps:\nWebhook (Scheduler Trigger)**: Triggers the workflow on a CRON schedule or external call.\nCode (DB/File Dump)**: Executes bash or Node.js commands to create a tar/zip or SQL dump.\nMove Binary Data**: Converts the created file into n8n binary format.\nSet**: Attaches metadata (timestamp, file name).\nSplit In Batches* *(optional): Splits multiple backup files for sequential uploads.\nBox Node**: Uploads each backup file into the specified Box folder.\nHTTP Request (Verify Upload)**: Calls Box API to confirm upload success.\nIf**: Branches on success vs failure.\nMailgun Node**: Sends confirmation or error report email.\nSticky Notes**: Provide inline documentation inside the workflow canvas.\n\nSet up steps\n\nSetup Time: 15-20 minutes\n\nClone or import the workflow JSON into your n8n instance.\nCreate credentials:\n   Box OAuth2: paste Client ID, Client Secret, perform OAuth handshake.\n   Mailgun API: add Private API key and domain.\nUpdate environment variables (BOX_FOLDER_ID, MAILGUN_DOMAIN, etc.) or edit the relevant Set node.\nModify the Code node to run your specific backup command, e.g.:\n      pg_dump -U $DB_USER -h $DB_HOST $DB_NAME &gt; /tmp/db_backup.sql\n   tar -czf /tmp/full_backup_{{new Date().toISOString()}}.tar.gz /etc/nginx /var/www /tmp/db_backup.sql\n   Set the CRON schedule inside the Webhook node (or replace with a Cron node) to your desired frequency (daily, weekly, etc.).\nExecute once manually to verify the Box upload and email notification.\nEnable the workflow.\n\nNode Descriptions\n\nCore Workflow Nodes:\nWebhook / Cron** – Acts as the time-based trigger for backups.\nCode** – Creates the actual backup archive (tar, zip, SQL dump).\nMove Binary Data** – Moves the generated file into binary property.\nSet** – Adds filename and timestamp metadata for Box.\nSplit In Batches** – Handles multiple files when necessary.\nBox** – Uploads the backup file to Box.\nHTTP Request** – Optional re-check to ensure the file exists in Box.\nIf** – Routes the flow based on success or error.\nMailgun** – Sends success/failure notifications.\nSticky Note** – Explains credential handling and customization points.\n\nData Flow:\nWebhook/Cron → Code → Move Binary Data → Set → Split In Batches → Box → HTTP Request → If → Mailgun\n\nCustomization Examples\n\nAdd Retention Policy (Auto-delete old backups)\n// In a Code node before upload\nconst retentionDays = 30;\nconst cutoff = Date.now() - retentionDays * 246060*1000;\n\nitems = items.filter(item =&gt; {\n  return item.json.modifiedAt &gt; cutoff; // keep only recent files\n});\nreturn items;\n\nParallel Upload to S3\n// Duplicate the Box node, replace with AWS S3 node\n// Use Merge node to combine results before the HTTP Request verification\n\nData Output Format\n\nThe workflow outputs structured JSON data:\n\n{\n  \"fileName\": \"full_backup_2023-10-31T00-00-00Z.tar.gz\",\n  \"boxFileId\": \"9876543210\",\n  \"uploadStatus\": \"success\",\n  \"timestamp\": \"2023-10-31T00:05:12Z\",\n  \"emailNotification\": \"sent\"\n}\n\nTroubleshooting\n\nCommon Issues\n“Invalid Box Folder ID” – Verify BOX_FOLDER_ID and ensure the OAuth user has write permissions.\nMailgun 401 Unauthorized – Check that you used the Private API key and the domain is verified.\nBackup file too large – Enable chunked upload in Box node or increase client_max_body_size on reverse proxy.\n\nPerformance Tips\nCompress backups with gzip or zstd to reduce upload time.\nRun the database dump on the same host as n8n to avoid network overhead.\n\nPro Tips:\nStore secrets as environment variables and reference them in Code nodes (process.env.MY_SECRET).\nChain backups with version numbers (YYYYMMDD_HHmm) for easy sorting.\nUse n8n’s built-in execution logging to audit backup history.\n\nThis is a community workflow template provided “as-is” without warranty. Adapt and test in a safe environment before using in production.",
+  "createdAt": "2026-02-08T15:14:00.705Z",
+  "nodes": [
+    {
+      "id": 19,
+      "icon": "file:httprequest.svg",
+      "name": "n8n-nodes-base.httpRequest",
+      "codex": {
+        "data": {
+          "alias": [
+            "API",
+            "Request",
+            "URL",
+            "Build",
+            "cURL"
+          ],
+          "resources": {
+            "generic": [
+              {
+                "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                "icon": "☀️",
+                "label": "2021: The Year to Automate the New You with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                "icon": "🧬",
+                "label": "Why business process automation with n8n can change your daily life"
+              },
+              {
+                "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                "icon": "📈",
+                "label": "Automatically pulling and visualizing data with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                "icon": "✍️",
+                "label": "Learn how to automatically cross-post your content with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                "icon": "🧾",
+                "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                "icon": "🛳",
+                "label": "Running n8n on ships: An interview with Maranics"
+              },
+              {
+                "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                "icon": " 🪢",
+                "label": "What are APIs and how to use them with no code"
+              },
+              {
+                "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                "icon": "⚡️",
+                "label": "5 tasks you can automate with the new Notion API "
+              },
+              {
+                "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                "icon": "📜",
+                "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+              },
+              {
+                "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                "icon": "💡",
+                "label": "15 Google apps you can combine and automate to increase productivity"
+              },
+              {
+                "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                "icon": "🎨",
+                "label": "Automate Designs with Bannerbear and n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                "icon": " 🕸️",
+                "label": "How uProc scraped a multi-page website with a low-code workflow"
+              },
+              {
+                "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                "icon": "📱",
+                "label": "Building an expense tracking app in 10 minutes"
+              },
+              {
+                "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                "icon": "🤖",
+                "label": "5 workflow automations for Mattermost that we love at n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                "icon": "🧰",
+                "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+              },
+              {
+                "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                "icon": "🦄",
+                "label": "Learn how to use webhooks with Mattermost slash commands"
+              },
+              {
+                "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                "icon": "📈",
+                "label": "How a Membership Development Manager automates his work and investments"
+              },
+              {
+                "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                "icon": "📈",
+                "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+              },
+              {
+                "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                "icon": "🎡",
+                "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+              },
+              {
+                "url": "https://n8n.io/blog/automations-for-activists/",
+                "icon": "✨",
+                "label": "How Common Knowledge use workflow automation for activism"
+              },
+              {
+                "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                "icon": "🤟",
+                "label": "Creating scheduled text affirmations with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                "icon": "🛵",
+                "label": "How Goomer automated their operations with over 200 n8n workflows"
+              },
+              {
+                "url": "https://n8n.io/blog/aws-workflow-automation/",
+                "label": "7 no-code workflow automations for Amazon Web Services"
+              }
+            ],
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+              }
+            ]
+          },
+          "categories": [
+            "Development",
+            "Core Nodes"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0",
+          "subcategories": {
+            "Core Nodes": [
+              "Helpers"
+            ]
+          }
+        }
+      },
+      "group": "[\"output\"]",
+      "defaults": {
+        "name": "HTTP Request",
+        "color": "#0004F5"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+      },
+      "displayName": "HTTP Request",
+      "typeVersion": 4,
+      "nodeCategories": [
+        {
+          "id": 5,
+          "name": "Development"
+        },
+        {
+          "id": 9,
+          "name": "Core Nodes"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "icon": "file:mailgun.svg",
+      "name": "n8n-nodes-base.mailgun",
+      "codex": {
+        "data": {
+          "resources": {
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.mailgun/"
+              }
+            ],
+            "credentialDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/credentials/mailgun/"
+              }
+            ]
+          },
+          "categories": [
+            "Communication",
+            "Development"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0"
+        }
+      },
+      "group": "[\"output\"]",
+      "defaults": {
+        "name": "Mailgun"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgNjYgNjUiPjx1c2UgeGxpbms6aHJlZj0iI2EiIHg9Ii41IiB5PSIuNSIvPjxzeW1ib2wgaWQ9ImEiIG92ZXJmbG93PSJ2aXNpYmxlIj48cGF0aCBmaWxsPSIjYzAyMTI2IiBmaWxsLXJ1bGU9Im5vbnplcm8iIHN0cm9rZT0ibm9uZSIgZD0iTTMyLjA2NiAxOS45Yy02LjcgMC0xMi4xMyA1LjQzMy0xMi4xMyAxMi4xczUuNDQzIDEyLjEgMTIuMTMgMTIuMSAxMi4xMy01LjQzMyAxMi4xMy0xMi4xLTUuNDQzLTEyLjEtMTIuMTMtMTIuMU0xMy4xODEgMzJjMC0xMC40MDggOC40Ni0xOC44NTIgMTguODg1LTE4Ljg1MnMxOC44ODQgOC40NTQgMTguODg0IDE4Ljg2YzAgLjcyLS4wNjYgMS4zNzUtLjEzIDIuMDMtLjEzIDEuODMzIDEuMTggMy4yMDcgMy4wMTYgMy4yMDcgMy4wODIgMCAzLjQtMy45OTMgMy40LTUuMzAyIDAtMTMuOTQzLTExLjI4LTI1LjItMjUuMjQ2LTI1LjJTNi43NTQgMTguMDAxIDYuNzU0IDMxLjk0NHMxMS4yNzkgMjUuMiAyNS4yNDYgMjUuMmM3LjQgMCAxNC4wMzMtMy4yMDcgMTguNy04LjI0OGw1LjE4IDQuMzJBMzEuOTMgMzEuOTMgMCAwIDEgMzIgNjMuODg2Yy0xNy43MDUuMDAyLTMyLTE0LjMzNC0zMi0zMS45NDJDMCAxNC4yNyAxNC4zNiAwIDMyIDBjMTcuNzA1IDAgMzIgMTQuMzM2IDMyIDMxLjk0NCAwIDcuMDctMy40IDEyLjgzLTEwLjE2NCAxMi44My0zLjAxNiAwLTQuNzg3LTEuMzc1LTUuODM2LTIuODgtMy4zNDQgNS4zNjgtOS4yNDYgOC45MDItMTYuMDY2IDguOTAyLTEwLjI5NS4wNjUtMTguNzU0LTguMzgtMTguNzU0LTE4Ljc4NnptMTguODg1LTUuNTY0YzMuMDgyIDAgNS41NzQgMi40ODcgNS41NzQgNS40OTggMCAzLjA3Ny0yLjQ5MiA1LjU2NC01LjU3NCA1LjU2NHMtNS41NzQtMi40NzctNS41NzQtNS41NTRjLjA2Ni0zIDIuNDkyLTUuNDk4IDUuNTc0LTUuNDk4eiIvPjwvc3ltYm9sPjwvc3ZnPg=="
+      },
+      "displayName": "Mailgun",
+      "typeVersion": 1,
+      "nodeCategories": [
+        {
+          "id": 5,
+          "name": "Development"
+        },
+        {
+          "id": 6,
+          "name": "Communication"
+        }
+      ]
+    },
+    {
+      "id": 345,
+      "icon": "file:box.png",
+      "name": "n8n-nodes-base.box",
+      "codex": {
+        "data": {
+          "resources": {
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.box/"
+              }
+            ],
+            "credentialDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/credentials/box/"
+              }
+            ]
+          },
+          "categories": [
+            "Data & Storage"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0"
+        }
+      },
+      "group": "[\"input\"]",
+      "defaults": {
+        "name": "Box"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/png;base64,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"
+      },
+      "displayName": "Box",
+      "typeVersion": 1,
+      "nodeCategories": [
+        {
+          "id": 3,
+          "name": "Data & Storage"
+        }
+      ]
+    },
+    {
+      "id": 834,
+      "icon": "file:code.svg",
+      "name": "n8n-nodes-base.code",
+      "codex": {
+        "data": {
+          "alias": [
+            "cpde",
+            "Javascript",
+            "JS",
+            "Python",
+            "Script",
+            "Custom Code",
+            "Function"
+          ],
+          "details": "The Code node allows you to execute JavaScript in your workflow.",
+          "resources": {
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+              }
+            ]
+          },
+          "categories": [
+            "Development",
+            "Core Nodes"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0",
+          "subcategories": {
+            "Core Nodes": [
+              "Helpers",
+              "Data Transformation"
+            ]
+          }
+        }
+      },
+      "group": "[\"transform\"]",
+      "defaults": {
+        "name": "Code"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+      },
+      "displayName": "Code",
+      "typeVersion": 2,
+      "nodeCategories": [
+        {
+          "id": 5,
+          "name": "Development"
+        },
+        {
+          "id": 9,
+          "name": "Core Nodes"
+        }
+      ]
+    }
+  ]
+}

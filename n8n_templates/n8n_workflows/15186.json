@@ -1,0 +1,1756 @@
+{
+  "workflow": {
+    "id": 15186,
+    "name": "Create and send Pennylane invoices from webhook data with Slack and Gmail alerts",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-21T08:45:39.407Z",
+    "description": "## Who is this for\n\nSMEs and freelancers using Pennylane (the leading French accounting platform) who want to automate invoice creation from their CRM, forms, or any business tool.\n\n## What it does\n\nThis workflow receives deal or order data via a POST webhook, searches for the customer in Pennylane by email (or creates one if not found), generates a customer invoice with line items and VAT, optionally sends it by email through Pennylane, and notifies your team via Slack and/or Gmail with an HTML-formatted summary.\n\n## How to set up\n\n1. Import this workflow into n8n\n2. Create a **Header Auth** credential with name `Authorization` and value `Bearer &lt;YOUR_PENNYLANE_TOKEN&gt;`\n3. Select your Slack channel in the `SL Send Notification` node\n4. (Optional) Connect your Gmail credential for HTML email notifications\n5. Configure invoice numbering in your Pennylane settings (required for finalized invoices)\n6. Send a test POST request to the webhook URL with a sample payload\n\n## Requirements\n\n- Pennylane account with API access (Essentiel plan or higher)\n- Pennylane API token with scopes: `customer_invoices:all`, `customers:all`\n- (Optional) Slack workspace for team notifications\n- (Optional) Gmail OAuth for email notifications\n\n## How to customize\n\n- Set `draft: true` in the `Code Build Invoice Payload` node to create draft invoices for manual review before finalizing\n- Replace Slack/Gmail with Telegram or any other notification channel\n- See example payloads and CRM mappings (Pipedrive, Sellsy, Axonaut) in the GitHub repo: https://github.com/Gauthier-Huguenin/n8n-pennylane-auto-invoicing",
+    "workflow": {
+      "name": "Create and send Pennylane invoices from webhook data",
+      "nodes": [
+        {
+          "id": "2432a919-ea99-4529-969d-2f94a9f44110",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -592,
+            -272
+          ],
+          "parameters": {
+            "width": 720,
+            "height": 1376,
+            "content": "# Create and send Pennylane invoices from webhook data\n\n## Who is this for\n\nSMEs and freelancers using Pennylane (French accounting platform) who want to automate invoice creation from their CRM, forms, or any business tool.\n\n## What it does\n\nThis workflow receives deal or order data via a POST webhook, searches for the customer in Pennylane (or creates one), generates a customer invoice with line items and VAT, optionally sends it by email through Pennylane, and notifies your team via Slack and/or Gmail.\n\n## How to set up\n\n1. Import this workflow into n8n\n2. Create a Header Auth credential: name `Authorization`, value `Bearer <YOUR_PENNYLANE_TOKEN>`\n3. Select your Slack channel in the SL Send Notification node\n4. (Optional) Connect your Gmail credential for email notifications\n5. Configure invoice numbering in your Pennylane settings\n6. Send a test POST request to the webhook URL\n\n## Requirements\n\n- Pennylane account with API access (Essentiel plan or higher)\n- Pennylane API token with scopes: customer_invoices:all, customers:all\n- (Optional) Slack workspace\n- (Optional) Gmail OAuth credentials\n\nFull documentation: https://github.com/Gauthier-Huguenin/n8n-pennylane-auto-invoicing\n\n---\n\n### Flow\n\n`WH Receive Invoice Data`\n  → `Code Validate Payload`\n  → `PL Search Customer`\n  → `IF Customer Exists`\n    → ✅ `Set Customer ID`\n    → ❌ `PL Create Customer` → `Set Customer ID`\n  → `Code Build Invoice Payload`\n  → `PL Create Invoice`\n  → `IF Send Email`\n    → ✅ `Wait PDF Generation` → `PL Send Invoice Email`\n  → `Code Build Notification`\n    → `SL Send Notification`\n    → `IF Has Notification Email`\n      → ✅ `GM Send Notification`\n  → `Set Output Response`\n\n---\n\n### Node refs for $()\n\n- WH Receive Invoice Data\n- Code Validate Payload\n- PL Search Customer\n- IF Customer Exists\n- Set Customer ID\n- PL Create Customer\n- Code Build Invoice Payload\n- PL Create Invoice\n- IF Send Email\n- Wait PDF Generation\n- PL Send Invoice Email\n- Code Build Notification\n- SL Send Notification\n- IF Has Notification Email\n- GM Send Notification\n- Set Output Response"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "402c4d14-ab30-4baf-85b5-daec4ceb06f4",
+          "name": "WH Receive Invoice Data",
+          "type": "n8n-nodes-base.webhook",
+          "position": [
+            272,
+            32
+          ],
+          "webhookId": "00e37d2c-4cff-46d2-8216-7e2c2006ec47",
+          "parameters": {
+            "path": "pennylane-invoice",
+            "options": {},
+            "httpMethod": "POST",
+            "responseMode": "lastNode"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "585218e8-449a-40da-8ce7-d8157998c2f7",
+          "name": "Code Validate Payload",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            528,
+            32
+          ],
+          "parameters": {
+            "jsCode": "// Refs: 'WH Receive Invoice Data'\nconst input = $input.first().json;\n\nconst errors = [];\n\nif (!input.customer_name || input.customer_name.trim() === '') {\n  errors.push('customer_name is required');\n}\n\nif (!input.customer_email || !input.customer_email.includes('@')) {\n  errors.push('customer_email is required and must be valid');\n}\n\nif (!input.items || !Array.isArray(input.items) || input.items.length === 0) {\n  errors.push('items array is required and must contain at least one item');\n} else {\n  input.items.forEach((item, i) => {\n    if (!item.label) errors.push(`items[${i}].label is required`);\n    if (!item.quantity || item.quantity <= 0) errors.push(`items[${i}].quantity must be > 0`);\n    if (!item.unit_price || item.unit_price <= 0) errors.push(`items[${i}].unit_price must be > 0`);\n  });\n}\n\nif (errors.length > 0) {\n  throw new Error('Validation failed: ' + errors.join('; '));\n}\n\nreturn [{\n  json: {\n    customer_name: input.customer_name.trim(),\n    customer_email: input.customer_email.trim().toLowerCase(),\n    customer_address: input.customer_address || '',\n    customer_postal_code: input.customer_postal_code || '00000',\n    customer_city: input.customer_city || 'Non renseigné',\n    customer_country: input.customer_country || 'FR',\n    items: input.items.map(item => ({\n      label: item.label,\n      quantity: item.quantity,\n      unit_price: item.unit_price,\n      vat_rate: item.vat_rate || 'FR_200'\n    })),\n    due_date: input.due_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],\n    currency: input.currency || 'EUR',\n    payment_conditions: input.payment_conditions || '30_days',\n    reference: input.reference || null,\n    send_email: input.send_email || false,\n    notification_email: input.notification_email || null\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "5440a265-819f-42d4-8c26-d83cb51eb219",
+          "name": "PL Search Customer",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            832,
+            32
+          ],
+          "parameters": {
+            "url": "https://app.pennylane.com/api/external/v2/customers",
+            "options": {},
+            "sendQuery": true,
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth",
+            "queryParameters": {
+              "parameters": [
+                {
+                  "name": "filter",
+                  "value": "=[{\"field\":\"emails\",\"operator\":\"in\",\"value\":\"{{ $json.customer_email }}\"}]"
+                }
+              ]
+            }
+          },
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "",
+              "name": ""
+            }
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "8e9e52fa-654e-4b14-b72f-8c57b70744f7",
+          "name": "IF Customer Exists",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            1040,
+            32
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "85be8afd-6833-43ba-bb7b-305dd91e9a73",
+                  "operator": {
+                    "type": "number",
+                    "operation": "gt"
+                  },
+                  "leftValue": "={{ $json.items.length }}",
+                  "rightValue": 0
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "106b531c-143f-4de7-ba98-8ede691a0d01",
+          "name": "PL Create Customer",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            1248,
+            128
+          ],
+          "parameters": {
+            "url": "https://app.pennylane.com/api/external/v2/company_customers",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"name\": \"{{ $('Code Validate Payload').item.json.customer_name }}\",\n  \"emails\": [\"{{ $('Code Validate Payload').item.json.customer_email }}\"],\n  \"billing_address\": {\n    \"address\": \"{{ $('Code Validate Payload').item.json.customer_address }}\",\n    \"postal_code\": \"{{ $('Code Validate Payload').item.json.customer_postal_code }}\",\n    \"city\": \"{{ $('Code Validate Payload').item.json.customer_city }}\",\n    \"country_alpha2\": \"{{ $('Code Validate Payload').item.json.customer_country }}\"\n  }\n}",
+            "sendBody": true,
+            "specifyBody": "json",
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth"
+          },
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "",
+              "name": ""
+            }
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "49c0e376-9f63-4ded-8d0c-917cc7ddf652",
+          "name": "Set Customer ID",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            1424,
+            16
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "86d02b7a-27bd-4791-a4aa-02b7429dc7bd",
+                  "name": "=customer_id",
+                  "type": "string",
+                  "value": "={{ $json.id ?? $json.items?.[0]?.id }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "c33bd39f-5043-418c-88f9-0aaa8bc25c9d",
+          "name": "PL Create Invoice",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            1824,
+            16
+          ],
+          "parameters": {
+            "url": "https://app.pennylane.com/api/external/v2/customer_invoices",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={{ JSON.stringify($json) }}",
+            "sendBody": true,
+            "specifyBody": "json",
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth"
+          },
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "",
+              "name": ""
+            }
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "964e6cc9-ff3c-49ab-bda0-ca842e6b380e",
+          "name": "Code Build Invoice Payload",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1648,
+            16
+          ],
+          "parameters": {
+            "jsCode": "// Refs: 'Set Customer ID', 'Code Validate Payload'\nconst data = $('Code Validate Payload').first().json;\nconst customerId = $('Set Customer ID').first().json.customer_id;\n\nconst invoiceLines = data.items.map(item => ({\n  label: item.label,\n  quantity: item.quantity,\n  unit: 'piece',\n  raw_currency_unit_price: String(item.unit_price.toFixed(2)),\n  vat_rate: item.vat_rate\n}));\n\nconst today = new Date().toISOString().split('T')[0];\n\nconst payload = {\n  customer_id: customerId,\n  date: today,\n  deadline: data.due_date,\n  currency: data.currency,\n  invoice_lines: invoiceLines,\n  draft: false\n};\n\nif (data.reference) {\n  payload.external_reference = data.reference;\n}\n\nreturn [{ json: payload }];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "041e2680-0585-43e8-8df3-4a04b3c32fc3",
+          "name": "IF Send Email",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            2064,
+            16
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "de5a2cc8-def5-4777-8369-51caea43256f",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $('Code Validate Payload').item.json.send_email }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "797f431f-2ffd-42fc-afbc-f76b5806af67",
+          "name": "Code Build Notification",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2752,
+            32
+          ],
+          "parameters": {
+            "jsCode": "// Refs: 'PL Create Invoice', 'Code Validate Payload'\nconst invoice = $('PL Create Invoice').first().json;\nconst data = $('Code Validate Payload').first().json;\n\nconst message = [\n  `New invoice created in Pennylane`,\n  ``,\n  `Customer: ${data.customer_name}`,\n  `Invoice: ${invoice.invoice_number}`,\n  `Amount: ${invoice.currency_amount_before_tax} EUR HT`,\n  `Total TTC: ${invoice.currency_amount} EUR`,\n  `Due date: ${data.due_date}`,\n  `Status: ${invoice.status}`,\n  data.reference ? `Reference: ${data.reference}` : '',\n  ``,\n  `View: ${invoice.public_file_url || 'N/A'}`\n].filter(Boolean).join('\\n');\n\nreturn [{\n  json: {\n    message,\n    invoice_id: invoice.id,\n    invoice_number: invoice.invoice_number,\n    amount: invoice.currency_amount,\n    customer_name: data.customer_name,\n    public_url: invoice.public_file_url || null\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "d5f88019-04c7-43e7-a813-efbb52b954a5",
+          "name": "SL Send Notification",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            3296,
+            -112
+          ],
+          "webhookId": "f2c28848-283c-4ca1-b9c7-e47d6da805c3",
+          "parameters": {
+            "text": "={{ $json.message }}",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": ""
+            },
+            "otherOptions": {},
+            "authentication": "oAuth2"
+          },
+          "credentials": {
+            "slackOAuth2Api": {
+              "id": "",
+              "name": ""
+            }
+          },
+          "typeVersion": 2.4
+        },
+        {
+          "id": "8d44a126-0a95-4283-ab89-2ebf6e40baa7",
+          "name": "Set Output Response",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            3648,
+            32
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "c5fe5a2e-f759-4afd-907f-eacb7251481b",
+                  "name": "success",
+                  "type": "boolean",
+                  "value": true
+                },
+                {
+                  "id": "03e80656-7f61-46cd-98d4-0e7daf6636d3",
+                  "name": "invoice_id",
+                  "type": "string",
+                  "value": "={{ $('Code Build Notification').item.json.invoice_id }}"
+                },
+                {
+                  "id": "0f54ae5d-87d0-473f-9076-3b17bc24ec0d",
+                  "name": "invoice_number",
+                  "type": "string",
+                  "value": "={{ $('Code Build Notification').item.json.invoice_number }}"
+                },
+                {
+                  "id": "878b0587-95ee-4b69-8853-f51c1c356dfa",
+                  "name": "amount",
+                  "type": "string",
+                  "value": "={{ $('Code Build Notification').item.json.amount }}"
+                },
+                {
+                  "id": "ef1c38e7-d845-4604-bb8f-908fcbbe4146",
+                  "name": "customer",
+                  "type": "string",
+                  "value": "={{ $('Code Build Notification').item.json.customer_name }}"
+                },
+                {
+                  "id": "93d69fa3-86ca-4f0b-8db3-94d7177c10cf",
+                  "name": "public_url",
+                  "type": "string",
+                  "value": "={{ $('Code Build Notification').item.json.public_url }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "f12591be-0ef5-4cc5-8232-a9058b77d8b6",
+          "name": "Wait PDF Generation",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            2288,
+            -48
+          ],
+          "webhookId": "a4b7c8a5-7345-417e-8c05-4519039a97b7",
+          "parameters": {
+            "amount": 30
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "892471ed-1b8a-427c-a310-0f40ec49b632",
+          "name": "PL Send Invoice Email",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            2512,
+            -48
+          ],
+          "parameters": {
+            "url": "=https://app.pennylane.com/api/external/v2/customer_invoices/{{ $('PL Create Invoice').item.json.id }}/send_by_email",
+            "method": "POST",
+            "options": {},
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth"
+          },
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "",
+              "name": ""
+            }
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "b73e78af-3604-4d70-a583-f0074877a411",
+          "name": "GM Send Notification",
+          "type": "n8n-nodes-base.gmail",
+          "position": [
+            3216,
+            176
+          ],
+          "webhookId": "33b592da-5502-4eb7-ad16-3735811be9dc",
+          "parameters": {
+            "sendTo": "={{ $('Code Validate Payload').item.json.notification_email }}",
+            "message": "=<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background-color: #0f172a; padding: 24px; border-radius: 8px 8px 0 0;\">\n    <h1 style=\"color: #ffffff; margin: 0; font-size: 20px;\">New Invoice Created</h1>\n  </div>\n  <div style=\"background-color: #f8fafc; padding: 24px; border: 1px solid #e2e8f0;\">\n    <table style=\"width: 100%; border-collapse: collapse;\">\n      <tr>\n        <td style=\"padding: 8px 0; color: #64748b; font-size: 14px;\">Customer</td>\n        <td style=\"padding: 8px 0; color: #0f172a; font-size: 14px; font-weight: bold; text-align: right;\">{{ $('Code Build Notification').item.json.customer_name }}</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 8px 0; color: #64748b; font-size: 14px;\">Invoice</td>\n        <td style=\"padding: 8px 0; color: #0f172a; font-size: 14px; font-weight: bold; text-align: right;\">{{ $('Code Build Notification').item.json.invoice_number }}</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 8px 0; color: #64748b; font-size: 14px;\">Amount HT</td>\n        <td style=\"padding: 8px 0; color: #0f172a; font-size: 14px; font-weight: bold; text-align: right;\">{{ $('PL Create Invoice').item.json.currency_amount_before_tax }} EUR</td>\n      </tr>\n      <tr style=\"border-top: 2px solid #e2e8f0;\">\n        <td style=\"padding: 12px 0 8px; color: #64748b; font-size: 14px;\">Total TTC</td>\n        <td style=\"padding: 12px 0 8px; color: #0f172a; font-size: 18px; font-weight: bold; text-align: right;\">{{ $('Code Build Notification').item.json.amount }} EUR</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 8px 0; color: #64748b; font-size: 14px;\">Due date</td>\n        <td style=\"padding: 8px 0; color: #0f172a; font-size: 14px; text-align: right;\">{{ $('Code Validate Payload').item.json.due_date }}</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 8px 0; color: #64748b; font-size: 14px;\">Status</td>\n        <td style=\"padding: 8px 0; color: #0f172a; font-size: 14px; text-align: right;\">{{ $('PL Create Invoice').item.json.status }}</td>\n      </tr>\n    </table>\n  </div>\n  <div style=\"padding: 16px 24px; background-color: #ffffff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px; text-align: center;\">\n    <a href=\"{{ $('Code Build Notification').item.json.public_url }}\" style=\"display: inline-block; background-color: #0f172a; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 6px; font-size: 14px; font-weight: bold;\">View Invoice PDF</a>\n  </div>\n  <p style=\"color: #94a3b8; font-size: 12px; text-align: center; margin-top: 16px;\">Sent automatically by n8n-pennylane-auto-invoicing</p>\n</div>",
+            "options": {},
+            "subject": "=[Pennylane] Invoice {{ $('Code Build Notification').item.json.invoice_number }} created for {{ $('Code Build Notification').item.json.customer_name }}"
+          },
+          "credentials": {
+            "gmailOAuth2": {
+              "id": "",
+              "name": ""
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "88c6cf59-4ad7-4872-a7b1-116590237115",
+          "name": "IF Has Notification Email",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            2992,
+            96
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "94e188dc-d883-4a77-aac1-06b5bed2dbff",
+                  "operator": {
+                    "type": "string",
+                    "operation": "notEmpty",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $('Code Validate Payload').item.json.notification_email }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "adf964cd-ccdd-44c7-aaa3-4b035df2fa44",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            192,
+            -272
+          ],
+          "parameters": {
+            "color": 5,
+            "height": 624,
+            "content": "## 1. Input\n\nReceives invoice data via POST webhook.\nAny CRM, form, or script can call this endpoint.\n\nSee `examples/` folder in the GitHub repo\nfor sample payloads."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "50f9b391-c5ba-4b8e-8738-687added6648",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            432,
+            -272
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 304,
+            "height": 624,
+            "content": "## 2. Validation\n\nChecks required fields:\n- customer_name\n- customer_email\n- items[] with label, quantity, unit_price\n\nApplies defaults:\n- country: FR\n- currency: EUR\n- vat_rate: FR_200\n- due_date: +30 days\n- payment_conditions: 30_days"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "6e1dd244-3c60-405c-ae59-f1dc8a60a63c",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            736,
+            -272
+          ],
+          "parameters": {
+            "color": 3,
+            "width": 832,
+            "height": 624,
+            "content": "## 3. Customer lookup\n\nSearches Pennylane for an existing customer\nby email. Creates one if not found.\n\nEndpoint: GET /customers (filter by emails)\nEndpoint: POST /company_customers\n\nRequired billing_address fields:\naddress, postal_code, city, country_alpha2"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "4a4c4708-448f-4b1c-9a21-ba0bcdf1f6ca",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1568,
+            -272
+          ],
+          "parameters": {
+            "color": 3,
+            "width": 432,
+            "height": 624,
+            "content": "## 4. Invoice creation\n\nBuilds the invoice payload with line items,\nVAT, and deadline, then sends it to Pennylane.\n\nEndpoint: POST /customer_invoices\n\nAmounts must be strings (e.g. \"1500.00\").\nVAT codes: FR_200 (20%), FR_100 (10%),\nFR_055 (5.5%), exempt (0%).\n\nSet draft: true to create without finalizing."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "53f73bb0-8e6f-4f4d-bf16-89af06cfa1bc",
+          "name": "Sticky Note5",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2000,
+            -272
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 672,
+            "height": 624,
+            "content": "## 5. Email sending (optional)\n\nIf send_email is true in the payload,\nwaits 30s for PDF generation, then sends\nthe invoice to the customer via Pennylane.\n\nEndpoint: POST /customer_invoices/{id}/send_by_email\n\nA 409 means the PDF is not ready yet."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "83320de8-8149-4bc1-b58d-c20c20b7b549",
+          "name": "Sticky Note6",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2672,
+            -272
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 800,
+            "height": 624,
+            "content": "## 6. Notifications\n\nSlack: always sends a summary to your channel.\nGmail: sends an HTML notification if\nnotification_email is provided in the payload.\n\nBoth are optional. Remove or replace\nwith your preferred channel (Telegram, etc.)."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "bfbe45e4-cacc-4784-a309-b378ed99a2ce",
+          "name": "Sticky Note7",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3472,
+            -272
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 368,
+            "height": 624,
+            "content": "## 7. Webhook response\n\nReturns a JSON response to the caller with:\n- success: true/false\n- invoice_id\n- invoice_number\n- amount\n- customer\n- public_url (link to PDF)\n\nConfigure Error Workflow in Settings\nfor production error handling."
+          },
+          "typeVersion": 1
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "binaryMode": "separate",
+        "callerPolicy": "workflowsFromSameOwner",
+        "timeSavedMode": "fixed",
+        "availableInMCP": true,
+        "executionOrder": "v1",
+        "timeSavedPerExecution": 5
+      },
+      "connections": {
+        "IF Send Email": {
+          "main": [
+            [
+              {
+                "node": "Wait PDF Generation",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Code Build Notification",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Set Customer ID": {
+          "main": [
+            [
+              {
+                "node": "Code Build Invoice Payload",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "PL Create Invoice": {
+          "main": [
+            [
+              {
+                "node": "IF Send Email",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "IF Customer Exists": {
+          "main": [
+            [
+              {
+                "node": "Set Customer ID",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "PL Create Customer",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "PL Create Customer": {
+          "main": [
+            [
+              {
+                "node": "Set Customer ID",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "PL Search Customer": {
+          "main": [
+            [
+              {
+                "node": "IF Customer Exists",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Wait PDF Generation": {
+          "main": [
+            [
+              {
+                "node": "PL Send Invoice Email",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "GM Send Notification": {
+          "main": [
+            [
+              {
+                "node": "Set Output Response",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "SL Send Notification": {
+          "main": [
+            [
+              {
+                "node": "Set Output Response",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Code Validate Payload": {
+          "main": [
+            [
+              {
+                "node": "PL Search Customer",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "PL Send Invoice Email": {
+          "main": [
+            [
+              {
+                "node": "Code Build Notification",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Code Build Notification": {
+          "main": [
+            [
+              {
+                "node": "SL Send Notification",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "IF Has Notification Email",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "WH Receive Invoice Data": {
+          "main": [
+            [
+              {
+                "node": "Code Validate Payload",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "IF Has Notification Email": {
+          "main": [
+            [
+              {
+                "node": "GM Send Notification",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Set Output Response",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Code Build Invoice Payload": {
+          "main": [
+            [
+              {
+                "node": "PL Create Invoice",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 24,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 3
+        },
+        "n8n-nodes-base.set": {
+          "count": 2
+        },
+        "n8n-nodes-base.code": {
+          "count": 3
+        },
+        "n8n-nodes-base.wait": {
+          "count": 1
+        },
+        "n8n-nodes-base.gmail": {
+          "count": 1
+        },
+        "n8n-nodes-base.slack": {
+          "count": 1
+        },
+        "n8n-nodes-base.webhook": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 8
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 4
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Gauthier Huguenin",
+      "username": "gauthier-huguenin",
+      "bio": "Freelance AI automation consultant. I build n8n workflows, AI agents, and voice agents for SMEs. 150+ AI voice agents deployed in production. Specializing in n8n + French business tools (Pennylane, Pipedrive, Brevo). Self-hosted on Hetzner/Coolify.",
+      "verified": true,
+      "links": [
+        "https://hgnn.io/"
+      ],
+      "avatar": "https://gravatar.com/avatar/ffd7cbf6c2afbe54a27b7d3b532ee8cb5ccc55c08e4c1d4b07b860b409ef544b?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 47,
+        "icon": "file:webhook.svg",
+        "name": "n8n-nodes-base.webhook",
+        "codex": {
+          "data": {
+            "alias": [
+              "HTTP",
+              "API",
+              "Build",
+              "WH"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-custom-incident-response-workflows-with-n8n/",
+                  "label": "How to automate every step of an incident response workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Webhook"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTM1IDM3Yy0yLjIgMC00LTEuOC00LTRzMS44LTQgNC00IDQgMS44IDQgNC0xLjggNC00IDQiLz48cGF0aCBmaWxsPSIjMzc0NzRmIiBkPSJNMzUgNDNjLTMgMC01LjktMS40LTcuOC0zLjdsMy4xLTIuNWMxLjEgMS40IDIuOSAyLjMgNC43IDIuMyAzLjMgMCA2LTIuNyA2LTZzLTIuNy02LTYtNmMtMSAwLTIgLjMtMi45LjdsLTEuNyAxTDIzLjMgMTZsMy41LTEuOSA1LjMgOS40YzEtLjMgMi0uNSAzLS41IDUuNSAwIDEwIDQuNSAxMCAxMFM0MC41IDQzIDM1IDQzIi8+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTE0IDQzQzguNSA0MyA0IDM4LjUgNCAzM2MwLTQuNiAzLjEtOC41IDcuNS05LjdsMSAzLjlDOS45IDI3LjkgOCAzMC4zIDggMzNjMCAzLjMgMi43IDYgNiA2czYtMi43IDYtNnYtMmgxNXY0SDIzLjhjLS45IDQuNi01IDgtOS44IDgiLz48cGF0aCBmaWxsPSIjZTkxZTYzIiBkPSJNMTQgMzdjLTIuMiAwLTQtMS44LTQtNHMxLjgtNCA0LTQgNCAxLjggNCA0LTEuOCA0LTQgNCIvPjxwYXRoIGZpbGw9IiMzNzQ3NGYiIGQ9Ik0yNSAxOWMtMi4yIDAtNC0xLjgtNC00czEuOC00IDQtNCA0IDEuOCA0IDQtMS44IDQtNCA0Ii8+PHBhdGggZmlsbD0iI2U5MWU2MyIgZD0ibTE1LjcgMzQtMy40LTIgNS45LTkuN2MtMi0xLjktMy4yLTQuNS0zLjItNy4zIDAtNS41IDQuNS0xMCAxMC0xMHMxMCA0LjUgMTAgMTBjMCAuOS0uMSAxLjctLjMgMi41bC0zLjktMWMuMS0uNS4yLTEgLjItMS41IDAtMy4zLTIuNy02LTYtNnMtNiAyLjctNiA2YzAgMi4xIDEuMSA0IDIuOSA1LjFsMS43IDF6Ii8+PC9zdmc+"
+        },
+        "displayName": "Webhook",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 356,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmail",
+        "codex": {
+          "data": {
+            "alias": [
+              "email",
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.gmail/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Gmail"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 34,
+        "name": "Invoice Processing"
+      }
+    ],
+    "image": []
+  }
+}

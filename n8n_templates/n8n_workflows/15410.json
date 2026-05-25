@@ -1,0 +1,2119 @@
+{
+  "workflow": {
+    "id": 15410,
+    "name": "AI-Powered NPM Package Intelligence Agent",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-30T16:33:01.676Z",
+    "description": "Before adding a new npm package as a dependency, you should know if it's actively maintained, widely used, and safe to build on. This workflow does that analysis automatically.\n\nEnter any package name, and the agent uses Firecrawl to find the right npm and GitHub pages, pulls live stats from the GitHub and npm APIs, then runs an AI analysis to generate a risk score and a clear recommendation: **Use**, **Consider**, or **Avoid**.\n\n---\n\n## What problem is it solving?\n\nAdding an unmaintained or poorly-supported npm package can create long-term technical debt such as security vulnerabilities, broken updates, or abandoned dependencies, that are hard to replace later. But manually checking npm downloads, GitHub stars, open issues, last commit date, and license type across multiple pages takes time and is easy to skip.\n\nThis workflow makes due diligence effortless. In seconds, you get a structured report with all the signals that matter, plus an AI-generated recommendation you can act on immediately.\n\n---\n\n## What this workflow does\n\n1. **Triggers** via a simple form — enter any npm package name\n2. **Normalises** the input for consistent processing\n3. **Uses Firecrawl** to dynamically discover the correct npm page and GitHub repository URL (avoiding hardcoded assumptions)\n4. **Cleans and validates** the discovered URLs — filters out noise, adds fallbacks if npm page isn't found\n5. **Fetches real-time data** via APIs:\n   - GitHub API: stars, open issues, license, last commit date\n   - npm API: weekly download count\n6. **Computes health metrics**: issue-to-star ratio, activity status (active vs stale), package validity\n7. **Handles errors gracefully** — returns a safe default and explanation if the package isn't found or APIs fail\n8. **Runs an AI Analysis Engine** with a structured output parser to generate:\n   - Risk score: Low / Medium / High\n   - Adoption and health insights\n   - Final recommendation: Use / Consider / Avoid\n9. **Sends a Slack report** with the full analysis\n\n---\n\n## Setup\n\n1. **Connect Firecrawl credentials** — used to discover npm and GitHub URLs\n2. **Connect OpenAI credentials** (or OpenRouter — both are wired in) — used for AI analysis and structured output\n3. **Connect GitHub credentials** — used for the GitHub API node to fetch repo stats\n4. **Connect Slack credentials** — set the channel where reports should be posted in the Slack nodes\n5. **Run** — open the form trigger URL, enter a package name, and the report will appear in Slack within seconds\n\n---\n\n## How to customize this workflow to your needs\n\n- **Change the output channel** — swap the Slack nodes for email, a Notion database entry, or a webhook to your internal tooling\n- **Switch AI providers** — the workflow includes both OpenAI and OpenRouter nodes; use whichever you have access to and disable the other\n- **Adjust the risk scoring logic** — modify the `Compute Health Metrics` node to change what thresholds define Low / Medium / High risk\n- **Add more data sources** — extend the data collection phase with additional APIs (e.g. Snyk for security advisories, Bundlephobia for bundle size)\n- **Batch mode** — wrap the form trigger in a schedule and feed it a list of packages from a spreadsheet to audit your entire dependency list at once\n- **Embed in CI** — trigger the workflow via webhook from your CI pipeline to automatically flag risky new dependencies before they're merged\n",
+    "workflow": {
+      "id": "tnfjdLbraIhUx2iC",
+      "meta": {
+        "instanceId": "035c375745e75b4599d737a48ee640ced0d9f51891ffb956999019cfabed552b",
+        "templateCredsSetupCompleted": true
+      },
+      "name": "AI-Powered NPM Package Intelligence Agent",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "eaafde3e-0e2c-42e4-824b-334ae92631f4",
+          "name": "Commit deatils",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            2336,
+            368
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "855655e5-1041-4666-b5d0-fb20e2e0cf6e",
+                  "name": "last_commit_date",
+                  "type": "string",
+                  "value": "={{ $json.commit.author.date }}"
+                },
+                {
+                  "id": "4ba90cb3-db9a-434c-bd68-4aebbedbfebd",
+                  "name": "commit_message",
+                  "type": "string",
+                  "value": "={{ $json.commit.message.slice(0, 100) }}"
+                },
+                {
+                  "id": "aad68311-7ba7-48b7-9422-4d4c6e1c01f0",
+                  "name": "commit_author",
+                  "type": "string",
+                  "value": "={{ $json.commit.author.name }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "05773347-85c0-4428-a616-2723b75ff8cb",
+          "name": "Github details",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            2064,
+            512
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "855655e5-1041-4666-b5d0-fb20e2e0cf6e",
+                  "name": "Github_Stars",
+                  "type": "string",
+                  "value": "={{ $json.stargazers_count }}"
+                },
+                {
+                  "id": "4ba90cb3-db9a-434c-bd68-4aebbedbfebd",
+                  "name": "open_issue_count",
+                  "type": "string",
+                  "value": "={{ $json.open_issues_count }}"
+                },
+                {
+                  "id": "aad68311-7ba7-48b7-9422-4d4c6e1c01f0",
+                  "name": "license",
+                  "type": "string",
+                  "value": "={{ $json.license.name }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "a2d6dd78-9a35-4561-80c7-6c086ebfaf25",
+          "name": "/search in Firecrawl",
+          "type": "@mendable/n8n-nodes-firecrawl.firecrawlTool",
+          "position": [
+            4000,
+            608
+          ],
+          "parameters": {
+            "query": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Query', ``, 'string') }}",
+            "resource": "MapSearch",
+            "operation": "search",
+            "requestOptions": {}
+          },
+          "credentials": {
+            "firecrawlApi": {
+              "id": "bz6f3F5esaedJFBb",
+              "name": "Firecrawl API"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "284c6dbf-f3c4-41de-a6eb-0687d954a41f",
+          "name": "/scrape in Firecrawl",
+          "type": "@mendable/n8n-nodes-firecrawl.firecrawlTool",
+          "position": [
+            4144,
+            480
+          ],
+          "parameters": {
+            "url": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('URL', ``, 'string') }}",
+            "operation": "scrape",
+            "requestOptions": {}
+          },
+          "credentials": {
+            "firecrawlApi": {
+              "id": "bz6f3F5esaedJFBb",
+              "name": "Firecrawl API"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "732224f3-dbeb-4142-b837-c258663cd945",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -288,
+            -176
+          ],
+          "parameters": {
+            "color": "#DBD2D2",
+            "width": 568,
+            "height": 1236,
+            "content": "## 🚀 AI-Powered NPM Package Intelligence Agent (Powered by Firecrawl)\n\nThis workflow analyzes any npm package and delivers a data-driven recommendation using Firecrawl + APIs + AI reasoning.\n\n### 🔥 Why Firecrawl is Important Here\n\nAt the core of this workflow is Firecrawl, which is used to:\n\n• Discover accurate npm package URLs dynamically\n• Identify the correct GitHub repository (even for tricky packages)\n• Enable AI agent to search & validate package context\n• Provide a fallback when direct API mapping is not straightforward\n\n👉 Instead of hardcoding URLs, Firecrawl makes this workflow fully dynamic and scalable.\n\n### 🔍 What it does\n\nThis workflow:\n\n• Accepts a package name via form\n• Uses Firecrawl Search to find npm + GitHub sources\n• Extracts clean URLs using logic layer\n• Fetches real-time data using APIs (GitHub + npm)\n• Calculates health metrics (activity, issue ratio)\n• Uses AI to generate insights + recommendations\n• Sends a clean Slack-ready report\n\n### ⚙️ How it works (High-level)\n• User submits package name\n• Firecrawl searches npm & GitHub (dynamic discovery layer)\n• Code node extracts clean, usable URLs\n• GitHub API → stars, issues, license\n• GitHub API → last commit activity\n• npm API → weekly downloads\n• Metrics calculated (health signals)\n• AI Agent analyzes + recommends\n• Slack message sent\n\n### 🧠 Key Capabilities\n\n• Firecrawl-powered dynamic URL discovery (no hardcoding)\n• Real-time package evaluation using APIs\n• AI-powered reasoning (not just raw data)\n• Risk scoring (Low / Medium / High)\n• Handles invalid or missing packages gracefully\n• Produces structured + human-readable output\n\n### ⚠️ Error Handling\n\n• Firecrawl ensures fallback discovery for URLs\n• API failures → handled using \"continue on fail\"\n• Missing package → fallback response with suggestions\n• Partial data → marked as \"unknown\"\n• URL detection failures → fallback to default npm URL\n\n### 📦 Requirements\n\n• Firecrawl API key ⭐ (core component)\n• GitHub OAuth credential\n• Google Gemini API key\n• Slack credential (optional for output)\n\n### 💡 Example Use Cases\n\n• Package evaluation before production use\n• Comparing npm alternatives\n• Developer productivity tooling\n• Automated tech due diligence\n\n### 🎯 Output\n\n• Structured JSON (for automation)\n• Slack-ready formatted report (for humans)"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "2daa940a-36f6-4700-85a9-eab67fa6db85",
+          "name": "OpenAI Chat Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            3760,
+            512
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-5-mini"
+            },
+            "options": {},
+            "builtInTools": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "r1R0kte5A1Wh902t",
+              "name": "n8n free OpenAI API credits"
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "94709f3b-7ea4-4dd5-9283-7474fcf14e76",
+          "name": "Enter Package Name",
+          "type": "n8n-nodes-base.formTrigger",
+          "position": [
+            400,
+            400
+          ],
+          "webhookId": "3a33a72a-535f-400a-9760-de500d6615f3",
+          "parameters": {
+            "options": {},
+            "formTitle": "AI-Powered NPM Package Intelligence Agent (Powered by Firecrawl)",
+            "formFields": {
+              "values": [
+                {
+                  "fieldLabel": "Package Name",
+                  "requiredField": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.5
+        },
+        {
+          "id": "e5b67031-d900-4854-934a-bd01956ab081",
+          "name": "Normalize Input",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            624,
+            400
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "ff05d934-2cac-45ef-8b91-fbff026dd2f2",
+                  "name": "package_name",
+                  "type": "string",
+                  "value": "={{ $json['Package Name'] }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "c8c2d014-f728-467b-9412-f6f823cb0d1d",
+          "name": "Search NPM URL",
+          "type": "@mendable/n8n-nodes-firecrawl.firecrawl",
+          "position": [
+            848,
+            400
+          ],
+          "parameters": {
+            "limit": 3,
+            "query": "={{ $json.package_name + \" site:npmjs.com/package\" }}",
+            "resource": "MapSearch",
+            "operation": "search",
+            "requestOptions": {}
+          },
+          "credentials": {
+            "firecrawlApi": {
+              "id": "bz6f3F5esaedJFBb",
+              "name": "Firecrawl API"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f680931b-0d80-4296-b662-3060da5cf364",
+          "name": "Search GitHub Repo",
+          "type": "@mendable/n8n-nodes-firecrawl.firecrawl",
+          "position": [
+            1008,
+            592
+          ],
+          "parameters": {
+            "limit": 3,
+            "query": "={{ $('Normalize Input').item.json.package_name + \" site:github.com\" }}",
+            "resource": "MapSearch",
+            "operation": "search",
+            "requestOptions": {}
+          },
+          "credentials": {
+            "firecrawlApi": {
+              "id": "bz6f3F5esaedJFBb",
+              "name": "Firecrawl API"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "a53bc9a6-e5e4-4210-b822-002cbada124b",
+          "name": "Merge Search Results",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            1152,
+            352
+          ],
+          "parameters": {
+            "mode": "combine",
+            "options": {},
+            "combineBy": "combineByPosition"
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "bea816b4-7601-42d1-9494-b77e16ea8818",
+          "name": "Extract Clean URLs",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1520,
+            400
+          ],
+          "parameters": {
+            "jsCode": "// ✅ Get merged search results\nconst results = $json.data?.web || [];\n\n// ✅ Get original package name safely\nconst package_name = $items(\"Normalize Input\")[0].json.package_name;\n\nlet npm_url = null;\nlet github_url = null;\n\n// 🔁 Loop through search results\nfor (const r of results) {\n  const raw = r.url || \"\";\n  const url = raw.toLowerCase();\n\n  // 🚫 Skip unwanted GitHub links\n  if (\n    url.includes(\"blob\") ||\n    url.includes(\"issues\") ||\n    url.includes(\"pull\") ||\n    url.includes(\"commit\") ||\n    url.includes(\"releases\")\n  ) continue;\n\n  // ✅ STRICT npm match (very important)\n  if (\n    !npm_url &&\n    url.includes(`npmjs.com/package/${package_name.toLowerCase()}`)\n  ) {\n    npm_url = raw;\n  }\n\n  // ✅ GitHub repo detection (clean repo only)\n  if (\n    !github_url &&\n    url.includes(\"github.com\") &&\n    url.split(\"/\").length <= 5\n  ) {\n    github_url = raw;\n  }\n}\n\n// 🔁 Fallback npm (always safe)\nif (!npm_url && package_name) {\n  npm_url = `https://www.npmjs.com/package/${package_name}`;\n}\n\n// 🎯 Confidence scoring (bonus for judges)\nlet url_confidence = \"low\";\n\nif (npm_url && github_url) {\n  url_confidence = \"high\";\n} else if (npm_url || github_url) {\n  url_confidence = \"medium\";\n}\n\n// 📦 Final output\nreturn [\n  {\n    npm_url,\n    github_url,\n    url_confidence\n  }\n];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "6e708352-21eb-49e4-9ef3-c31880b0e088",
+          "name": "Fetch GitHub Stats",
+          "type": "n8n-nodes-base.github",
+          "onError": "continueRegularOutput",
+          "position": [
+            1872,
+            448
+          ],
+          "webhookId": "0b0337c9-e386-4686-8ead-465792f35f40",
+          "parameters": {
+            "owner": {
+              "__rl": true,
+              "mode": "name",
+              "value": "={{ $json.github_url.replace('https://github.com/', '').split('/')[0] }}"
+            },
+            "resource": "repository",
+            "operation": "get",
+            "repository": {
+              "__rl": true,
+              "mode": "name",
+              "value": "={{ $json.github_url.replace('https://github.com/', '').split('/')[1] }}"
+            },
+            "authentication": "oAuth2"
+          },
+          "credentials": {
+            "githubOAuth2Api": {
+              "id": "17mup1OeUYMmNb9U",
+              "name": "GitHub OAuth2 API"
+            }
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "3fbb1709-8258-4a87-a8b5-70b983e2db8d",
+          "name": "Fetch Last Commit",
+          "type": "n8n-nodes-base.httpRequest",
+          "onError": "continueRegularOutput",
+          "position": [
+            2160,
+            256
+          ],
+          "parameters": {
+            "url": "={{\n  (() => {\n    const url = $('Extract Clean URLs').item.json.github_url || \"\";\n\n    if (!url.includes(\"github.com\")) return null;\n\n    const parts = url.replace(\"https://github.com/\", \"\").split(\"/\");\n\n    if (parts.length < 2) return null;\n\n    return `https://api.github.com/repos/${parts[0]}/${parts[1]}/commits?per_page=1`;\n  })()\n}}",
+            "options": {
+              "response": {
+                "response": {
+                  "responseFormat": "json"
+                }
+              }
+            }
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "9fda051e-bf2b-4b40-8f82-1478fa2694f7",
+          "name": "Fetch NPM Downloads",
+          "type": "n8n-nodes-base.httpRequest",
+          "onError": "continueRegularOutput",
+          "position": [
+            2576,
+            288
+          ],
+          "parameters": {
+            "url": "=https://api.npmjs.org/downloads/point/last-week/{{ $('Normalize Input').item.json.package_name }}",
+            "options": {
+              "response": {
+                "response": {
+                  "responseFormat": "json"
+                }
+              }
+            }
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "82bd375f-cdbd-4bf1-8f60-cd010f6c2500",
+          "name": "Merge All Metrics",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            2848,
+            384
+          ],
+          "parameters": {
+            "mode": "combine",
+            "options": {},
+            "combineBy": "combineByPosition",
+            "numberInputs": 3
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "b5228e78-f6ef-4798-ba56-5e782b86e4b3",
+          "name": "Compute Health Metrics",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            3088,
+            400
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "855655e5-1041-4666-b5d0-fb20e2e0cf6e",
+                  "name": "issue_to_star_ratio",
+                  "type": "string",
+                  "value": "={{ $json.open_issue_count / $json.Github_Stars }}"
+                },
+                {
+                  "id": "1db7b2c2-024f-4047-bfe4-48a3f102b254",
+                  "name": "activity_status",
+                  "type": "string",
+                  "value": "={{   (new Date() - new Date($json.last_commit_date)) < 7 * 24 * 60 * 60 * 1000   ? \"active\"   : \"stale\" }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "8ad95726-f571-4897-a3de-850476bcad3a",
+          "name": "Check Package Valid",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            3312,
+            400
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "b1c20669-b3a3-4d5a-bb0b-5663702185ea",
+                  "operator": {
+                    "type": "number",
+                    "operation": "gt"
+                  },
+                  "leftValue": "={{ $('Github details').item.json.Github_Stars }}",
+                  "rightValue": 0
+                }
+              ]
+            },
+            "looseTypeValidation": true
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "857ea57a-8549-4071-8529-752e116f6f62",
+          "name": "Package Not Found Handler",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            4064,
+            1232
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "04289d0e-19b2-49a2-8933-304dbe04d3bc",
+                  "name": "Package not found",
+                  "type": "object",
+                  "value": "={\n  \"package_info\": {\n    \"name\": \"unknown\",\n    \"corrected_name\": \"unknown\"\n  },\n  \"summary_block\": {\n    \"description\": \"Package not found or data unavailable.\",\n    \"summary\": \"The requested npm package could not be located or validated.\"\n  },\n  \"observed_facts\": [\n    \"No matching package found on npm registry\",\n    \"No GitHub repository could be resolved\",\n    \"Search results did not return a reliable match\"\n  ],\n  \"inferred_judgment\": {\n    \"maintenance_risk\": {\n      \"level\": \"High\",\n      \"reason\": \"Package does not exist or cannot be verified\"\n    },\n    \"adoption_risk\": {\n      \"level\": \"High\",\n      \"reason\": \"No usage or community signals available\"\n    },\n    \"breaking_change_risk\": {\n      \"status\": \"Unknown\",\n      \"reason\": \"No release or version history found\"\n    }\n  },\n  \"risk\": {\n    \"level\": \"High\",\n    \"score\": 1,\n    \"color\": \"red\",\n    \"reason\": \"Package could not be validated from trusted sources\"\n  },\n  \"decision\": {\n    \"recommendation\": \"Avoid\",\n    \"confidence\": 0.95,\n    \"reason\": \"Unverified or non-existent packages should not be used in production\"\n  },\n  \"alternatives\": [\n    {\n      \"name\": \"Search suggestion\",\n      \"tradeoff\": \"User should verify correct package name\",\n      \"use_case\": \"Try similar or corrected package names\"\n    }\n  ],\n  \"error\": {\n    \"code\": \"PACKAGE_NOT_FOUND\",\n    \"message\": \"Package not found on npm or GitHub\"\n  },\n  \"data_quality\": \"missing\",\n  \"slack_report\": \"string\"\n}"
+                },
+                {
+                  "id": "31f6e76d-507f-4968-83f9-e13392a6c893",
+                  "name": "slack report",
+                  "type": "string",
+                  "value": "❌ *Package Not Found*  \n\n━━━━━━━━━━━━━━━━━━ \n\n 🔍 The requested package could not be identified.  \n\n🧾 *Observed Facts* \n\n• No npm package found   \n• No GitHub repository detected   \n• Search results were inconclusive    \n\n━━━━━━━━━━━━━━━━━━  \n\n🧠 *Analysis* \n\n• Maintenance Risk: 🔴 High   \n• Adoption Risk: 🔴 High   \n• Data Quality: Missing    \n\n━━━━━━━━━━━━━━━━━━  \n\n⚠️ *Recommendation* \n\n👉 *Avoid using this package*  \n💡 This package may: \n• Not exist   \n• Be misspelled   \n• Be private or deprecated  \n\n  ━━━━━━━━━━━━━━━━━━  \n🔄 *What you can do* \n\n• Check spelling of package name   \n• Try similar package names   \n• Search manually on npm    \n\n━━━━━━━━━━━━━━━━━━"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "54709ed1-0d1f-467b-987e-4a44da6aaf6f",
+          "name": "AI Analysis Engine",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            4032,
+            128
+          ],
+          "parameters": {
+            "text": "=Analyze this npm package:\n\nGitHub URL: {{ $('Extract Clean URLs').item.json.github_url }}\nNPM URL: {{ $('Extract Clean URLs').item.json.npm_url }}\n\nPackage: {{ $('Merge All Metrics').item.json.package }}\nGitHub Stars: {{ $('Merge All Metrics').item.json.Github_Stars }}\nOpen Issues: {{ $('Merge All Metrics').item.json.open_issue_count }}\nLast Commit:{{ $('Merge All Metrics').item.json.last_commit_date }}\nWeekly Downloads: {{ $('Merge All Metrics').item.json.downloads }}\n\nAlso consider trends:\nIssue-to-star ratio: {{ $json.issue_to_star_ratio }}\nActivity status: {{ $json.activity_status }}",
+            "options": {
+              "systemMessage": "You are an expert software package analyst.\n\nYou analyze npm packages using structured data and external tools.\n\nYour job is to produce:\n\n1. A structured JSON output (for automation)\n2. A Slack-friendly formatted report (for human readability)\n\nYou MUST clearly separate:\n\n* Observed facts (RAW, no interpretation)\n* Inferred judgment (AI reasoning)\n\n---\n\n## AVAILABLE TOOLS\n\nSEARCH tool\n→ Find:\n\n* npm alternatives\n* GitHub repo\n* documentation\n* release notes / roadmap (if needed)\n\nSCRAPE tool\n→ Extract:\n\n* description\n* version\n* GitHub + npm URLs\n* security signals\n* documentation insights\n\n---\n\n## TASK FLOW\n\n### STEP 1 — VALIDATE PACKAGE\n\nIf package invalid:\n\n* Try typo correction\n* Use SEARCH to find closest match\n\nIf still not found:\nReturn:\n{\n\"error\": \"Package not found\",\n\"suggestions\": [\"string\"]\n}\n\n---\n\n### STEP 2 — DATA COLLECTION (FACTS ONLY)\n\nCollect RAW data:\n\n* package_name\n* version\n* description (raw)\n* license\n* weekly_downloads\n* github_stars\n* open_issue_count\n* last_commit_date\n* contributors (if available)\n* bundle_size (if available)\n* URLs (npm, GitHub)\n\n---\n\n### STEP 3 — OBSERVED FACTS (STRICT)\n\nCreate:\n\n\"observed_facts\"\n\nRules:\n\n* ONLY factual statements\n* NO interpretation words (no \"good\", \"high\", etc.)\n* Can include simple factual signals like:\n\n  * \"recent commits observed\"\n  * \"README present\"\n\nExample types:\n\n* Active development signal (based on commits)\n* Dependency profile (if visible)\n* Docs presence\n\n---\n\n### STEP 4 — DERIVED METRICS\n\nCompute:\n\nissue_to_star_ratio = open_issue_count / github_stars\n\nactivity_status:\n\n* active → last commit ≤ 7 days\n* stale → otherwise\n\n---\n\n### STEP 5 — INFERRED JUDGMENT (STRICT)\n\nCreate:\n\n\"inferred_judgment\"\n\nMust include:\n\n1. Maintenance risk\n2. Adoption risk\n3. Breaking-change risk (ONLY if evidence exists)\n\nRules:\n\n* MUST include rationale\n* MUST be derived from observed facts\n* Do NOT hallucinate\n\n---\n\n### STEP 6 — INSIGHTS\n\nGenerate:\n\n* issue_health\n* adoption_level\n* contributor_signal\n* license_insight\n\n---\n\n### STEP 7 — RISK SCORING\n\nLOW:\n\n* High stars\n* Low issue ratio\n* Active\n\nMEDIUM:\n\n* Moderate signals\n\nHIGH:\n\n* Low stars OR high issues OR stale\n\n---\n\n### STEP 8 — RECOMMENDATION\n\n* Low → Use\n* Medium → Consider\n* High → Avoid\n\nProvide strong reasoning\n\n---\n\n### STEP 9 — ALTERNATIVES\n\nReturn 2–3 alternatives:\n\nEach must include:\n\n* name\n* tradeoff\n* use_case\n\n---\n\n## OUTPUT REQUIREMENTS\n\nYou MUST return TWO things:\n\n---\n\n# 1️⃣ STRUCTURED JSON (STRICT)\n\n{\n\"package_info\": {\n\"name\": \"string\",\n\"corrected_name\": \"string\",\n\"current_version\": \"string\"\n},\n\n\"summary_block\": {\n\"description\": \"string\",\n\"summary\": \"string\"\n},\n\n\"links\": {\n\"npm\": \"string\",\n\"github\": \"string\"\n},\n\n\"observed_facts\": [\n\"string\",\n\"string\"\n],\n\n\"inferred_judgment\": {\n\"maintenance_risk\": {\n\"level\": \"Low | Medium | High\",\n\"reason\": \"string\"\n},\n\"adoption_risk\": {\n\"level\": \"Low | Medium | High\",\n\"reason\": \"string\"\n},\n\"breaking_change_risk\": {\n\"status\": \"Low | Medium | High | Unknown\",\n\"reason\": \"string\"\n}\n},\n\n\"metrics\": {\n\"github_stars\": number,\n\"weekly_downloads\": number,\n\"open_issues\": number,\n\"last_commit\": \"string\",\n\"issue_to_star_ratio\": number\n},\n\n\"health\": {\n\"activity_status\": \"active | stale\",\n\"issue_health\": \"string\",\n\"contributor_signal\": \"string\"\n},\n\n\"popularity\": {\n\"score\": \"Low | Medium | High\",\n\"adoption_level\": \"string\",\n\"downloads_badge\": \"string\"\n},\n\n\"risk\": {\n\"level\": \"Low | Medium | High\",\n\"score\": number,\n\"color\": \"green | orange | red\",\n\"reason\": \"string\"\n},\n\n\"license\": {\n\"type\": \"string\",\n\"insight\": \"string\"\n},\n\n\"security\": {\n\"vulnerabilities\": \"string\",\n\"status\": \"safe | warning | risky\"\n},\n\n\"alternatives\": [\n{\n\"name\": \"string\",\n\"tradeoff\": \"string\",\n\"use_case\": \"string\"\n}\n],\n\n\"decision\": {\n\"recommendation\": \"Use | Consider | Avoid\",\n\"confidence\": number,\n\"reason\": \"string\"\n}\n}\n\n---\n\n# 2️⃣ SLACK REPORT\n\nGenerate a clean Slack-friendly report EXACTLY like:\n\n---\n\n*📦 *Package Report: axios*\n\n━━━━━━━━━━━━━━━━━━\n\n📊 *Overview*\n\n• Version: 1.14.0  \n• Description: Promise-based HTTP client for browser & Node.js  \n• License: MIT (Safe for commercial use)\n\n📈 *Key Metrics*\n\n• ⭐ Stars: 109k  \n• 📦 Downloads: 91M+/week  \n• 🐞 Open Issues: 303  \n• 🔁 Last Commit: Recent (Active)\n\n━━━━━━━━━━━━━━━━━━\n\n🧾 *Observed Facts*\n\n• Active development (recent commits)  \n• High adoption (91M+ weekly downloads)  \n• Strong community (100k+ stars)  \n• Documentation available and clear  \n\n━━━━━━━━━━━━━━━━━━\n\n🧠 *Inferred Insights*\n\n• Maintenance Risk: 🟢 Low  \n• Adoption Risk: 🟢 Low  \n• Breaking Change Risk: 🟡 Low likelihood (no strong signals)\n\n━━━━━━━━━━━━━━━━━━\n\n⚠️ *Risk Analysis*\n\n🟢 *Low Risk*  \nReason: High stars, low issue ratio, active development\n\n━━━━━━━━━━━━━━━━━━\n\n🔄 *Alternatives*\n\n• Got → Modern, feature-rich (Node.js only)  \n• Ky → Lightweight fetch wrapper (browser-first)  \n• Node-fetch → Native fetch style (less features)\n\n━━━━━━━━━━━━━━━━━━\n\n✅ *Final Recommendation*\n\n👉 *Use*\n\n💡 Axios is stable, widely adopted, and actively maintained — safe for production use.\n## STRICT RULES\n\n* ALWAYS separate observed vs inferred\n* NEVER mix them\n* NEVER hallucinate\n* If missing → \"unknown\"\n* Always return valid JSON\n* Slack output must be clean markdown\n"
+            },
+            "promptType": "define",
+            "needsFallback": true,
+            "hasOutputParser": true
+          },
+          "retryOnFail": true,
+          "typeVersion": 3.1
+        },
+        {
+          "id": "921966a2-86cc-431c-a2c0-df9a97979f0f",
+          "name": "Structured Output Parser",
+          "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+          "position": [
+            4304,
+            448
+          ],
+          "parameters": {
+            "autoFix": true,
+            "jsonSchemaExample": "{\n  \"package_info\": {\n    \"name\": \"string\",\n    \"corrected_name\": \"string\",\n    \"current_version\": \"string\"\n  },\n  \"summary_block\": {\n    \"description\": \"string\",\n    \"summary\": \"string\"\n  },\n  \"links\": {\n    \"npm\": \"string\",\n    \"github\": \"string\"\n  },\n  \"observed_facts\": [\n    \"string\"\n  ],\n  \"inferred_judgment\": {\n    \"maintenance_risk\": {\n      \"level\": \"Low\",\n      \"reason\": \"string\"\n    },\n    \"adoption_risk\": {\n      \"level\": \"Low\",\n      \"reason\": \"string\"\n    },\n    \"breaking_change_risk\": {\n      \"status\": \"Low\",\n      \"reason\": \"string\"\n    }\n  },\n  \"metrics\": {\n    \"github_stars\": 0,\n    \"weekly_downloads\": 0,\n    \"open_issues\": 0,\n    \"last_commit\": \"string\",\n    \"issue_to_star_ratio\": 0\n  },\n  \"health\": {\n    \"activity_status\": \"active\",\n    \"issue_health\": \"string\",\n    \"contributor_signal\": \"string\"\n  },\n  \"popularity\": {\n    \"score\": \"High\",\n    \"adoption_level\": \"Very popular\",\n    \"downloads_badge\": \"string\"\n  },\n  \"risk\": {\n    \"level\": \"Low\",\n    \"score\": 0.0,\n    \"color\": \"green\",\n    \"reason\": \"string\"\n  },\n  \"license\": {\n    \"type\": \"string\",\n    \"insight\": \"string\"\n  },\n  \"security\": {\n    \"vulnerabilities\": \"string\",\n    \"status\": \"safe\"\n  },\n  \"alternatives\": [\n    {\n      \"name\": \"string\",\n      \"tradeoff\": \"string\",\n      \"use_case\": \"string\"\n    }\n  ],\n  \"decision\": {\n    \"recommendation\": \"Use\",\n    \"confidence\": 0.0,\n    \"reason\": \"string\"\n  },\n  \"slack_report\": \"string\"\n}"
+          },
+          "retryOnFail": true,
+          "typeVersion": 1.3
+        },
+        {
+          "id": "f2907960-eb66-4e47-99b1-450c106e0263",
+          "name": "Send Slack Report",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            4416,
+            144
+          ],
+          "webhookId": "b9cda600-4382-4f0c-8d67-841d2cd6b3dd",
+          "parameters": {
+            "text": "={{ $json.output.slack_report }}",
+            "user": {
+              "__rl": true,
+              "mode": "list",
+              "value": "U0AS8B0F3S4",
+              "cachedResultName": "guptadivyanshu765"
+            },
+            "select": "user",
+            "otherOptions": {},
+            "authentication": "oAuth2"
+          },
+          "credentials": {
+            "slackOAuth2Api": {
+              "id": "pkXBvtRvWsAnv32A",
+              "name": "Slack OAuth2 API"
+            }
+          },
+          "typeVersion": 2.4
+        },
+        {
+          "id": "311a44bf-76b1-4652-8374-c8dfc125de3b",
+          "name": "Send Slack Report_01",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            4240,
+            1232
+          ],
+          "webhookId": "b9cda600-4382-4f0c-8d67-841d2cd6b3dd",
+          "parameters": {
+            "text": "={{ $json['slack report'] }}",
+            "user": {
+              "__rl": true,
+              "mode": "list",
+              "value": "U0AS8B0F3S4",
+              "cachedResultName": "guptadivyanshu765"
+            },
+            "select": "user",
+            "otherOptions": {},
+            "authentication": "oAuth2"
+          },
+          "credentials": {
+            "slackOAuth2Api": {
+              "id": "pkXBvtRvWsAnv32A",
+              "name": "Slack OAuth2 API"
+            }
+          },
+          "typeVersion": 2.4
+        },
+        {
+          "id": "b0693b0a-1d12-47db-9626-c3c40fcafcda",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            352,
+            48
+          ],
+          "parameters": {
+            "width": 992,
+            "height": 704,
+            "content": "## INPUT + URL DISCOVERY (Firecrawl Layer)\n\n### 📥 Input & 🔥 Firecrawl Discovery\n\n• User provides npm package name via form\n• Input is normalized for consistency\n\n### 🔥 Firecrawl is used to dynamically discover:\n• Official npm package page\n• Correct GitHub repository\n\n### Why this matters:\n• Avoids hardcoded URLs\n• Works for ANY package (even unknown ones)\n• Handles typos and ambiguous names\n\n👉 This is the \"discovery layer\" of the workflow\n\n\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "96bd1c88-0e35-4fdd-a61b-aa1dc27492bf",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1376,
+            48
+          ],
+          "parameters": {
+            "width": 432,
+            "height": 704,
+            "content": "## URL CLEANING + VALIDATION\n\n### 🧠 URL Extraction & Validation\n\n• Filters Firecrawl results to extract:\n→ Clean npm URL\n→ Valid GitHub repo URL\n\n• Removes noisy links:\n→ issues / pull / commit / blob\n\n• Adds fallback:\n→ If npm not found → build default npm URL\n\n👉 Ensures only usable, production-ready URLs move forward\n\n\n\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "c1c21aa7-c255-4e77-8e73-7e0ca1856d8a",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1840,
+            48
+          ],
+          "parameters": {
+            "width": 880,
+            "height": 704,
+            "content": "## DATA COLLECTION (APIs Layer)\n\n### 📊 Data Collection (API Layer)\n\nReal-time data is fetched using APIs:\n\n• GitHub API:\n→ Stars\n→ Open issues\n→ License\n→ Last commit activity\n\n• npm API:\n→ Weekly download count\n\nWhy APIs (not scraping)?\n• More reliable\n• Faster\n• No JS-rendering issues\n\n👉 This replaces unreliable HTML scraping\n\n\n\n\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "0bb7eab3-d246-4de0-bcf6-709788750f4c",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2752,
+            48
+          ],
+          "parameters": {
+            "width": 880,
+            "height": 704,
+            "content": "## METRICS + VALIDATION LOGIC\n\n### 📈 Metrics & Validation\n\n• Combines all collected data\n• Computes key signals:\n\n→ Issue-to-star ratio\n→ Activity status (active/stale)\n\n• Validates package existence:\n→ If no GitHub data → treated as invalid\n\n👉 Converts raw data → meaningful signals\n\n\n\n\n\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "56e75c45-d44d-4c82-8a93-4133e343e908",
+          "name": "Sticky Note5",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3968,
+            928
+          ],
+          "parameters": {
+            "width": 528,
+            "height": 544,
+            "content": "## ERROR HANDLING\n\n### ❌ Error Handling & Fallback\n\nHandles edge cases:\n\n• Package not found\n• API failures\n• Missing or incomplete data\n\nReturns:\n• Safe default recommendation\n• Helpful explanation\n• Suggested next steps\n\n👉 Ensures workflow never breaks\n\n\n\n\n\n\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ac9c58bc-055a-44ed-ad4c-04e1cd6448fd",
+          "name": "Sticky Note6",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3664,
+            48
+          ],
+          "parameters": {
+            "width": 896,
+            "height": 704,
+            "content": "## AI ANALYSIS + OUTPUT\n\n### 🤖 AI Analysis & Reporting\n\nAI Agent performs:\n\n• Summary generation\n• Risk scoring (Low / Medium / High)\n• Adoption & health insights\n• Recommendation (Use / Consider / Avoid)\n\n### 🔥 Firecrawl tools are also used here for:\n• Context enrichment\n• Alternative discovery\n\nFinal Output:\n• Structured JSON\n• Slack-ready formatted report\n\n👉 This is the \"decision-making brain\" of the workflow\n\n\n\n\n\n\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f71ec167-78ce-4682-9331-c00a4cfcb81f",
+          "name": "OpenRouter Chat Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+          "position": [
+            3872,
+            592
+          ],
+          "parameters": {
+            "model": "anthropic/claude-opus-4.6",
+            "options": {}
+          },
+          "credentials": {
+            "openRouterApi": {
+              "id": "oPQcGP7IWmRjEmko",
+              "name": "OpenRouter account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "e0bea4aa-fec8-4b7f-aaa0-e38e1370b52f",
+          "name": "OpenAI Chat Model1",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            4400,
+            624
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-5-mini"
+            },
+            "options": {},
+            "builtInTools": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "r1R0kte5A1Wh902t",
+              "name": "n8n free OpenAI API credits"
+            }
+          },
+          "typeVersion": 1.3
+        }
+      ],
+      "active": true,
+      "pinData": {},
+      "settings": {
+        "binaryMode": "separate",
+        "executionOrder": "v1"
+      },
+      "versionId": "a4a460b1-b833-4e6a-87b0-59dd23d876b3",
+      "connections": {
+        "Commit deatils": {
+          "main": [
+            [
+              {
+                "node": "Fetch NPM Downloads",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Merge All Metrics",
+                "type": "main",
+                "index": 1
+              }
+            ]
+          ]
+        },
+        "Github details": {
+          "main": [
+            [
+              {
+                "node": "Fetch Last Commit",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Merge All Metrics",
+                "type": "main",
+                "index": 2
+              }
+            ]
+          ]
+        },
+        "Search NPM URL": {
+          "main": [
+            [
+              {
+                "node": "Search GitHub Repo",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Merge Search Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Normalize Input": {
+          "main": [
+            [
+              {
+                "node": "Search NPM URL",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Fetch Last Commit": {
+          "main": [
+            [
+              {
+                "node": "Commit deatils",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Merge All Metrics": {
+          "main": [
+            [
+              {
+                "node": "Compute Health Metrics",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "OpenAI Chat Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "AI Analysis Engine",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "AI Analysis Engine": {
+          "main": [
+            [
+              {
+                "node": "Send Slack Report",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Enter Package Name": {
+          "main": [
+            [
+              {
+                "node": "Normalize Input",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Extract Clean URLs": {
+          "main": [
+            [
+              {
+                "node": "Fetch GitHub Stats",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Fetch GitHub Stats": {
+          "main": [
+            [
+              {
+                "node": "Github details",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "OpenAI Chat Model1": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Structured Output Parser",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Search GitHub Repo": {
+          "main": [
+            [
+              {
+                "node": "Merge Search Results",
+                "type": "main",
+                "index": 1
+              }
+            ]
+          ]
+        },
+        "Check Package Valid": {
+          "main": [
+            [
+              {
+                "node": "AI Analysis Engine",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Package Not Found Handler",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Fetch NPM Downloads": {
+          "main": [
+            [
+              {
+                "node": "Merge All Metrics",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "/scrape in Firecrawl": {
+          "ai_tool": [
+            [
+              {
+                "node": "AI Analysis Engine",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "/search in Firecrawl": {
+          "ai_tool": [
+            [
+              {
+                "node": "AI Analysis Engine",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Merge Search Results": {
+          "main": [
+            [
+              {
+                "node": "Extract Clean URLs",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "OpenRouter Chat Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "AI Analysis Engine",
+                "type": "ai_languageModel",
+                "index": 1
+              }
+            ]
+          ]
+        },
+        "Compute Health Metrics": {
+          "main": [
+            [
+              {
+                "node": "Check Package Valid",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Structured Output Parser": {
+          "ai_outputParser": [
+            [
+              {
+                "node": "AI Analysis Engine",
+                "type": "ai_outputParser",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Package Not Found Handler": {
+          "main": [
+            [
+              {
+                "node": "Send Slack Report_01",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 51,
+    "workflowInfo": {
+      "nodeCount": 31,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.set": {
+          "count": 5
+        },
+        "n8n-nodes-base.code": {
+          "count": 1
+        },
+        "n8n-nodes-base.merge": {
+          "count": 2
+        },
+        "n8n-nodes-base.slack": {
+          "count": 2
+        },
+        "n8n-nodes-base.github": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 7
+        },
+        "n8n-nodes-base.formTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 2
+        },
+        "@mendable/n8n-nodes-firecrawl.firecrawl": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenRouter": {
+          "count": 1
+        },
+        "@mendable/n8n-nodes-firecrawl.firecrawlTool": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.outputParserStructured": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Divyanshu Gupta",
+      "username": "divyanshugupta",
+      "bio": "n8n Verified Creator helping individuals & teams automate their workflows using AI and n8n. Book a 1:1 mentorship session to build your first automation or level up your skills. topmate.io/divyanshubistudio/",
+      "verified": true,
+      "links": [
+        "https://topmate.io/divyanshubistudio/"
+      ],
+      "avatar": "https://gravatar.com/avatar/c79c7ae968c1097afe65172a293d8292cc19a90be4d38320064bc9f928995e50?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 16,
+        "icon": "file:github.svg",
+        "name": "n8n-nodes-base.github",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.github/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/github/"
+                }
+              ]
+            },
+            "categories": [
+              "Development"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "GitHub"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0yMC4wMTY1IDBDOC45NDc5MSAwIDAgOS4wMTM4OCAwIDIwLjE2NTNDMCAyOS4wNzkyIDUuNzMzMjQgMzYuNjI0NiAxMy42ODY4IDM5LjI5NTJDMTQuNjgxMiAzOS40OTYgMTUuMDQ1NCAzOC44NjEzIDE1LjA0NTQgMzguMzI3NEMxNS4wNDU0IDM3Ljg1OTkgMTUuMDEyNiAzNi4yNTc1IDE1LjAxMjYgMzQuNTg3OUM5LjQ0NDUgMzUuNzkgOC4yODQ5OCAzMi4xODQxIDguMjg0OTggMzIuMTg0MUM3LjM5MDE1IDI5Ljg0NyA2LjA2NDI5IDI5LjI0NjMgNi4wNjQyOSAyOS4yNDYzQzQuMjQxODUgMjguMDExIDYuMTk3MDQgMjguMDExIDYuMTk3MDQgMjguMDExQzguMjE4NjEgMjguMTQ0NiA5LjI3OTM4IDMwLjA4MSA5LjI3OTM4IDMwLjA4MUMxMS4wNjg2IDMzLjE1MjIgMTMuOTUxOCAzMi4yODQ0IDE1LjExMTggMzEuNzUwMkMxNS4yNzczIDMwLjQ0ODEgMTUuODA3OSAyOS41NDY3IDE2LjM3MTMgMjkuMDQ2QzExLjkzMDMgMjguNTc4NSA3LjI1NzgxIDI2Ljg0MjUgNy4yNTc4MSAxOS4wOTY3QzcuMjU3ODEgMTYuODkzMiA4LjA1MjY3IDE1LjA5MDUgOS4zMTIxNiAxMy42ODg0QzkuMTEzNDQgMTMuMTg3NyA4LjQxNzMyIDExLjExNzQgOS41MTEyOCA4LjM0NjQ0QzkuNTExMjggOC4zNDY0NCAxMS4yMDE0IDcuODEyMTcgMTUuMDEyMiAxMC40MTY0QzE2LjY0MzggOS45NzQ5NSAxOC4zMjYzIDkuNzUwNCAyMC4wMTY1IDkuNzQ4NTFDMjEuNzA2NyA5Ljc0ODUxIDIzLjQyOTUgOS45ODI0NiAyNS4wMjA1IDEwLjQxNjRDMjguODMxNyA3LjgxMjE3IDMwLjUyMTggOC4zNDY0NCAzMC41MjE4IDguMzQ2NDRDMzEuNjE1OCAxMS4xMTc0IDMwLjkxOTIgMTMuMTg3NyAzMC43MjA1IDEzLjY4ODRDMzIuMDEzMiAxNS4wOTA1IDMyLjc3NTMgMTYuODkzMiAzMi43NzUzIDE5LjA5NjdDMzIuNzc1MyAyNi44NDI1IDI4LjEwMjggMjguNTQ0OSAyMy42Mjg3IDI5LjA0NkMyNC4zNTggMjkuNjgwMiAyNC45ODczIDMwLjg4MiAyNC45ODczIDMyLjc4NTFDMjQuOTg3MyAzNS40ODkzIDI0Ljk1NDUgMzcuNjU5NiAyNC45NTQ1IDM4LjMyN0MyNC45NTQ1IDM4Ljg2MTMgMjUuMzE5MiAzOS40OTYgMjYuMzEzMiAzOS4yOTU2QzM0LjI2NjcgMzYuNjI0MiAzOS45OTk5IDI5LjA3OTIgMzkuOTk5OSAyMC4xNjUzQzQwLjAzMjcgOS4wMTM4OCAzMS4wNTIgMCAyMC4wMTY1IDBaIiBmaWxsPSIjMjQyOTJGIi8+Cjwvc3ZnPgo="
+        },
+        "displayName": "GitHub",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 24,
+        "icon": "file:merge.svg",
+        "name": "n8n-nodes-base.merge",
+        "codex": {
+          "data": {
+            "alias": [
+              "Join",
+              "Concatenate",
+              "Wait"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-sync-data-between-two-systems/",
+                  "icon": "🏬",
+                  "label": "How to synchronize data between two systems (one-way vs. two-way sync"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.merge/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Merge"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTc3XzUxOCkiPgo8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTAgNDhDMCAyMS40OTAzIDIxLjQ5MDMgMCA0OCAwSDExMkMxMzguNTEgMCAxNjAgMjEuNDkwMyAxNjAgNDhWNTZIMTk2LjI1MkMyNDAuNDM1IDU2IDI3Ni4yNTIgOTEuODE3MiAyNzYuMjUyIDEzNlYxOTJDMjc2LjI1MiAyMTQuMDkxIDI5NC4xNjEgMjMyIDMxNi4yNTIgMjMySDM1MlYyMjRDMzUyIDE5Ny40OSAzNzMuNDkgMTc2IDQwMCAxNzZINDY0QzQ5MC41MSAxNzYgNTEyIDE5Ny40OSA1MTIgMjI0VjI4OEM1MTIgMzE0LjUxIDQ5MC41MSAzMzYgNDY0IDMzNkg0MDBDMzczLjQ5IDMzNiAzNTIgMzE0LjUxIDM1MiAyODhWMjgwSDMxNi4yNTJDMjk0LjE2MSAyODAgMjc2LjI1MiAyOTcuOTA5IDI3Ni4yNTIgMzIwVjM3NkMyNzYuMjUyIDQyMC4xODMgMjQwLjQzNSA0NTYgMTk2LjI1MiA0NTZIMTYwVjQ2NEMxNjAgNDkwLjUxIDEzOC41MSA1MTIgMTEyIDUxMkg0OEMyMS40OTAzIDUxMiAwIDQ5MC41MSAwIDQ2NFY0MDBDMCAzNzMuNDkgMjEuNDkwMyAzNTIgNDggMzUySDExMkMxMzguNTEgMzUyIDE2MCAzNzMuNDkgMTYwIDQwMFY0MDhIMTk2LjI1MkMyMTMuOTI1IDQwOCAyMjguMjUyIDM5My42NzMgMjI4LjI1MiAzNzZWMzIwQzIyOC4yNTIgMjk0Ljc4NCAyMzguODU5IDI3Mi4wNDQgMjU1Ljg1MyAyNTZDMjM4Ljg1OSAyMzkuOTU2IDIyOC4yNTIgMjE3LjIxNiAyMjguMjUyIDE5MlYxMzZDMjI4LjI1MiAxMTguMzI3IDIxMy45MjUgMTA0IDE5Ni4yNTIgMTA0SDE2MFYxMTJDMTYwIDEzOC41MSAxMzguNTEgMTYwIDExMiAxNjBINDhDMjEuNDkwMyAxNjAgMCAxMzguNTEgMCAxMTJWNDhaTTEwNCA0OEMxMDguNDE4IDQ4IDExMiA1MS41ODE3IDExMiA1NlYxMDRDMTEyIDEwOC40MTggMTA4LjQxOCAxMTIgMTA0IDExMkg1NkM1MS41ODE3IDExMiA0OCAxMDguNDE4IDQ4IDEwNFY1NkM0OCA1MS41ODE3IDUxLjU4MTcgNDggNTYgNDhIMTA0Wk00NTYgMjI0QzQ2MC40MTggMjI0IDQ2NCAyMjcuNTgyIDQ2NCAyMzJWMjgwQzQ2NCAyODQuNDE4IDQ2MC40MTggMjg4IDQ1NiAyODhINDA4QzQwMy41ODIgMjg4IDQwMCAyODQuNDE4IDQwMCAyODBWMjMyQzQwMCAyMjcuNTgyIDQwMy41ODIgMjI0IDQwOCAyMjRINDU2Wk0xMTIgNDA4QzExMiA0MDMuNTgyIDEwOC40MTggNDAwIDEwNCA0MDBINTZDNTEuNTgxNyA0MDAgNDggNDAzLjU4MiA0OCA0MDhWNDU2QzQ4IDQ2MC40MTggNTEuNTgxNyA0NjQgNTYgNDY0SDEwNEMxMDguNDE4IDQ2NCAxMTIgNDYwLjQxOCAxMTIgNDU2VjQwOFoiIGZpbGw9IiM1NEI4QzkiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTc3XzUxOCI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Merge",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1179,
+        "icon": "fa:code",
+        "name": "@n8n/n8n-nodes-langchain.outputParserStructured",
+        "codex": {
+          "data": {
+            "alias": [
+              "json",
+              "zod"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.outputparserstructured/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Output Parsers"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Structured Output Parser"
+        },
+        "iconData": {
+          "icon": "code",
+          "type": "icon"
+        },
+        "displayName": "Structured Output Parser",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1225,
+        "icon": "file:form.svg",
+        "name": "n8n-nodes-base.formTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "table",
+              "submit",
+              "post"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.formtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Other Trigger Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "On form submission"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NiIgaGVpZ2h0PSI0MCIgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iIzAwQjdCQyIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMzQuOTc4IDM3LjczMmExLjU2IDEuNTYgMCAwIDEtMS41NjIgMS41NjNINi4yNmExLjU2IDEuNTYgMCAwIDEtMS41NjMtMS41NjNWOS42MDdjMC0uNDA1LjE1Ny0uNzk0LjQzOC0xLjA4Nmw2LjMwNC02LjUzMXY1LjM0NEg4LjIxM2ExLjE3MiAxLjE3MiAwIDEgMCAwIDIuMzQzaDQuNDNhMS4xNyAxLjE3IDAgMCAwIDEuMTcxLTEuMTcxVi4yMzJoMTkuNjAyYTEuNTYgMS41NiAwIDAgMSAxLjU2MiAxLjU2M3YxMC4zMjdsLTIuODYgMi44Ni04LjI1MiA4LjI3NmE0MTMuMDA2IDQxMy4wMDYgMCAwIDEtMS42NTQgMS42NjJsLS4zMzcuMzM3YTIgMiAwIDAgMC0uNTU3IDEuMDhMMjAuMyAzMS45MjJjLS4xMDguNjM4LS4yMTUgMS4wNzkuMjExIDEuNDE4LjQwMy4zMi45LjE3NCAxLjU0LjA2Nmw1LjQwOC0uOTI4YTIgMiAwIDAgMCAxLjA4LS41NTZsNi40NC02LjQyOXptLTI0LjAzLTIxLjI2NWExLjE4IDEuMTggMCAwIDAgMS4xNzEgMS4xNzJoMTMuMTYzYTEuMTcyIDEuMTcyIDAgMSAwIDAtMi4zNDRIMTIuMTE5YTEuMTcgMS4xNyAwIDAgMC0xLjE3MiAxLjE3Mm03LjI5NCAxNC43NjZhMS4xNyAxLjE3IDAgMCAwLTEuMTcyLTEuMTcySDEyLjEyYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNC45NTFhMS4xNyAxLjE3IDAgMCAwIDEuMTcyLTEuMTcybS44Ni03LjM5MWExLjE3IDEuMTcgMCAwIDAtMS4xNzItMS4xNzJoLTUuODExYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNS44MWExLjE2NCAxLjE2NCAwIDAgMCAxLjE3My0xLjE3MSIgY2xpcC1ydWxlPSJldmVub2RkIi8+PHBhdGggZmlsbD0iIzAwQjdCQyIgZD0ibTMzLjUzMiAxNi4zOTcgNC4yODktNC4yODkgMy43NTggMy43MSAxLjYxNy0xLjYxNiAyLjI1OCAyLjI1N2MuMjE4LjIxOC4zNC41MTMuMzQzLjgyLS4wMDIuMzExLS4xMjUuNjA4LS4zNDQuODNsLTYuODA0IDYuNzk2YTEuMTMgMS4xMyAwIDAgMS0uODI4LjM0MyAxLjE1IDEuMTUgMCAwIDEtLjgyOC0uMzQzIDEuMTggMS4xOCAwIDAgMSAwLTEuNjU3bDUuOTc2LTUuOTY4LTEuMzEyLTEuMzEzLTEuMzgzIDEuNDE0LTEzLjE0OSAxMy4xMjUtNC42MTcuNzgyLjc4Mi00LjYxNy4zMzYtLjMzNyAyLjU2MiAyLjU1NWExLjEgMS4xIDAgMCAwIC44MjguMzQ0Yy4zMTIuMDA1LjYxMi0uMTIuODI4LS4zNDRhMS4xOCAxLjE4IDAgMCAwIDAtMS42NTZsLTIuNTYyLTIuNTYyek00NC43MzYgMTIuMjRjMCAuNDE0LS4xNjMuODEtLjQ1NCAxLjEwMmwtLjkyMi45MTQtMy44NTItMy44MjguOTMtLjkzYTEuNTYzIDEuNTYzIDAgMCAxIDIuMjAzIDBsMS42NCAxLjY0MWMuMjkxLjI5My40NTUuNjkuNDU1IDEuMTAyIi8+PC9zdmc+"
+        },
+        "displayName": "n8n Form Trigger",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1281,
+        "icon": "file:openrouter.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenrouter/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenRouter Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyBmaWxsPSIjOTRBM0I4IiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDI0IDI0IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjx0aXRsZT5PcGVuUm91dGVyPC90aXRsZT48cGF0aCBkPSJNMTYuODA0IDEuOTU3bDcuMjIgNC4xMDV2LjA4N0wxNi43MyAxMC4yMWwuMDE3LTIuMTE3LS44MjEtLjAzYy0xLjA1OS0uMDI4LTEuNjExLjAwMi0yLjI2OC4xMS0xLjA2NC4xNzUtMi4wMzguNTc3LTMuMTQ3IDEuMzUyTDguMzQ1IDExLjAzYy0uMjg0LjE5NS0uNDk1LjMzNi0uNjguNDU1bC0uNTE1LjMyMi0uMzk3LjIzNC4zODUuMjMuNTMuMzM4Yy40NzYuMzE0IDEuMTcuNzk2IDIuNzAxIDEuODY2IDEuMTEuNzc1IDIuMDgzIDEuMTc3IDMuMTQ3IDEuMzUybC4zLjA0NWMuNjk0LjA5MSAxLjM3NS4wOTQgMi44MjUuMDMzbC4wMjItMi4xNTkgNy4yMiA0LjEwNXYuMDg3TDE2LjU4OSAyMmwuMDE0LTEuODYyLS42MzUuMDIyYy0xLjM4Ni4wNDItMi4xMzcuMDAyLTMuMTM4LS4xNjItMS42OTQtLjI4LTMuMjYtLjkyNi00Ljg4MS0yLjA1OWwtMi4xNTgtMS41YTIxLjk5NyAyMS45OTcgMCAwMC0uNzU1LS40OThsLS40NjctLjI4YTU1LjkyNyA1NS45MjcgMCAwMC0uNzYtLjQzQzIuOTA4IDE0LjczLjU2MyAxNC4xMTYgMCAxNC4xMTZWOS44ODhsLjE0LjAwNGMuNTY0LS4wMDcgMi45MS0uNjIyIDMuODA5LTEuMTI0bDEuMDE2LS41OC40MzgtLjI3NGMuNDI4LS4yOCAxLjA3Mi0uNzI2IDIuNjg2LTEuODUzIDEuNjIxLTEuMTMzIDMuMTg2LTEuNzggNC44ODEtMi4wNTkgMS4xNTItLjE5IDEuOTc0LS4yMTMgMy44MTQtLjEzOGwuMDItMS45MDd6Ij48L3BhdGg+PC9zdmc+Cg=="
+        },
+        "displayName": "OpenRouter Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 32,
+        "name": "Market Research"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

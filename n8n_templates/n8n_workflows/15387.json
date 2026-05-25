@@ -1,0 +1,914 @@
+{
+  "workflow": {
+    "id": 15387,
+    "name": "Send a daily investment research email with Olostep, OpenAI, and Gmail",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-29T14:20:41.757Z",
+    "description": "# Daily Investment Research Email with Olostep, OpenAI, and Gmail\n\nThis n8n template researches a stock watchlist with Olostep, turns the results into a concise OpenAI-generated investment research report, converts the report into a styled HTML email, and sends it with Gmail.\n\nIt can run manually for testing or automatically at weekday US market open.\n\nThis workflow is for research automation only. It does not provide financial advice, price targets, or buy/sell/hold recommendations.\n\n## What This Workflow Does\n\n1. Runs at 9:30 AM US Eastern time on weekdays, or manually.\n2. Reads a comma-separated stock watchlist.\n3. Builds one investment research query per ticker.\n4. Uses Olostep to search for public investment sources.\n5. Combines the ticker results into one watchlist payload.\n6. Uses OpenAI to create one Markdown report for the full watchlist.\n7. Converts the report into a styled HTML email.\n8. Sends the final report through Gmail.\n\n## Requirements\n\n- n8n\n- Olostep account and API key\n- OpenAI account and API key\n- Gmail OAuth2 credential in n8n\n- Olostep community node: `n8n-nodes-olostep`\n\n## Required Credentials\n\nCreate or select these credentials after importing the workflow:\n\n- Olostep credential for `Olostep Search - Investment Sources`\n- OpenAI credential for `OpenAI - Create Full Watchlist Email Report`\n- Gmail OAuth2 credential for `Send HTML Email via Gmail`\n\nThe workflow export does not include API keys, OAuth tokens, credential IDs, personal email addresses, or instance metadata.\n\n## Setup Instructions\n\n1. Install the Olostep community node in n8n:\n\n   ```text\n   Settings -&gt; Community nodes -&gt; Install\n   ```\n\n   Package:\n\n   ```text\n   n8n-nodes-olostep\n   ```\n\n2. Open the credential-backed nodes and select your local credentials:\n\n   ```text\n   Olostep Search - Investment Sources\n   OpenAI - Create Full Watchlist Email Report\n   Send HTML Email via Gmail\n   ```\n\n3. Open `Investment Watchlist` and update:\n\n   ```text\n   tickers\n   email_to\n   email_from\n   email_subject_prefix\n   ```\n\n4. Run the workflow with `Manual Test Trigger`.\n\n5. Review the email output.\n\n6. Activate the workflow when ready.\n\n## Schedule\n\nThe schedule trigger uses:\n\n```text\n30 9 * * 1-5\n```\n\nRun n8n with the `America/New_York` timezone if you want this to match 9:30 AM US Eastern market open.\n\nThe workflow does not automatically skip US market holidays. Add a market-calendar check if you need holiday-aware execution.\n\n## Example Use Case\n\nAn investor or analyst wants a daily pre-work research digest for a stock watchlist such as `MSFT,NVDA,AAPL`. Instead of manually searching filings, investor relations pages, earnings updates, and market news every morning, this workflow gathers public source results, summarizes opportunity signals and risk signals, and sends one structured HTML email for review.\n\n## Customization Ideas\n\n- Add more tickers to the watchlist.\n- Change the email recipient list.\n- Adjust the report prompt for a different research style.\n- Add a market-calendar step to skip exchange holidays.\n- Replace Gmail with another email provider supported by n8n.\n",
+    "workflow": {
+      "name": "My workflow",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "7b8a7091-1a76-426e-a2ac-76eeb1277ca7",
+          "name": "Weekday Market Open Trigger",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            2352,
+            1024
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "field": "cronExpression",
+                  "expression": "30 9 * * 1-5"
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "ab3663e3-d555-4243-af04-b0f7395248eb",
+          "name": "Manual Test Trigger",
+          "type": "n8n-nodes-base.manualTrigger",
+          "position": [
+            2352,
+            1216
+          ],
+          "parameters": {},
+          "typeVersion": 1
+        },
+        {
+          "id": "ec693c8f-fd72-4626-9294-24934b575632",
+          "name": "Investment Watchlist",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            2576,
+            1120
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "name": "tickers",
+                  "type": "string",
+                  "value": "MSFT,NVDA"
+                },
+                {
+                  "name": "email_to",
+                  "type": "string",
+                  "value": "user@example.com"
+                },
+                {
+                  "name": "email_from",
+                  "type": "string",
+                  "value": "user@example.com"
+                },
+                {
+                  "name": "email_subject_prefix",
+                  "type": "string",
+                  "value": "Daily Investment Research Report"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "5e7b3d45-94d2-4c80-8599-59866022e983",
+          "name": "Split Tickers",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2800,
+            1120
+          ],
+          "parameters": {
+            "jsCode": "const data = $input.first().json;\nconst tickers = data.tickers.split(',').map(function(t) { return t.trim(); }).filter(Boolean);\n\nreturn tickers.map(function(ticker) {\n  return {\n    json: {\n      ticker: ticker,\n      investment_query: ticker + ' latest investor relations SEC filings earnings call transcript financial news risk factors catalysts',\n      email_to: data.email_to,\n      email_from: data.email_from,\n      email_subject_prefix: data.email_subject_prefix\n    }\n  };\n});"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "7d0aed34-9b35-494f-a62c-ad65bac5a1bb",
+          "name": "Olostep Search - Investment Sources",
+          "type": "n8n-nodes-olostep.olostepScrape",
+          "position": [
+            3024,
+            1120
+          ],
+          "parameters": {
+            "query": "={{ $json.investment_query }}",
+            "operation": "search"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "dea85597-d922-40e3-a560-d176cee56a1e",
+          "name": "Combine Ticker Research",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            3248,
+            1120
+          ],
+          "parameters": {
+            "jsCode": "const items = $input.all();\n\nconst watchlist = items.map(function(item) {\n  return {\n    ticker: item.json.ticker || 'Unknown',\n    sources: item.json.organic || item.json.results || item.json.data || []\n  };\n});\n\nconst first = items.length > 0 ? items[0].json : {};\n\nreturn [\n  {\n    json: {\n      report_date: new Date().toISOString().split('T')[0],\n      watchlist: watchlist,\n      email_to: first.email_to || 'user@example.com',\n      email_from: first.email_from || 'user@example.com',\n      email_subject_prefix: first.email_subject_prefix || 'Daily Investment Research Report'\n    }\n  }\n];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "e86f05d8-2966-40cd-b42f-40e3f7c01363",
+          "name": "OpenAI - Create Full Watchlist Email Report",
+          "type": "@n8n/n8n-nodes-langchain.openAi",
+          "position": [
+            3472,
+            1120
+          ],
+          "parameters": {
+            "modelId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-5.4-mini",
+              "cachedResultName": "GPT-5.4-MINI"
+            },
+            "options": {},
+            "responses": {
+              "values": [
+                {
+                  "content": "=You are an investment research assistant.\n\nYou will receive search and scraped web results for multiple stock tickers. Your job is to turn the results into one clean Markdown email report for the full watchlist.\n\nImportant rules:\n- Create only one complete report for the full watchlist.\n- Do not repeat the title, generated date, executive summary, or disclaimer for each ticker.\n- Do not give direct buy, sell, or hold advice.\n- Do not say \"invest in this\" or \"sell this\".\n- Do not predict stock prices.\n- Do not invent numbers or facts.\n- Use only the information provided in the input.\n- If information is missing, write \"Not found in provided sources.\"\n- Keep the report concise but useful.\n- Group the report by ticker/company.\n- Include source links under each company.\n- For each company, include a neutral \"Signal Summary\" with: Opportunity Signals, Risk / Exit Watch Signals, and Research Priority.\n- Research Priority may be High / Medium / Low, but it must not be framed as financial advice.\n\nReport date:\n{{ $json.report_date }}\n\nInput data:\n{{ JSON.stringify($json.watchlist) }}\n\nCreate the Markdown report using this structure:\n\n# Daily Investment Research Report\n\nGenerated on: {{ $json.report_date }}\n\n## Executive Summary\n\nWrite 5-7 bullets summarizing the most important findings across all tickers.\n\n## Watchlist Signal Table\n\nCreate a simple Markdown table with these columns:\n| Ticker | Opportunity Signals | Risk / Exit Watch Signals | Research Priority |\n\nImportant: The table must not include Buy, Sell, or Hold recommendations.\n\n## Ticker-by-Ticker Analysis\n\nFor each ticker or company found in the input, create this section:\n\n### [Company Name] ([Ticker if available])\n\n#### Key Sources Reviewed\n- [Source title](Source URL)\n- [Source title](Source URL)\n\n#### Recent Updates\nSummarize the most important recent updates from the sources.\n\n#### Opportunity Signals\n- Bullet 1\n- Bullet 2\n- Bullet 3\n\n#### Risk / Exit Watch Signals\n- Bullet 1\n- Bullet 2\n- Bullet 3\n\n#### Financial / Earnings Signals\nSummarize any revenue, earnings, margin, guidance, or filing-related information found.\n\n#### Competitive Position\nSummarize any information about competitors, market position, product demand, or sector trends.\n\n#### Investor Questions to Investigate Next\n- Question 1\n- Question 2\n- Question 3\n\n#### Research Confidence\nChoose one: High / Medium / Low\n\nExplain the confidence rating in one short sentence.\n\n---\n\n## Cross-Watchlist Themes\n\nSummarize patterns across all companies, such as AI demand, data center growth, margin pressure, regulatory risk, leadership changes, earnings momentum, and competitive pressure.\n\n## Red Flags to Monitor\n\nList the most important risks found across the full watchlist.\n\n## Follow-Up Research Checklist\n\n- Review latest 10-K or 10-Q filings\n- Compare latest earnings call transcripts\n- Check revenue guidance\n- Review analyst downgrades or upgrades\n- Look for lawsuits, investigations, layoffs, or executive changes\n\n## Disclaimer\n\nThis report is generated from public web research and is for research automation only. It is not financial advice. It does not provide buy, sell, or hold recommendations.\n"
+                }
+              ]
+            },
+            "builtInTools": {}
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "b04c6cba-a4f4-4909-ab83-4c4b95c8decd",
+          "name": "Build HTML Email Body",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            3824,
+            1120
+          ],
+          "parameters": {
+            "jsCode": "const output = $json.output && $json.output[0] && $json.output[0].content && $json.output[0].content[0] && $json.output[0].content[0].text;\nconst markdown = output || $json.text || '';\n\nfunction escapeHtml(str) {\n  return String(str)\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;');\n}\n\nlet html = escapeHtml(markdown);\n\nhtml = html\n  .replace(/\\*\\*(.*?)\\*\\*/gim, '<strong>$1</strong>')\n  .replace(/\\[(.*?)\\]\\((.*?)\\)/gim, '<a href=\"$2\">$1</a>');\n\nhtml = html\n  .replace(/^#### (.*$)/gim, '<h4>$1</h4>')\n  .replace(/^### (.*$)/gim, '<h3>$1</h3>')\n  .replace(/^## (.*$)/gim, '<h2>$1</h2>')\n  .replace(/^# (.*$)/gim, '<h1>$1</h1>')\n  .replace(/^---$/gim, '<hr />');\n\nhtml = html.replace(/((?:^|\\n)\\|.+\\|\\n\\|[-:\\s|]+\\|\\n(?:\\|.+\\|\\n?)+)/g, function(tableBlock) {\n  const rows = tableBlock.trim().split('\\n');\n  const headers = rows[0].split('|').slice(1, -1).map(function(h) { return h.trim(); });\n  const bodyRows = rows.slice(2).map(function(row) {\n    return row.split('|').slice(1, -1).map(function(c) { return c.trim(); });\n  });\n  const thead = '<thead><tr>' + headers.map(function(h) { return '<th>' + h + '</th>'; }).join('') + '</tr></thead>';\n  const tbody = '<tbody>' + bodyRows.map(function(cols) {\n    return '<tr>' + cols.map(function(c) { return '<td>' + c + '</td>'; }).join('') + '</tr>';\n  }).join('') + '</tbody>';\n  return '<table>' + thead + tbody + '</table>';\n});\n\nhtml = html.replace(/(?:^|\\n)(- .*(?:\\n- .*)*)/g, function(match) {\n  const items = match\n    .trim()\n    .split('\\n')\n    .map(function(line) { return '<li>' + line.replace(/^- /, '') + '</li>'; })\n    .join('');\n  return '<ul>' + items + '</ul>';\n});\n\nhtml = html\n  .split('\\n')\n  .map(function(line) {\n    const trimmed = line.trim();\n    if (!trimmed) return '';\n    if (\n      trimmed.startsWith('<h') ||\n      trimmed.startsWith('<ul') ||\n      trimmed.startsWith('<li') ||\n      trimmed.startsWith('</ul') ||\n      trimmed.startsWith('<hr') ||\n      trimmed.startsWith('<table') ||\n      trimmed.startsWith('<thead') ||\n      trimmed.startsWith('<tbody') ||\n      trimmed.startsWith('<tr') ||\n      trimmed.startsWith('<th') ||\n      trimmed.startsWith('<td') ||\n      trimmed.startsWith('</table')\n    ) {\n      return trimmed;\n    }\n    return '<p>' + trimmed + '</p>';\n  })\n  .join('\\n');\n\nconst reportDate = new Date().toISOString().split('T')[0];\nconst subjectPrefix = $json.email_subject_prefix || 'Daily Investment Research Report';\n\nlet emailHtml = '<!doctype html>';\nemailHtml += '<html><head><meta charset=\"utf-8\"></head>';\nemailHtml += '<body style=\"margin:0; padding:0; background:#f3f4f6; font-family:Arial, Helvetica, sans-serif; color:#111827;\">';\nemailHtml += '<div style=\"max-width:820px; margin:0 auto; padding:24px 14px;\">';\nemailHtml += '<div style=\"background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; overflow:hidden;\">';\nemailHtml += '<div style=\"padding:22px 24px; border-bottom:3px solid #111827;\">';\nemailHtml += '<div style=\"font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#6b7280; margin-bottom:8px;\">Automated Investment Research</div>';\nemailHtml += '<h1 style=\"font-size:26px; line-height:1.2; margin:0 0 6px 0; color:#0f172a;\">Daily Investment Research Report</h1>';\nemailHtml += '<div style=\"font-size:12px; color:#6b7280;\">Generated on ' + reportDate + '</div>';\nemailHtml += '</div>';\nemailHtml += '<div style=\"padding:16px 24px; background:#f8fafc; border-bottom:1px solid #e5e7eb; font-size:13px; color:#374151;\">';\nemailHtml += 'This automated email summarizes opportunity signals, risk signals, and research priorities from public sources. It is not financial advice and does not provide buy, sell, or hold recommendations.';\nemailHtml += '</div>';\nemailHtml += '<div class=\"report-content\" style=\"padding:8px 24px 24px 24px; font-size:14px; line-height:1.55;\">' + html + '</div>';\nemailHtml += '</div></div></body></html>';\n\nconst styledHtml = emailHtml\n  .replace(/<h1>/g, '<h1 style=\"font-size:24px; line-height:1.2; margin:18px 0 8px; color:#0f172a;\">')\n  .replace(/<h2>/g, '<h2 style=\"font-size:18px; margin:24px 0 10px; padding-bottom:6px; border-bottom:1px solid #e5e7eb; color:#111827;\">')\n  .replace(/<h3>/g, '<h3 style=\"font-size:16px; margin:22px 0 10px; padding:10px 12px; border-left:4px solid #111827; background:#f9fafb; color:#111827;\">')\n  .replace(/<h4>/g, '<h4 style=\"font-size:12px; margin:16px 0 8px; color:#374151; text-transform:uppercase; letter-spacing:0.05em;\">')\n  .replace(/<p>/g, '<p style=\"margin:7px 0;\">')\n  .replace(/<ul>/g, '<ul style=\"margin:8px 0 14px 20px; padding:0;\">')\n  .replace(/<li>/g, '<li style=\"margin:4px 0;\">')\n  .replace(/<a /g, '<a style=\"color:#1d4ed8; text-decoration:none; word-break:break-word;\" ')\n  .replace(/<hr \\/>/g, '<hr style=\"border:0; border-top:1px solid #d1d5db; margin:24px 0;\" />')\n  .replace(/<table>/g, '<table style=\"width:100%; border-collapse:collapse; margin:12px 0 18px; font-size:13px;\">')\n  .replace(/<th>/g, '<th style=\"border:1px solid #e5e7eb; padding:8px; text-align:left; background:#f9fafb;\">')\n  .replace(/<td>/g, '<td style=\"border:1px solid #e5e7eb; padding:8px; vertical-align:top;\">');\n\nreturn [\n  {\n    json: {\n      email_to: $('Split Tickers').first().json.email_to,\n      email_from: $('Split Tickers').first().json.email_from,\n      email_subject: subjectPrefix + ' - ' + reportDate,\n      email_html: styledHtml\n    }\n  }\n];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "00c0cd82-b442-494f-a458-8259609d7b9d",
+          "name": "Send HTML Email via Gmail",
+          "type": "n8n-nodes-base.gmail",
+          "position": [
+            4048,
+            1120
+          ],
+          "webhookId": "7b1fdcdd-82dc-4f9c-b4ce-9f23c062e1b0",
+          "parameters": {
+            "sendTo": "={{ $json.email_to }}",
+            "message": "={{ $json.email_html }}",
+            "options": {
+              "senderName": "Investment Research Bot"
+            },
+            "subject": "={{ $json.email_subject }}"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "01bbe6df-f200-4d8d-9d69-e0cfae8d0150",
+          "name": "Sticky Note8",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1712,
+            912
+          ],
+          "parameters": {
+            "width": 528,
+            "height": 320,
+            "content": "## Daily investment research email\n\n### How it works\nThis workflow researches a stock watchlist with Olostep, summarizes the findings with OpenAI GPT-5.4-mini, and sends one styled Gmail report.\n\n### Setup steps\n- [ ] Add Olostep, OpenAI, and Gmail credentials.\n- [ ] Update the `Investment Watchlist` node with tickers and email fields.\n- [ ] Run `Manual Test Trigger` and review the email before activating.\n\n### Customization\nChange the ticker list, schedule, prompt, subject, or HTML styling to match your research workflow."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "2f843fc6-3fe4-4602-bce7-0ce506c29a52",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1712,
+            1248
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 528,
+            "height": 80,
+            "content": "### How can we improve this workflow?\n### Share feedback on the n8n template page or repository."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "07ecc92e-0f34-4542-b8b1-fa7b89e8a045",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2272,
+            912
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 448,
+            "height": 464,
+            "content": "## Trigger and configure\n\nStarts the workflow and prepares the stock watchlist for research."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "050aa094-de32-45b6-9314-532d31fa3f9a",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2752,
+            912
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 656,
+            "height": 464,
+            "content": "## Research investment sources\n\nSearches public investment sources and combines per-ticker results."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "93a026a3-4562-422d-a868-32d2ba3bb27a",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3440,
+            912
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 768,
+            "height": 464,
+            "content": "## Generate and send report\n\nCreates the neutral watchlist report, formats it as HTML, and sends it via Gmail."
+          },
+          "typeVersion": 1
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "binaryMode": "separate",
+        "executionOrder": "v1"
+      },
+      "connections": {
+        "Split Tickers": {
+          "main": [
+            [
+              {
+                "node": "Olostep Search - Investment Sources",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Manual Test Trigger": {
+          "main": [
+            [
+              {
+                "node": "Investment Watchlist",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Investment Watchlist": {
+          "main": [
+            [
+              {
+                "node": "Split Tickers",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Build HTML Email Body": {
+          "main": [
+            [
+              {
+                "node": "Send HTML Email via Gmail",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Combine Ticker Research": {
+          "main": [
+            [
+              {
+                "node": "OpenAI - Create Full Watchlist Email Report",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Weekday Market Open Trigger": {
+          "main": [
+            [
+              {
+                "node": "Investment Watchlist",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Olostep Search - Investment Sources": {
+          "main": [
+            [
+              {
+                "node": "Combine Ticker Research",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "OpenAI - Create Full Watchlist Email Report": {
+          "main": [
+            [
+              {
+                "node": "Build HTML Email Body",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 14,
+      "nodeTypes": {
+        "n8n-nodes-base.set": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 3
+        },
+        "n8n-nodes-base.gmail": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 5
+        },
+        "n8n-nodes-base.manualTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.openAi": {
+          "count": 1
+        },
+        "n8n-nodes-olostep.olostepScrape": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Abid Ali Awan",
+      "username": "kingabzpro",
+      "bio": "",
+      "verified": false,
+      "links": [
+        "abid.work"
+      ],
+      "avatar": "https://gravatar.com/avatar/4428dc56299a6b36870f0967c471ac5539d1c83c59a6ee2daae4ef8184ff5973?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 356,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmail",
+        "codex": {
+          "data": {
+            "alias": [
+              "email",
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.gmail/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Gmail"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 838,
+        "icon": "fa:mouse-pointer",
+        "name": "n8n-nodes-base.manualTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.manualworkflowtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "When clicking ‘Execute workflow’",
+          "color": "#909298"
+        },
+        "iconData": {
+          "icon": "mouse-pointer",
+          "type": "icon"
+        },
+        "displayName": "Manual Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1250,
+        "icon": "file:openAi.svg",
+        "name": "@n8n/n8n-nodes-langchain.openAi",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "ChatGPT",
+              "Sora",
+              "DallE",
+              "whisper",
+              "audio",
+              "transcribe",
+              "tts",
+              "assistant"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-langchain.openai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Miscellaneous",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg1IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NiAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MSA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4K"
+        },
+        "displayName": "OpenAI",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 44,
+        "name": "Crypto Trading"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

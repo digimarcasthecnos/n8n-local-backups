@@ -1,0 +1,319 @@
+{
+  "id": 13304,
+  "name": "Schedule approved LinkedIn page posts from Google Sheets with precise timing",
+  "totalViews": 0,
+  "price": 0,
+  "purchaseUrl": null,
+  "user": {
+    "id": 102852,
+    "name": "isaWOW",
+    "username": "isawow",
+    "bio": "",
+    "verified": true,
+    "links": "[\"\"]",
+    "avatar": "https://gravatar.com/avatar/8e8c1f17a2be80c0d1b0248585660dff3062cefeda523bbafeafcdb813f52ffa?r=pg&d=retro&size=200"
+  },
+  "description": "Description\n\nAutomate LinkedIn organization page posting with precise time scheduling and Google Drive media management. Runs hourly during business hours, processes approved posts scheduled for today, waits until exact time, publishes to LinkedIn, and updates tracking sheet—perfect for maintaining consistent LinkedIn presence.\n\nWhat this workflow does\n\nThis workflow automates LinkedIn organization page posting with precise timing control and a centralized Google Sheets content calendar. It runs four times daily (9:45 AM, 10:45 AM, 11:45 AM, 12:45 PM) and reads your Google Sheet to find posts marked with Approval Status = \"Good\" and Platform = \"LinkedIn\" that are scheduled for today. Unlike batch processing workflows, this processes ONE post per run to prevent duplicate scheduling. Once it finds a post, it marks it as \"Scheduled\" in your sheet, then uses a Wait node to pause the workflow execution until the exact scheduled time (with automatic timezone conversion from Eastern to India time). At the scheduled moment, it either downloads an image from Google Drive and publishes a Creative Post, or publishes an Article link—depending on the Post Type. After successfully publishing to your LinkedIn organization page, it updates your Google Sheet with the live post URL and changes the Approval Status to \"Published\", creating a complete audit trail with precise timing control.\n\nPerfect for social media managers maintaining consistent LinkedIn presence, marketing agencies scheduling client LinkedIn content with approval checkpoints, content creators batch-planning professional posts, and teams needing collaborative LinkedIn calendars with exact time control.\n\nKey features\n\nPrecise time scheduling with Wait node: Unlike immediate publishing, this workflow uses n8n's Wait node to pause execution until the exact scheduled time—ensuring posts publish at 10:00 AM sharp, not 9:45 AM when the workflow runs.\n\nTimezone conversion included: Automatically converts \"Scheduled On\" times from Eastern Time (content creator's timezone) to India Time (server timezone) using DateTime.fromFormat—no manual calculation needed.\n\nOne post per run: Processes only the first pending post each time the workflow runs, preventing duplicate scheduling if multiple posts share the same time slot—ensures clean execution and tracking.\n\nDual post type support: Handles both Creative Posts (image posts downloaded from Google Drive) and Articles (link posts with article URL)—automatically routes based on Post Type column.\n\nLinkedIn organization posting: Posts directly to your LinkedIn organization/company page (not personal profile) using LinkedIn Community Management API with proper OAuth authentication.\n\nStatus progression tracking: Three-stage workflow: Good (approved) → Scheduled (waiting for time) → Published (live on LinkedIn)—always know what's queued vs. what's live.\n\nGoogle Sheets content calendar: Manage LinkedIn posts in a familiar spreadsheet with columns for Scheduled On, Platform, Post Type, Caption, Media URL, and Approval Status—no complex tools needed.\n\nGoogle Drive media integration: Stores images in Google Drive (centralized storage), then automatically downloads them when publishing Creative Posts—supports shared drives and private files.\n\nPost URL tracking: After publishing, updates Google Sheet with the live LinkedIn post URL (https://www.linkedin.com/feed/update/{urn})—enables easy performance tracking and reporting.\n\nRuns during business hours only: Schedule trigger fires at :45 minutes (9-12 AM) to catch morning posts—won't run at night or on weekends unless you modify the cron.\n\nHow it works\n\n1. Hourly trigger during business hours\nA cron trigger runs at 9:45 AM, 10:45 AM, 11:45 AM, and 12:45 PM every day. The :45 timing gives a 15-minute buffer before the hour to schedule posts for :00, :15, :30, or :45 times.\n\n2. Load LinkedIn credentials\nThe workflow reads a separate \".env\" sheet in your Google Sheets document containing:\nLinkedIn Organization ID:** Your company page's unique ID (e.g., 56420402)\nOther LinkedIn-specific configuration\n\nThis centralizes credentials so multiple workflows can share the same settings.\n\n3. Fetch approved LinkedIn posts\nThe workflow reads your main \"Post URL\" sheet and applies two filters:\nApproval Status = \"Good\":** Only processes approved posts\nPlatform = \"LinkedIn\":** Filters out Facebook, Instagram, etc.\n\nThis returns all approved LinkedIn posts regardless of date.\n\n4. Filter posts scheduled for today\nA Code node compares the \"Scheduled On\" column value against today's date (ignores time, just checks the date part). Only posts scheduled for today pass through.\n\nSupported date format:\n\"2025-10-30 10:00\" (YYYY-MM-DD HH:MM)\nTime uses 24-hour format\n\n5. Process first post only\nCritical difference from Facebook workflow: A Code node extracts only the FIRST item from the filtered posts.\n\nWhy only one post?\nPrevents duplicate scheduling if workflow runs multiple times\nWait node works on single execution paths\nEnsures precise timing per post\nNext run will pick up the next pending post\n\n6. Route by post type\nA Switch node checks the Post Type column:\nOutput 0 (Creative Post):** Posts with images (routes to Branch A)\nOutput 1 (Article):** Posts with article links (routes to Branch B)\n\nBranch A: Creative Post with Image\n\n7a. Mark as scheduled in sheet\nBefore waiting, the workflow updates the Google Sheet:\nApproval Status:** \"Scheduled\"\n\nThis prevents the same post from being picked up again in the next hourly run.\n\n8a. Wait until scheduled time\nMost critical node: The Wait node pauses workflow execution until the exact scheduled time.\n\nTimezone conversion logic:\nDateTime.fromFormat(\n  $('Route by Post Type').item.json['Scheduled On'],\n  'yyyy-MM-dd HH-mm',\n  { zone: 'America/New_York' }  // Input timezone (Eastern)\n)\n.setZone('Asia/Kolkata')        // Server timezone (India)\n.toFormat(\"yyyy-MM-dd'T'HH:mm:ss\")\n\nExample:\nSheet value: \"2025-10-30 14:00\" (Eastern Time)\nConverted to: \"2025-10-30T23:30:00\" (India Time)\nWorkflow resumes at exactly 11:30 PM India time = 2:00 PM Eastern\n\n9a. Prepare post data\nAggregate node (keeps data structure intact for next nodes).\n\n10a. Download image from Google Drive\nUses the Media URL (Google Drive sharing link) to download the image file. Supports:\nDirect Google Drive file URLs\nShared Drive files\nPublic or private files (as long as OAuth account has access)\n\nThe image is downloaded as binary data.\n\n11a. Publish creative post to LinkedIn\nUses n8n's LinkedIn node with these settings:\nAuthentication:** communityManagement (LinkedIn Community Management API)\nPost as:** organization\nOrganization:** 56420402 (your company page ID)\nText:** Caption from Google Sheet\nShare media category:** IMAGE\nBinary data:** Downloaded image\n\nThe LinkedIn API returns a URN (unique post identifier).\n\n12a. Save post URL & mark published\nConstructs the LinkedIn post URL:\nhttps://www.linkedin.com/feed/update/{urn}\n\nThen updates the Google Sheet row:\nApproval Status:** \"Published\"\nPost URL:** Constructed LinkedIn URL\n\nBranch B: Article Post with Link\n\n7b. Mark article as scheduled\nUpdates Google Sheet: Approval Status = \"Scheduled\"\n\n8b. Wait until article scheduled time\nSame Wait node logic as Creative Posts—pauses until exact scheduled time with timezone conversion.\n\n9b. Prepare article data\nAggregate node.\n\n10b. Publish article link to LinkedIn\nUses LinkedIn node with these settings:\nAuthentication:** communityManagement\nPost as:** organization\nOrganization:** 56420402\nText:** Caption from Google Sheet\nShare media category:** ARTICLE\nOriginal URL:** Media URL (the article link)\n\nLinkedIn scrapes the article URL and creates a rich preview card.\n\n11b. Save article URL & mark published\nSame as Creative Posts—constructs post URL and updates sheet with \"Published\" status.\n\nSetup requirements\n\nTools you'll need:\n\nActive n8n instance (self-hosted or n8n Cloud)\nGoogle Sheets with OAuth access\nGoogle Drive with OAuth access\nLinkedIn organization/company page (not personal profile)\nLinkedIn Community Management API credentials\n\nEstimated setup time: 35–40 minutes\n\nConfiguration steps\n\n1. Set up LinkedIn Community Management API\nGo to LinkedIn Developer Console\nCreate an app (or use existing)\nAdd \"Community Management API\" product\nRequest access for your organization page\nUnder Auth → OAuth 2.0 settings:\n  Add redirect URL: https://your-n8n-instance.com/rest/oauth2-credential/callback\n  Note your Client ID and Client Secret\nIn n8n: Credentials → Add credential → LinkedIn Community Management OAuth2 API\nComplete OAuth flow and select your organization page\n\n2. Find your LinkedIn Organization ID\nMethod 1 (URL):\nGo to your LinkedIn company page\nURL will be: https://www.linkedin.com/company/{company-name}/\nView page source and search for \"organizationId\"\nCopy the numeric ID (e.g., 56420402)\n\nMethod 2 (API):\nUse LinkedIn API endpoint: /v2/organizationalEntityAcls?q=roleAssignee\nFind your organization in the response\n\n3. Set up Google Sheets\nCreate two sheets in one Google Sheets document:\n\nSheet 1: \".env\" (credentials)\n| LinkedIn Organization ID |\n|---|\n| 56420402 |\n\nSheet 2: \"Post URL\" (content calendar)\n| Scheduled On | Platform | Post Type | Caption | Media URL | Approval Status | Post URL | row_number |\n|---|---|---|---|---|---|---|---|\n| 2025-10-30 10:00 | LinkedIn | Creative Post | Excited to announce our new product! | https://drive.google.com/file/d/xxx | Good | | 1 |\n| 2025-10-30 14:00 | LinkedIn | Article | Check out our latest blog post | https://blog.example.com/post | Good | | 2 |\n\nImportant column details:\nScheduled On:** Format YYYY-MM-DD HH-MM (24-hour, Eastern Time)\nPlatform:** Must be \"LinkedIn\" (case-sensitive)\nPost Type:** \"Creative Post\" (with image) or \"Article\" (with link)\nCaption:** Post text (LinkedIn supports up to 3,000 characters)\nMedia URL:** Google Drive URL for Creative Post, article URL for Article\nApproval Status:** \"Good\" (publish), \"Pending\" (hold), \"Rejected\" (skip)\nPost URL:** Leave empty (auto-filled after publishing)\nrow_number:** Auto-generated by Google Sheets\n\n4. Connect Google Sheets OAuth\nIn n8n: Credentials → Add credential → Google Sheets OAuth2 API\nComplete OAuth authentication\nUpdate these nodes with your sheet URL:\n  \"Load LinkedIn Organization Credentials\" → .env sheet\n  \"Fetch Approved LinkedIn Posts\" → Post URL sheet\n  \"Mark as Scheduled in Sheet\" → Post URL sheet\n  \"Save Post URL & Mark Published\" → Post URL sheet\n  \"Mark Article as Scheduled\" → Post URL sheet\n  \"Save Article URL & Mark Published\" → Post URL sheet\n\n5. Connect Google Drive OAuth\nIn n8n: Credentials → Add credential → Google Drive OAuth2 API\nComplete OAuth authentication\nOpen \"Download Image from Google Drive\" node\nSelect your Google Drive credential\n\n6. Update LinkedIn Organization ID\nOpen these nodes and replace \"56420402\" with your organization ID:\n\"Publish Creative Post to LinkedIn\"**\n\"Publish Article Link to LinkedIn\"**\n\n7. Adjust timezone (if needed)\nIf your content calendar uses a different timezone than Eastern:\nOpen \"Wait Until Scheduled Time\" node\nChange { zone: 'America/New_York' } to your timezone\nCommon values: 'America/Los_Angeles' (Pacific), 'UTC', 'Europe/London'\n\nIf your n8n server is not in India Time:\nChange .setZone('Asia/Kolkata') to your server's timezone\n\n8. Test the workflow\nAdd a test post scheduled for 5 minutes from now\nSet Platform = \"LinkedIn\", Post Type = \"Creative Post\", Approval Status = \"Good\"\nManually trigger the workflow (or wait for next hourly run)\nVerify:\n  Sheet updated to \"Scheduled\"\n  Workflow execution shows as \"Waiting\" in n8n\n  At scheduled time, post publishes to LinkedIn\n  Sheet updated to \"Published\" with URL\n\n9. Activate the workflow\nToggle the workflow to Active\nThe workflow will now run automatically 4 times daily\nCheck your LinkedIn page to verify posts are publishing correctly\n\nUse cases\n\nSocial media managers: Schedule 15-20 LinkedIn posts per week from one Google Sheet. Team members add content, you approve, workflow handles precise timing and publishing—no manual LinkedIn.com logins.\n\nB2B marketing teams: Maintain consistent LinkedIn company page presence with thought leadership articles, product updates, and team highlights. Schedule weeks in advance, let automation publish at optimal times.\n\nContent creators: Batch-create LinkedIn content on Mondays, schedule throughout the week with precise timing. Focus on creation, not distribution—workflow handles publishing.\n\nAgencies managing client pages: One Google Sheet per client, separate workflows per organization ID. Centralized content calendar with approval workflow before posting to client pages.\n\nRecruiting teams: Schedule hiring posts, culture updates, and employee spotlights to maintain active company presence. Track all post URLs for performance analysis.\n\nPersonal brands using company pages: If you manage a LinkedIn company page for your personal brand or business, schedule promotional content, case studies, and announcements with professional timing control.\n\nCustomization options\n\nProcess multiple posts per run\nChange \"Process First Post Only\" node logic:\nCurrent: Returns only item 0\nModified: Return all items (use Loop node to process sequentially)\nNote: Wait nodes won't work with loops—consider using scheduled_publish_time if LinkedIn API supports it\n\nChange scheduling frequency\nEdit the \"Run Every Hour\" cron expression:\nCurrent: 45 9-12 * * * (9:45-12:45 AM hourly)\nAll day: 45 * * * * (every hour at :45)\nBusiness hours extended: 45 9-17 * * 1-5 (9 AM-5 PM, Monday-Friday)\nTwice daily: 0 9,15 * * * (9:00 AM and 3:00 PM)\n\nAdd video post support\nLinkedIn supports video posts via Community Management API:\nAdd \"Post Type\" = \"Video\"\nDownload video from Google Drive (instead of image)\nChange share media category to VIDEO\nUpload video to LinkedIn media upload endpoint first, then create post\n\nSupport personal profiles\nIf you want to post to personal profiles (not organization):\nChange authentication from \"communityManagement\" to \"oAuth2\"\nChange \"Post as\" from \"organization\" to \"person\"\nUse LinkedIn OAuth2 API credentials (not Community Management)\n\nAdd Slack notifications\nAfter publishing nodes, add:\nSlack node** to send confirmation\nFormat:** \"Published LinkedIn post: [URL] at [time]\"\nInclude:** Post caption preview for context\n\nMulti-organization support\nModify .env sheet to support multiple company pages:\n| Organization Name | LinkedIn Organization ID |\n|---|---|\n| Main Brand | 56420402 |\n| Sub Brand | 78901234 |\n\nAdd \"Organization Name\" column to Post URL sheet, then filter and route by organization.\n\nTroubleshooting\n\nPosts not publishing\nOAuth expired:** Re-authenticate LinkedIn Community Management API credentials in n8n.\nOrganization permissions:** Verify your LinkedIn account has admin/content creator role on the organization page.\nAPI access:** Ensure your LinkedIn app has Community Management API product added and approved.\nOrganization ID wrong:** Double-check the ID matches your actual company page.\n\nWait node not working\nScheduled time in past:** n8n Wait node requires future times. If \"Scheduled On\" is in the past when workflow runs, it fails. Ensure posts are scheduled for future times only.\nTimezone mismatch:** If posts publish at wrong times, verify timezone conversion is correct (Eastern → your server timezone).\nDateTime format error:** Ensure \"Scheduled On\" uses exactly \"YYYY-MM-DD HH-MM\" format with space between date and time.\n\nImages not downloading from Google Drive\nOAuth expired:** Re-authenticate Google Drive credentials.\nFile permissions:** Ensure the Google account connected to n8n has \"Viewer\" access to Drive files.\nSharing link format:** Media URL must be full Google Drive URL (https://drive.google.com/file/d/FILE_ID/view), not shortened.\n\nMultiple posts with same time\nCurrent limitation:** This workflow processes ONE post per run. If multiple posts share the same scheduled time, only the first will publish.\nSolution:** Stagger times by 1 minute (10:00, 10:01, 10:02) or modify workflow to process multiple posts.\n\nSheet not updating\nOAuth expired:** Re-authenticate Google Sheets credentials.\nSheet name mismatch:** Verify sheet tab name is exactly \"Post URL\" and \".env\" (case-sensitive).\nrow_number missing:** Ensure the sheet has a row_number column auto-generated by formula: =ROW()-1\n\nArticle previews not showing\nURL not accessible:** LinkedIn needs to scrape the article URL. Ensure it's publicly accessible (not behind login/paywall).\nNo Open Graph tags:** Article pages need Open Graph meta tags (og:title, og:description, og:image) for LinkedIn to generate previews.\nLinkedIn cache:** Sometimes LinkedIn caches old previews. Use LinkedIn Post Inspector to refresh cache.\n\nResources\n\nn8n documentation\nLinkedIn Community Management API\nLinkedIn OAuth Guide\nGoogle Sheets API\nGoogle Drive API\nn8n Wait node\nn8n LinkedIn node\n\nSupport\n\nNeed help or custom development?\n\n📧 Email: info@isawow.com  \n🌐 Website: https://isawow.com/",
+  "createdAt": "2026-02-11T13:54:36.016Z",
+  "nodes": [
+    {
+      "id": 18,
+      "icon": "file:googleSheets.svg",
+      "name": "n8n-nodes-base.googleSheets",
+      "codex": {
+        "data": {
+          "alias": [
+            "CSV",
+            "Sheet",
+            "Spreadsheet",
+            "GS"
+          ],
+          "resources": {
+            "generic": [
+              {
+                "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                "icon": "❤️",
+                "label": "Love at first sight: Ricardo’s n8n journey"
+              },
+              {
+                "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                "icon": "🧬",
+                "label": "Why business process automation with n8n can change your daily life"
+              },
+              {
+                "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                "icon": "🧾",
+                "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                "icon": "🎫",
+                "label": "Supercharging your conference registration process with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                "icon": "⏲",
+                "label": "Creating triggers for n8n workflows using polling"
+              },
+              {
+                "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                "icon": "store",
+                "label": "6 e-commerce workflows to power up your Shopify s"
+              },
+              {
+                "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                "icon": "📈",
+                "label": "Migrating Community Metrics to Orbit using n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                "icon": "💡",
+                "label": "15 Google apps you can combine and automate to increase productivity"
+              },
+              {
+                "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                "icon": " 🖥️",
+                "label": "Hey founders! Your business doesn't need you to operate"
+              },
+              {
+                "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                "icon": "🍔",
+                "label": "How Honest Burgers Use Automation to Save $100k per year"
+              },
+              {
+                "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                "icon": "💻",
+                "label": "How a digital strategist uses n8n for online marketing"
+              },
+              {
+                "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                "icon": "🧠",
+                "label": "Why this Product Manager loves workflow automation with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                "icon": "🙌",
+                "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+              },
+              {
+                "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                "icon": "📈",
+                "label": "How a Membership Development Manager automates his work and investments"
+              },
+              {
+                "url": "https://n8n.io/blog/aws-workflow-automation/",
+                "label": "7 no-code workflow automations for Amazon Web Services"
+              }
+            ],
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+              }
+            ],
+            "credentialDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+              }
+            ]
+          },
+          "categories": [
+            "Data & Storage",
+            "Productivity"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0"
+        }
+      },
+      "group": "[\"input\",\"output\"]",
+      "defaults": {
+        "name": "Google Sheets"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+      },
+      "displayName": "Google Sheets",
+      "typeVersion": 5,
+      "nodeCategories": [
+        {
+          "id": 3,
+          "name": "Data & Storage"
+        },
+        {
+          "id": 4,
+          "name": "Productivity"
+        }
+      ]
+    },
+    {
+      "id": 58,
+      "icon": "file:googleDrive.svg",
+      "name": "n8n-nodes-base.googleDrive",
+      "codex": {
+        "data": {
+          "resources": {
+            "generic": [
+              {
+                "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                "icon": " 🖥️",
+                "label": "Hey founders! Your business doesn't need you to operate"
+              },
+              {
+                "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                "icon": "🧠",
+                "label": "Why this Product Manager loves workflow automation with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/aws-workflow-automation/",
+                "label": "7 no-code workflow automations for Amazon Web Services"
+              }
+            ],
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googledrive/"
+              }
+            ],
+            "credentialDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+              }
+            ]
+          },
+          "categories": [
+            "Data & Storage"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0"
+        }
+      },
+      "group": "[\"input\"]",
+      "defaults": {
+        "name": "Google Drive"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgODEgNzMiPjx1c2UgeGxpbms6aHJlZj0iI2EiIHg9Ii41IiB5PSIuNSIvPjxzeW1ib2wgaWQ9ImEiIG92ZXJmbG93PSJ2aXNpYmxlIj48ZyBmaWxsLXJ1bGU9Im5vbnplcm8iIHN0cm9rZT0ibm9uZSI+PHBhdGggZmlsbD0iIzAwNjZkYSIgZD0ibTYuMDQ4IDYxLjI2IDMuNTI4IDYuMDk0Yy43MzMgMS4yODMgMS43ODcgMi4yOTEgMy4wMjQgMy4wMjRsMTIuNi0yMS44MUgwYTguMyA4LjMgMCAwIDAgMS4xIDQuMTI0eiIvPjxwYXRoIGZpbGw9IiMwMGFjNDciIGQ9Ik00MCAyMi45MSAyNy40IDEuMWMtMS4yMzcuNzMzLTIuMjkxIDEuNzQxLTMuMDI0IDMuMDI0TDEuMSA0NC40NDVBOC4zIDguMyAwIDAgMCAwIDQ4LjU2OGgyNS4yeiIvPjxwYXRoIGZpbGw9IiNlYTQzMzUiIGQ9Ik02Ny40IDcwLjM3OGMxLjIzNy0uNzMzIDIuMjkxLTEuNzQxIDMuMDI0LTMuMDI0bDEuNDY2LTIuNTIgNy4wMS0xMi4xNDJhOC4zIDguMyAwIDAgMCAxLjEtNC4xMjRINTQuNzk4bDUuMzYzIDEwLjUzOHoiLz48cGF0aCBmaWxsPSIjMDA4MzJkIiBkPSJNNDAgMjIuOTEgNTIuNiAxLjFDNTEuMzYzLjM2NyA0OS45NDMgMCA0OC40NzcgMEgzMS41MjRjLTEuNDY2IDAtMi44ODcuNDEyLTQuMTI0IDEuMXoiLz48cGF0aCBmaWxsPSIjMjY4NGZjIiBkPSJNNTQuNzk5IDQ4LjU2OEgyNS4ybC0xMi42IDIxLjgxYzEuMjM3LjczMyAyLjY1NyAxLjEgNC4xMjQgMS4xaDQ2LjU1MmMxLjQ2NiAwIDIuODg3LS40MTIgNC4xMjQtMS4xeiIvPjxwYXRoIGZpbGw9IiNmZmJhMDAiIGQ9Ik02Ny4yNjIgMjQuMjg0IDU1LjYyNCA0LjEyNEM1NC44OTEgMi44NDEgNTMuODM3IDEuODMzIDUyLjYgMS4xTDQwIDIyLjkxbDE0LjggMjUuNjU5aDI1LjE1NWE4LjMgOC4zIDAgMCAwLTEuMS00LjEyNHoiLz48L2c+PC9zeW1ib2w+PC9zdmc+"
+      },
+      "displayName": "Google Drive",
+      "typeVersion": 3,
+      "nodeCategories": [
+        {
+          "id": 3,
+          "name": "Data & Storage"
+        }
+      ]
+    },
+    {
+      "id": 367,
+      "icon": "file:linkedin.svg",
+      "name": "n8n-nodes-base.linkedIn",
+      "codex": {
+        "data": {
+          "resources": {
+            "generic": [
+              {
+                "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                "icon": "🧬",
+                "label": "Why business process automation with n8n can change your daily life"
+              }
+            ],
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.linkedin/"
+              }
+            ],
+            "credentialDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/credentials/linkedin/"
+              }
+            ]
+          },
+          "categories": [
+            "Marketing",
+            "Communication"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0"
+        }
+      },
+      "group": "[\"input\"]",
+      "defaults": {
+        "name": "LinkedIn"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgNjcgNjYiPjx1c2UgeGxpbms6aHJlZj0iI2EiIHg9IjEiIHk9IjEiLz48c3ltYm9sIGlkPSJhIiBvdmVyZmxvdz0idmlzaWJsZSI+PGcgZmlsbC1ydWxlPSJub256ZXJvIiBzdHJva2U9Im5vbmUiPjxwYXRoIGZpbGw9IiMwMTc3YjUiIGQ9Ik01OS4yNiAwSDQuNzI0QzIuMTIgMCAwIDIuMDY2IDAgNC42MXY1NC43ODhjMCAyLjUzIDIuMTIgNC42IDQuNzI0IDQuNmg1NC41NGMyLjYxIDAgNC43MzYtMi4wNyA0LjczNi00LjZWNC42MUM2NCAyLjA2NiA2MS44NzQgMCA1OS4yNiAwIi8+PHBhdGggZD0iTTkuNDkgMjMuOTkySDE5djMwLjU0SDkuNDl6bTQuNzQ4LTE1LjJjMy4wMzQgMCA1LjUgMi40NjYgNS41IDUuNWE1LjUxIDUuNTEgMCAwIDEtNS40OTggNS41MDYgNS41MiA1LjUyIDAgMCAxLTUuNTA4LTUuNTA2IDUuNSA1LjUgMCAwIDEgNS41MDYtNS41bTEwLjcgMTUuMmg5LjEwNHY0LjE3NGguMTI2YzEuMjY4LTIuNCA0LjM2NC00LjkzMiA5LTQuOTMyIDkuNjEyIDAgMTEuMzg2IDYuMzI2IDExLjM4NiAxNC41NDh2MTYuNzUyaC05LjQ4NlYzOS42NzhjMC0zLjU0LS4wNjQtOC4xLTQuOTMyLTguMS00Ljk0IDAtNS43IDMuODYtNS43IDcuODR2MTUuMTA4aC05LjQ4NHYtMzAuNTR6Ii8+PC9nPjwvc3ltYm9sPjwvc3ZnPg=="
+      },
+      "displayName": "LinkedIn",
+      "typeVersion": 1,
+      "nodeCategories": [
+        {
+          "id": 6,
+          "name": "Communication"
+        },
+        {
+          "id": 27,
+          "name": "Marketing"
+        }
+      ]
+    },
+    {
+      "id": 834,
+      "icon": "file:code.svg",
+      "name": "n8n-nodes-base.code",
+      "codex": {
+        "data": {
+          "alias": [
+            "cpde",
+            "Javascript",
+            "JS",
+            "Python",
+            "Script",
+            "Custom Code",
+            "Function"
+          ],
+          "details": "The Code node allows you to execute JavaScript in your workflow.",
+          "resources": {
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+              }
+            ]
+          },
+          "categories": [
+            "Development",
+            "Core Nodes"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0",
+          "subcategories": {
+            "Core Nodes": [
+              "Helpers",
+              "Data Transformation"
+            ]
+          }
+        }
+      },
+      "group": "[\"transform\"]",
+      "defaults": {
+        "name": "Code"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+      },
+      "displayName": "Code",
+      "typeVersion": 2,
+      "nodeCategories": [
+        {
+          "id": 5,
+          "name": "Development"
+        },
+        {
+          "id": 9,
+          "name": "Core Nodes"
+        }
+      ]
+    }
+  ]
+}

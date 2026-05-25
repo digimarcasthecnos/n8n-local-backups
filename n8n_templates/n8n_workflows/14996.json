@@ -1,0 +1,1245 @@
+{
+  "workflow": {
+    "id": 14996,
+    "name": "Aggregate multi-source job boards to Supabase and Google Sheets",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-12T06:15:27.767Z",
+    "description": "Stop manually checking dozens of career pages. This workflow runs every morning, hits the public APIs of 8+ ATS platforms and job boards, normalizes every listing into a single clean schema, and syncs everything to Supabase and Google Sheets deduplicated and ready to query.\n\n## Who it's for\n\nJob seekers, recruiters, or career platforms that want a consolidated, up-to-date feed of openings from specific companies without scraping, without API keys, and without paying for a jobs aggregator.\n\n## How it works\n\n1. A Schedule Trigger fires daily at 8 AM IST\n2. A Company List code node defines all sources grouped by ATS type (Greenhouse, Lever, Ashby, Workable, SmartRecruiters, RemoteOK, and board APIs like Remotive, Himalayas, Arbeitnow, Jobicy)\n3. A Prepare Request node builds the correct API URL and headers for each source, including multi-page pagination for SmartRecruiters (up to 500 jobs via offset) and Himalayas (up to 500 via page param)\n4. An HTTP Request node fetches all sources in batches of 5\n5. A Parse + Enrich + Filter node normalizes all divergent JSON structures into a unified schema — resolving ISO country codes, Indian city detection, salary parsing across all formats, and domain-based filtering\n6. Deduplicated results are upserted to a Supabase (Postgres) table and written to Google Sheets\n\n## ATS platforms supported\n\nGreenhouse, Lever, Ashby, Workable, SmartRecruiters, RemoteOK, Remotive, Himalayas, Arbeitnow, Jobicy\n\n## Normalized output schema\n\n`job_id`, `title`, `company`, `location`, `country`, `salary`, `job_type`, `apply_url`, `posted_at`, `source_ats`\n\n## Setup\n\n1. Open the **Company List** node and edit the `sources` array — add or remove companies and their ATS slugs\n2. Update `ALLOWED_DOMAINS` in the Parse node to filter by location or job type relevant to you\n3. Add your **Supabase** credentials in the Postgres node and confirm your table name and schema match the output fields\n4. Connect your **Google Sheets** credentials and set the target spreadsheet and sheet ID\n5. (Optional) Adjust pagination limits per source in the Prepare Request node\n\n## Requirements\n\n- Self-hosted or cloud n8n instance\n- Supabase project with a jobs table\n- Google Sheets with headers matching the normalized schema\n- No external API keys required — all sources use public endpoints",
+    "workflow": {
+      "meta": {},
+      "nodes": [
+        {
+          "id": "57beb602-7b80-4a2e-80cf-5fb46dc17858",
+          "name": "Main Sticky",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2368,
+            2640
+          ],
+          "parameters": {
+            "color": 2,
+            "width": 500,
+            "height": 600,
+            "content": "## Aggregate Multi-Source Job Boards into Centralized Database\nAutomate the collection, parsing, and normalization of job postings from diverse ATS platforms into a unified database.\n\n### How it works\n1. Schedule daily execution using the trigger.\n2. Iterate through defined ATS source configurations.\n3. Fetch raw job data via HTTP requests.\n4. Normalize diverse JSON structures into a standard schema.\n5. Filter by domain and deduplicate entries.\n6. Sync results to Supabase and Google Sheets.\n\n### Setup\n1. Define your job board list in the first Code node.\n2. Add Supabase credentials in the Postgres node.\n3. Configure Google Sheets credentials and document ID.\n4. Update the ALLOWED_DOMAINS array to match your career target.\n\n### Customization\nConsolidate user-specific values like API keys or table IDs in a Set node at the workflow start for easy configuration."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "b5c07db8-536b-4212-8753-f3033ef81b55",
+          "name": "Company List",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -1568,
+            2736
+          ],
+          "parameters": {
+            "jsCode": "// COMPANY LIST v7\n// - Board APIs first (no array-splitting)\n// - Per-company ATS (JSON objects, no splitting)\n// - HTML/JSON-LD career pages (test batch)\n// - Lever + RemoteOK LAST (bare array => n8n splits => handled by v7 parser)\n\nconst sources = [\n\n  // FREE GLOBAL JOB BOARDS (safe -- return JSON objects)\n  { ats: 'remotive',  slug: 'remotive',  company: 'Remotive Board' },\n  { ats: 'himalayas', slug: 'himalayas', company: 'Himalayas' },\n  { ats: 'arbeitnow', slug: 'arbeitnow', company: 'Arbeitnow' },\n  { ats: 'jobicy',    slug: 'india',     company: 'Jobicy India' },\n  { ats: 'jobicy',    slug: 'usa',       company: 'Jobicy USA Remote' },\n\n  // GREENHOUSE -- returns {jobs:[]} object, no splitting\n  { ats: 'greenhouse', slug: 'gitlab',       company: 'GitLab' },\n  { ats: 'greenhouse', slug: 'razorpay',     company: 'Razorpay' },\n  { ats: 'greenhouse', slug: 'postman',      company: 'Postman' },\n  { ats: 'greenhouse', slug: 'browserstack', company: 'BrowserStack' },\n  { ats: 'greenhouse', slug: 'moengage',     company: 'MoEngage' },\n  { ats: 'greenhouse', slug: 'hasura',       company: 'Hasura' },\n  { ats: 'greenhouse', slug: 'notion',       company: 'Notion' },\n  { ats: 'greenhouse', slug: 'groww',        company: 'Groww' },\n  { ats: 'greenhouse', slug: 'druva',        company: 'Druva' },\n  { ats: 'greenhouse', slug: 'cloudflare',   company: 'Cloudflare' },\n  { ats: 'greenhouse', slug: 'rippling',     company: 'Rippling' },\n  { ats: 'greenhouse', slug: 'gusto',        company: 'Gusto' },\n  { ats: 'greenhouse', slug: 'twilio',       company: 'Twilio' },\n  { ats: 'greenhouse', slug: 'brex',         company: 'Brex' },\n  { ats: 'greenhouse', slug: 'grammarly',    company: 'Grammarly' },\n  { ats: 'greenhouse', slug: 'zapier',       company: 'Zapier' },\n\n  // SMARTRECRUITERS -- returns {content:[]} object\n  { ats: 'smartrecruiters', slug: 'Meesho',     company: 'Meesho' },\n  { ats: 'smartrecruiters', slug: 'Freshworks', company: 'Freshworks' },\n  { ats: 'smartrecruiters', slug: 'PhonePe',    company: 'PhonePe' },\n\n  // ASHBY -- returns {jobs:[]} object\n  { ats: 'ashby', slug: 'linear',   company: 'Linear' },\n  { ats: 'ashby', slug: 'clerk',    company: 'Clerk.dev' },\n  { ats: 'ashby', slug: 'cal',      company: 'Cal.com' },\n  { ats: 'ashby', slug: 'supabase', company: 'Supabase' },\n  { ats: 'ashby', slug: 'resend',   company: 'Resend' },\n  { ats: 'ashby', slug: 'posthog',  company: 'PostHog' },\n  { ats: 'ashby', slug: 'raycast',  company: 'Raycast' },\n  { ats: 'ashby', slug: 'vercel',   company: 'Vercel' },\n\n  // WORKABLE -- returns {results:[]} object\n  { ats: 'workable', slug: 'zepto',      company: 'Zepto' },\n  { ats: 'workable', slug: 'cred',       company: 'CRED' },\n  { ats: 'workable', slug: 'shiprocket', company: 'Shiprocket' },\n\n  // REPLACED HTML LISTINGS WITH VERIFIED ENDPOINTS\n  { ats: 'greenhouse', slug: 'shopify',   company: 'Shopify' },\n  { ats: 'greenhouse', slug: 'chargebee', company: 'Chargebee' },\n  { ats: 'greenhouse', slug: 'sprinklr',  company: 'Sprinklr' },\n\n  // LEVER -- bare array response => n8n SPLITS items\n  // Placed LAST so index-split only affects entries at the tail.\n  // v7 parser detects company from hostedUrl automatically.\n  { ats: 'lever', slug: 'gohighlevel', company: 'GoHighLevel' },\n  { ats: 'lever', slug: 'remote',      company: 'Remote.com' },\n  { ats: 'lever', slug: 'delhivery',   company: 'Delhivery' },\n  { ats: 'lever', slug: 'netlify',     company: 'Netlify' },\n  { ats: 'lever', slug: 'figma',       company: 'Figma' },\n  { ats: 'lever', slug: 'loom',        company: 'Loom' },\n\n  // REMOTEOK -- bare array response => n8n SPLITS items\n  // Placed last. Parser reads .company field from each split item.\n  { ats: 'remoteok', slug: 'remoteok', company: 'Remote OK' },\n\n];\n\nconsole.log('Company List v7: ' + sources.length + ' sources');\nreturn sources.map(c => ({ json: c }));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "9bf7162f-6b30-4b72-a2eb-de2b0f50c724",
+          "name": "Prepare Request",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -1056,
+            2752
+          ],
+          "parameters": {
+            "jsCode": "// Builds API URL + headers for ALL sources in one pass.\n// Each source gets its own item => HTTP Request calls each one.\n// v2: Adds pagination for Remotive (higher limit), SmartRecruiters (offset),\n//     and Himalayas (page param) to capture all available jobs.\n\nconst H = { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (compatible; JobBot/4.2)' };\nconst results = [];\n\nfor (const entry of $input.all()) {\n  const { ats, slug, company, url: customUrl } = entry.json;\n  if (!ats || !slug) continue;\n\n  let headers = H;\n  if (ats === 'remoteok') {\n    headers = { ...H, 'Accept': 'application/json', 'Cache-Control': 'no-cache' };\n  } else if (ats === 'html_json_ld') {\n    headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 'Accept': 'text/html' };\n  }\n  const route = ats === 'html_json_ld' ? 'html' : 'api';\n  const base  = { ...entry.json, _headers: headers, _route: route };\n\n  // Paginated sources\n  // SmartRecruiters: offset-based pagination (5 pages x 100 = 500 jobs max)\n  if (ats === 'smartrecruiters') {\n    for (let offset = 0; offset < 500; offset += 100) {\n      results.push({ json: { ...base, _url: 'https://api.smartrecruiters.com/v1/companies/' + slug + '/postings?status=PUBLIC&limit=100&offset=' + offset } });\n    }\n    continue;\n  }\n\n  // Himalayas: page-based pagination (10 pages x 50 = 500 jobs max)\n  if (ats === 'himalayas') {\n    for (let page = 1; page <= 10; page++) {\n      results.push({ json: { ...base, _url: 'https://himalayas.app/jobs/api?limit=50&page=' + page } });\n    }\n    continue;\n  }\n\n  // Non-paginated sources (single URL)\n  const urlMap = {\n    remotive:     'https://remotive.com/api/remote-jobs?limit=500',\n    remoteok:     'https://remoteok.com/api',\n    arbeitnow:    'https://www.arbeitnow.com/api/job-board-api',\n    jobicy:       slug === 'india'\n                    ? 'https://jobicy.com/api/v2/remote-jobs?count=100&geo=india'\n                    : 'https://jobicy.com/api/v2/remote-jobs?count=100&geo=usa',\n    lever:        'https://api.lever.co/v0/postings/' + slug + '?mode=json&limit=250',\n    greenhouse:   'https://boards-api.greenhouse.io/v1/boards/' + slug + '/jobs?content=true',\n    workable:     'https://apply.workable.com/api/v1/widget/accounts/' + slug,\n    ashby:        'https://api.ashbyhq.com/posting-api/job-board/' + slug,\n    html_json_ld: customUrl\n  };\n\n  const url = urlMap[ats];\n  if (!url) { console.log('Unknown ATS: ' + ats); continue; }\n\n  results.push({ json: { ...base, _url: url } });\n}\n\nconsole.log('Prepare Request v2: ' + results.length + ' API calls queued (includes pagination)');\nreturn results;"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "be38d26b-6c7f-4929-9968-554af409ccbd",
+          "name": "HTTP Request",
+          "type": "n8n-nodes-base.httpRequest",
+          "onError": "continueRegularOutput",
+          "position": [
+            -832,
+            2752
+          ],
+          "parameters": {
+            "url": "={{ $json._url }}",
+            "options": {
+              "timeout": 30000,
+              "batching": {
+                "batch": {
+                  "batchSize": 5
+                }
+              }
+            },
+            "jsonHeaders": "={{ JSON.stringify($json._headers) }}",
+            "sendHeaders": true,
+            "specifyHeaders": "json"
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "339dcf49-a2de-4f81-af07-05baf1672f0f",
+          "name": "Upsert to Supabase",
+          "type": "n8n-nodes-base.postgres",
+          "onError": "continueRegularOutput",
+          "position": [
+            -272,
+            2752
+          ],
+          "parameters": {
+            "table": {
+              "__rl": true,
+              "mode": "name",
+              "value": "YOUR_TABLE_NAME"
+            },
+            "schema": {
+              "__rl": true,
+              "mode": "name",
+              "value": "public"
+            },
+            "columns": {
+              "value": {
+                "salary": "={{ $json.salary }}",
+                "status": "={{ $json.status }}",
+                "company": "={{ $json.company }}",
+                "country": "={{ $json.country }}",
+                "ats_type": "={{ $json.ats_type }}",
+                "job_hash": "={{ $json.job_hash }}",
+                "location": "={{ $json.location }}",
+                "apply_url": "={{ $json.apply_url }}",
+                "job_title": "={{ $json.job_title }}",
+                "work_mode": "={{ $json.work_mode }}",
+                "description": "={{ $json.description }}",
+                "employment_type": "={{ $json.employment_type }}"
+              },
+              "schema": [
+                {
+                  "id": "id",
+                  "type": "number",
+                  "display": true,
+                  "removed": true,
+                  "required": false,
+                  "displayName": "id",
+                  "defaultMatch": true,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "job_title",
+                  "type": "string",
+                  "display": true,
+                  "required": true,
+                  "displayName": "job_title",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": false
+                },
+                {
+                  "id": "company",
+                  "type": "string",
+                  "display": true,
+                  "required": true,
+                  "displayName": "company",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": false
+                },
+                {
+                  "id": "location",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "location",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": false
+                },
+                {
+                  "id": "country",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "country",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": false
+                },
+                {
+                  "id": "work_mode",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "work_mode",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": false
+                },
+                {
+                  "id": "employment_type",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "employment_type",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": false
+                },
+                {
+                  "id": "apply_url",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "apply_url",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": false
+                },
+                {
+                  "id": "ats_type",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "ats_type",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": false
+                },
+                {
+                  "id": "job_hash",
+                  "type": "string",
+                  "display": true,
+                  "required": true,
+                  "displayName": "job_hash",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "description",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "description",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": false
+                },
+                {
+                  "id": "salary",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "salary",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": false
+                },
+                {
+                  "id": "scraped_at",
+                  "type": "dateTime",
+                  "display": true,
+                  "removed": true,
+                  "required": false,
+                  "displayName": "scraped_at",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": false
+                },
+                {
+                  "id": "status",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": false
+                },
+                {
+                  "id": "created_at",
+                  "type": "dateTime",
+                  "display": true,
+                  "removed": true,
+                  "required": false,
+                  "displayName": "created_at",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": false
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [
+                "job_hash"
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "upsert"
+          },
+          "typeVersion": 2.5
+        },
+        {
+          "id": "801e7955-bf21-4695-a591-cc716267e1e6",
+          "name": "Write to Google Sheet",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            -16,
+            2752
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "ATS": "={{ $('Parse and Enrich and Filter').item.json.ats_type }}",
+                "Salary": "={{ $('Parse and Enrich and Filter').item.json.salary }}",
+                "Status": "={{ $('Parse and Enrich and Filter').item.json.status }}",
+                "Company": "={{ $('Parse and Enrich and Filter').item.json.company }}",
+                "Country": "={{ $('Parse and Enrich and Filter').item.json.country }}",
+                "Location": "={{ $('Parse and Enrich and Filter').item.json.location }}",
+                "job_hash": "={{ $('Parse and Enrich and Filter').item.json.job_hash }}",
+                "Apply URL": "={{ $('Parse and Enrich and Filter').item.json.apply_url }}",
+                "Job Title": "={{ $('Parse and Enrich and Filter').item.json.job_title }}",
+                "Work Mode": "={{ $('Parse and Enrich and Filter').item.json.work_mode }}",
+                "Description": "={{ $('Parse and Enrich and Filter').item.json.description }}",
+                "Employment Type": "={{ $('Parse and Enrich and Filter').item.json.employment_type }}"
+              },
+              "schema": [
+                {
+                  "id": "job_hash",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "job_hash",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Job Title",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Job Title",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Company",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Company",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Location",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Location",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Country",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Country",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Work Mode",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Work Mode",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Employment Type",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Employment Type",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Apply URL",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Apply URL",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "ATS",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "ATS",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Salary",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Salary",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Status",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Description",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "Description",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [
+                "job_hash"
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "appendOrUpdate",
+            "sheetName": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_RESOURCE_ID_HERE"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_RESOURCE_ID_HERE"
+            }
+          },
+          "typeVersion": 4
+        },
+        {
+          "id": "dcda27e6-1c40-419e-8351-4bc8a8547d7d",
+          "name": "Loop Batches (5)",
+          "type": "n8n-nodes-base.splitInBatches",
+          "position": [
+            -1344,
+            2736
+          ],
+          "parameters": {
+            "options": {},
+            "batchSize": 5
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "9f6b95c3-b316-4f9d-ba64-463737d5a672",
+          "name": "Daily 8AM IST",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            -1792,
+            2736
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "triggerAtHour": 8
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "b367197d-eb1e-468e-8dd2-08173782b16a",
+          "name": "Parse and Enrich and Filter",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -592,
+            2752
+          ],
+          "parameters": {
+            "jsCode": "// PARSE + ENRICH + FILTER\n\n// tiny helpers\nconst str = v => {\n  if (v == null) return '';\n  if (typeof v === 'object') return v.label || v.name || v.id || '';\n  return String(v);\n};\n\n// ISO country map\nconst ISO2 = {IN:'India',US:'United States',GB:'United Kingdom',AU:'Australia',CA:'Canada',DE:'Germany',SG:'Singapore',AE:'UAE',FR:'France',NL:'Netherlands',PK:'Pakistan',PH:'Philippines',NG:'Nigeria',KE:'Kenya',ZA:'South Africa',BR:'Brazil',JP:'Japan',KR:'South Korea',IE:'Ireland',PL:'Poland',NZ:'New Zealand',PT:'Portugal',IT:'Italy',ES:'Spain',UA:'Ukraine'};\nconst CNAMES = {india:'India',bharat:'India','united states':'United States',usa:'United States','united kingdom':'United Kingdom',australia:'Australia',canada:'Canada',germany:'Germany',singapore:'Singapore',uae:'UAE',dubai:'UAE',netherlands:'Netherlands',france:'France',pakistan:'Pakistan',philippines:'Philippines',nigeria:'Nigeria',kenya:'Kenya','south africa':'South Africa',brazil:'Brazil',japan:'Japan','south korea':'South Korea',ireland:'Ireland',poland:'Poland','new zealand':'New Zealand',portugal:'Portugal',italy:'Italy',spain:'Spain',ukraine:'Ukraine'};\nconst INDIA_CITIES = new Set(['bengaluru','bangalore','mumbai','bombay','delhi','new delhi','hyderabad','pune','chennai','madras','kolkata','calcutta','noida','gurugram','gurgaon','ahmedabad','jaipur','kochi','chandigarh','coimbatore','indore','nagpur','bhopal','lucknow','surat','vadodara','trivandrum','vizag','mangalore','mysuru','nashik']);\n\nfunction parseSalary(raw) {\n  if (!raw && raw !== 0) return '';\n  if (typeof raw === 'string') {\n    const s = raw.trim();\n    if (!s || s === '0' || s === 'null') return '';\n    if (/^\\d/.test(s)) {\n      const nums = s.match(/\\d+(?:[,.]\\d+)*/g);\n      if (nums && nums.length >= 2) {\n        const [lo, hi] = nums.map(n => Number(n.replace(/,/g,'')));\n        const sym = /INR/.test(s) ? 'INR ' : /GBP/.test(s) ? 'GBP ' : /EUR/.test(s) ? 'EUR ' : '$';\n        const per = /year|annual/i.test(s) ? '/yr' : /month/i.test(s) ? '/mo' : /hour/i.test(s) ? '/hr' : '';\n        return sym + fmt(lo) + '--' + fmt(hi) + per;\n      }\n    }\n    return s.slice(0, 200);\n  }\n  if (typeof raw === 'number') {\n    return raw > 0 ? '$' + fmt(raw) : '';\n  }\n  if (typeof raw === 'object') {\n    const inner = raw.value || raw;\n    let min = inner.minValue || inner.min || inner.minimum || inner.floor || 0;\n    let max = inner.maxValue || inner.max || inner.maximum || inner.ceiling || 0;\n    const currency = str(raw.currency || inner.currency || raw.salaryCurrency || 'USD');\n    const interval = str(raw.unitText || inner.unitText || inner.interval || raw.salaryFrequency || '');\n    const sym = currency === 'INR' ? 'INR ' : currency === 'GBP' ? 'GBP ' : currency === 'EUR' ? 'EUR ' : '$';\n    const perStr = interval ? ' /' + interval.toLowerCase().replace(/^per\\s*/i,'').replace('year','yr').replace('month','mo').replace('hour','hr') : '';\n    if (!min && !max) return '';\n    const parts = [];\n    if (min) parts.push(sym + fmt(min));\n    if (max && max !== min) parts.push(sym + fmt(max));\n    return parts.join('--') + perStr + ' ' + currency;\n  }\n  return '';\n}\n\nfunction fmt(n) {\n  n = Number(n);\n  if (n >= 10000000) return (n/10000000).toFixed(1).replace(/\\.0$/,'') + 'Cr';\n  if (n >= 100000)   return (n/100000).toFixed(1).replace(/\\.0$/,'') + 'L';\n  if (n >= 1000)     return (n/1000).toFixed(0) + 'k';\n  return String(Math.round(n));\n}\n\nfunction parseDate(raw) {\n  if (!raw) return '';\n  let d;\n  if (typeof raw === 'number') {\n    d = new Date(raw > 1e10 ? raw : raw * 1000);\n  } else if (typeof raw === 'string') {\n    const s = raw.trim();\n    if (!s) return '';\n    d = new Date(s);\n  } else if (raw instanceof Date) {\n    d = raw;\n  }\n  if (!d || isNaN(d.getTime())) return '';\n  return d.toISOString().slice(0, 10);\n}\n\nfunction getCountry(rawLoc, rawCC) {\n  const cc = str(rawCC);\n  if (cc) {\n    const up = cc.trim().toUpperCase();\n    if (ISO2[up]) return ISO2[up];\n    const lo = cc.trim().toLowerCase();\n    if (CNAMES[lo]) return CNAMES[lo];\n    if (cc.trim().length > 2) return cc.trim();\n  }\n  const loc = str(rawLoc);\n  if (!loc) return 'Unknown';\n  const l = loc.toLowerCase();\n  if (/^(remote|remote worldwide|anywhere|global|worldwide)$/i.test(l.trim())) return 'Global';\n  if ([...INDIA_CITIES].some(c => l.includes(c))) return 'India';\n  if (/\\busa\\b|united states/.test(l)) return 'United States';\n  for (const [a,c] of Object.entries(CNAMES)) if (l.includes(a)) return c;\n  const last = loc.split(/[,|\\/]/).pop()?.trim().toUpperCase();\n  if (last && ISO2[last]) return ISO2[last];\n  return 'Unknown';\n}\n\nfunction getWorkMode(title, rawLoc, explicit) {\n  const ex = str(explicit).toLowerCase().replace(/[^a-z]/g,'');\n  if (ex === 'remote')  return 'Remote';\n  if (ex === 'hybrid')  return 'Hybrid';\n  if (ex === 'onsite' || ex === 'inoffice') return 'Onsite';\n  const t = (str(title) + ' ' + str(rawLoc)).toLowerCase();\n  if (/\\bremote\\b|\\bwfh\\b|work from home|distributed|\\banywhere\\b/.test(t)) return 'Remote';\n  if (/\\bhybrid\\b/.test(t)) return 'Hybrid';\n  return 'Onsite';\n}\n\nfunction cleanLoc(rawLoc, mode) {\n  const loc = str(rawLoc);\n  if (!loc) return mode === 'Remote' ? 'Remote' : 'Not specified';\n  const FIX = {bangalore:'Bengaluru',bombay:'Mumbai',madras:'Chennai',calcutta:'Kolkata',gurgaon:'Gurugram',cochin:'Kochi'};\n  let l = loc.replace(/[,\\s,]+/g, ', ').trim();\n  for (const [o,n] of Object.entries(FIX)) l = l.replace(new RegExp('\\\\b'+o+'\\\\b','gi'), n);\n  return l || 'Not specified';\n}\n\nfunction normType(raw) {\n  const t = str(raw).toLowerCase().replace(/[^a-z]/g,'');\n  if (/intern/.test(t))              return 'Internship';\n  if (/contract|contractor|freelance/.test(t)) return 'Contract';\n  if (/parttime/.test(t))            return 'Part-time';\n  return 'Full-time';\n}\n\nfunction cleanDesc(html) {\n  const h = str(html);\n  if (!h) return '';\n  return h\n    .replace(/<br\\s*\\/?>/gi, '\\n')\n    .replace(/<\\/?(p|li|div|h[1-6])[^>]*>/gi, '\\n')\n    .replace(/<[^>]+>/g, '')\n    .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ').replace(/&#\\d+;/g,'')\n    .replace(/\\n{3,}/g, '\\n\\n').trim().slice(0, 2000);\n}\n\nfunction makeHash(ats, company, title, location) {\n  const s = [ats, company, title, location].map(x => (x||'').toLowerCase().trim()).join('|');\n  let h1 = 0, h2 = 0;\n  for (let i = 0; i < s.length; i++) {\n    h1 = Math.imul(31, h1) + s.charCodeAt(i) | 0;\n    h2 = Math.imul(37, h2) + s.charCodeAt(i) | 0;\n  }\n  return Math.abs(h1).toString(36) + Math.abs(h2).toString(36);\n}\n\nconst ALLOWED_DOMAINS = [\n  'business analyst', 'business analysis', 'business systems analyst',\n  'product manager', 'product management', 'associate pm', 'senior pm',\n  'head of product', 'vp of product', 'director of product',\n  'data analyst', 'data analysis', 'analytics analyst',\n  'business intelligence', 'bi analyst', 'reporting analyst',\n  'product designer', 'ux designer', 'ui designer', 'ux/ui', 'ui/ux',\n  'product design', 'interaction designer', 'visual designer',\n  'user experience', 'user interface designer',\n  'full stack', 'fullstack', 'full-stack', 'software engineer',\n  'software developer', 'backend engineer', 'frontend engineer',\n  'backend developer', 'frontend developer', 'web developer',\n  'sales', 'account executive', 'account manager',\n  'business development', 'sdr', 'bdr',\n  'sales development', 'sales manager', 'revenue'\n];\n\nfunction isTitleAllowed(title) {\n  const t = title.toLowerCase();\n  return ALLOWED_DOMAINS.some(kw => t.includes(kw));\n}\n\nfunction shouldKeep(country, work_mode) {\n  if (country === 'India') return true;\n  if (work_mode === 'Remote') return true;\n  return false;\n}\n\nfunction buildOutput(rawJobs, ats, company) {\n  const seen = new Set(), out = [];\n  for (const j of rawJobs) {\n    if (!j.title || j.title.length < 2) continue;\n    if (!isTitleAllowed(j.title)) continue;\n    const work_mode       = getWorkMode(j.title, j.rawLoc, j.mode);\n    const country         = getCountry(j.rawLoc, j.rawCC);\n    if (!shouldKeep(country, work_mode)) continue;\n    const location        = cleanLoc(j.rawLoc, work_mode);\n    const employment_type = normType(j.type);\n    const job_hash        = makeHash(ats, company, j.title, location);\n    if (seen.has(job_hash)) continue;\n    seen.add(job_hash);\n    const salaryStr  = parseSalary(j.salary);\n    const postedDate = parseDate(j.posted);\n    out.push({ json: {\n      job_title:       j.title.trim(),\n      company,\n      location,\n      country,\n      work_mode,\n      employment_type,\n      apply_url:       str(j.url),\n      ats_type:        ats,\n      job_hash,\n      description:     cleanDesc(j.desc),\n      salary:          salaryStr,\n      posted_date:     postedDate,\n      status:          'active'\n    }});\n  }\n  return out;\n}\n\nfunction detectATS(resp) {\n  if (typeof resp === 'string' && resp.includes('<html')) return 'html_json_ld';\n  if (resp && resp.data && typeof resp.data === 'string' && resp.data.includes('<html')) return 'html_json_ld';\n  if (!resp || typeof resp !== 'object') return null;\n  if ('text' in resp && 'hostedUrl' in resp && String(resp.hostedUrl).includes('lever.co')) return 'lever';\n  if ('position' in resp && ('apply_url' in resp || 'url' in resp) && 'company' in resp) return 'remoteok';\n  if (Array.isArray(resp)) {\n    const f = resp.find(j => j && typeof j === 'object');\n    if (!f) return null;\n    if ('position' in f && 'company' in f) return 'remoteok';\n    if ('text' in f && 'categories' in f && 'hostedUrl' in f) return 'lever';\n    return null;\n  }\n  if (resp.jobs && Array.isArray(resp.jobs)) {\n    const f = resp.jobs[0] || {};\n    if ('candidate_required_location' in f) return 'remotive';\n    if ('jobTitle' in f) return 'jobicy';\n    if ('absolute_url' in f) return 'greenhouse';\n    if ('jobUrl' in f || 'workplaceType' in f) return 'ashby';\n    return 'ashby';\n  }\n  if (resp.data && Array.isArray(resp.data))    return 'arbeitnow';\n  if (resp.content && Array.isArray(resp.content)) return 'smartrecruiters';\n  if (resp.results && Array.isArray(resp.results)) return 'workable';\n  return null;\n}\n\nfunction getCompanyFromResp(resp, ats, cfgCompany, cfgSlug) {\n  if (ats === 'remotive')  return 'Remotive Board';\n  if (ats === 'himalayas') return 'Himalayas';\n  if (ats === 'arbeitnow') return 'Arbeitnow';\n  if (ats === 'jobicy')    return cfgSlug === 'india' ? 'Jobicy India' : 'Jobicy USA Remote';\n  if (ats === 'remoteok') {\n    const src = Array.isArray(resp) ? resp[0] : resp;\n    const co  = src && src.company;\n    return co && co !== '0' && co.length > 1 ? co : 'Remote OK';\n  }\n  if (ats === 'lever') {\n    const src = Array.isArray(resp) ? resp[0] : resp;\n    if (src && src.hostedUrl) {\n      const m = src.hostedUrl.match(/lever\\.co\\/([^/?#]+)/);\n      if (m) return m[1].replace(/-/g,' ').replace(/\\b\\w/g, c => c.toUpperCase());\n    }\n    return cfgCompany || cfgSlug || 'Lever';\n  }\n  if (ats === 'greenhouse') {\n    const f = resp.jobs && resp.jobs[0];\n    if (f && f.company_name && f.company_name.length > 1) return f.company_name;\n    if (f && f.absolute_url) { const m = f.absolute_url.match(/greenhouse\\.io\\/([^/?#]+)/); if (m) return m[1]; }\n    return cfgCompany || cfgSlug || 'Greenhouse';\n  }\n  if (ats === 'ashby') {\n    const f = resp.jobs && resp.jobs[0];\n    if (f && f.jobUrl) { const m = f.jobUrl.match(/ashbyhq\\.com\\/([^/?#]+)/); if (m) return m[1].replace(/-/g,' ').replace(/\\b\\w/g, c => c.toUpperCase()); }\n    return cfgCompany || cfgSlug || 'Ashby';\n  }\n  return cfgCompany || cfgSlug || ats;\n}\n\n// Main Loop\nconst httpItems = $input.all();\nconst cfgAll    = $('Prepare Request').all();\nconst allJobs   = [];\n\nconsole.log('Parse v10: ' + httpItems.length + ' HTTP items | ' + cfgAll.length + ' cfg entries');\n\nfor (let i = 0; i < httpItems.length; i++) {\n  const resp = httpItems[i].json;\n\n  let cfgIndex = Math.min(i, cfgAll.length - 1);\n  const paired = httpItems[i].pairedItem;\n  if (paired != null) {\n    if (typeof paired === 'object' && !Array.isArray(paired) && typeof paired.item === 'number') {\n      cfgIndex = Math.min(paired.item, cfgAll.length - 1);\n    } else if (Array.isArray(paired) && paired.length > 0 && typeof paired[0].item === 'number') {\n      cfgIndex = Math.min(paired[0].item, cfgAll.length - 1);\n    }\n  }\n  const cfg = cfgAll[cfgIndex] ? cfgAll[cfgIndex].json : {};\n\n  const ats      = detectATS(resp) || str(cfg.ats);\n  const cfgSlug  = str(cfg.slug);\n  const company  = getCompanyFromResp(resp, ats, str(cfg.company), cfgSlug);\n  const htmlStr  = (typeof resp === 'string') ? resp : (resp && typeof resp.data === 'string' ? resp.data : null);\n\n  if (!ats) { console.log('item ' + i + ': cannot detect ATS'); continue; }\n\n  let rawJobs = [];\n\n  switch (ats) {\n\n    case 'html_json_ld': {\n      if (!htmlStr) { console.log('[html_json_ld] ' + company + ': no HTML body'); break; }\n      let matchCount = 0;\n      const regex = /<script[^>]*type=[\"']application\\/ld\\+json[\"'][^>]*>([\\s\\S]*?)<\\/script>/gi;\n      let m;\n      while ((m = regex.exec(htmlStr)) !== null) {\n        try {\n          const parsed = JSON.parse(m[1]);\n          const items  = Array.isArray(parsed) ? parsed : [parsed];\n          for (const item of items) {\n            const entities = item['@graph'] || [item];\n            for (const ent of entities) {\n              if (ent['@type'] !== 'JobPosting') continue;\n              matchCount++;\n              const rawLocObj = ent.jobLocation\n                ? (Array.isArray(ent.jobLocation) ? ent.jobLocation[0] : ent.jobLocation)\n                : null;\n              let locStr = 'Remote';\n              let rawCC  = '';\n              if (rawLocObj && rawLocObj.address) {\n                locStr = str(rawLocObj.address.addressLocality)\n                      || str(rawLocObj.address.addressRegion)\n                      || str(rawLocObj.address.addressCountry)\n                      || 'Remote';\n                rawCC  = str(rawLocObj.address.addressCountry);\n              }\n              const isRemote = str(ent.jobLocationType).toLowerCase().includes('remote')\n                            || str(ent.description).toLowerCase().includes('remote');\n              let salary = '';\n              if (ent.baseSalary) {\n                salary = parseSalary(ent.baseSalary);\n              } else if (ent.estimatedSalary) {\n                salary = parseSalary(ent.estimatedSalary);\n              }\n              const posted = parseDate(ent.datePosted || ent.dateCreated || '');\n              rawJobs.push({\n                title:  str(ent.title || ent.name).trim(),\n                rawLoc: isRemote ? 'Remote' : locStr,\n                rawCC,\n                type:   str(ent.employmentType) || 'Full-time',\n                mode:   isRemote ? 'Remote' : null,\n                url:    str(ent.url) || str(cfg.url) || '',\n                desc:   str(ent.description),\n                salary,\n                posted\n              });\n            }\n          }\n        } catch(e) { /* malformed JSON-LD */ }\n      }\n      console.log('[html_json_ld] ' + company + ': ' + matchCount + ' JobPosting entries');\n      break;\n    }\n\n    case 'remotive':\n      rawJobs = (resp.jobs || []).map(j => ({\n        title:  str(j.title).trim(),\n        rawLoc: str(j.candidate_required_location),\n        rawCC:  '',\n        type:   str(j.job_type),\n        mode:   null,\n        url:    str(j.url),\n        desc:   str(j.description),\n        salary: parseSalary(j.salary),\n        posted: parseDate(j.publication_date)\n      }));\n      break;\n\n    case 'remoteok': {\n      const list = Array.isArray(resp)\n        ? resp.filter(j => j && j.position)\n        : (resp && resp.position ? [resp] : []);\n      rawJobs = list.map(j => ({\n        title:  str(j.position).trim(),\n        rawLoc: str(j.location) || 'Worldwide',\n        rawCC:  '',\n        type:   'Full-time',\n        mode:   'Remote',\n        url:    str(j.apply_url) || str(j.url),\n        desc:   str(j.description),\n        salary: (j.salary_min || j.salary_max)\n                  ? parseSalary({ min: j.salary_min, max: j.salary_max, currency: 'USD', interval: 'YEAR' })\n                  : '',\n        posted: parseDate(j.date || j.epoch)\n      }));\n      break;\n    }\n\n    case 'himalayas': {\n      const jobs = resp.jobs || resp.data || (Array.isArray(resp) ? resp : []);\n      rawJobs = jobs.map(j => ({\n        title:  str(j.title).trim(),\n        rawLoc: str(j.location) || str(j.regions) || 'Remote',\n        rawCC:  '',\n        type:   str(j.jobType) || str(j.type),\n        mode:   'Remote',\n        url:    str(j.applyUrl) || str(j.url),\n        desc:   str(j.description),\n        salary: j.salary\n                  ? parseSalary(j.salary)\n                  : (j.minSalary || j.maxSalary)\n                    ? parseSalary({ min: j.minSalary, max: j.maxSalary, currency: j.currency || 'USD', interval: 'YEAR' })\n                    : '',\n        posted: parseDate(j.createdAt || j.publishedAt || j.postedAt)\n      }));\n      break;\n    }\n\n    case 'arbeitnow':\n      rawJobs = (resp.data || []).map(j => ({\n        title:  str(j.title).trim(),\n        rawLoc: str(j.location),\n        rawCC:  '',\n        type:   Array.isArray(j.job_types) ? str(j.job_types[0]) : 'Full-time',\n        mode:   j.remote ? 'Remote' : null,\n        url:    str(j.url),\n        desc:   str(j.description),\n        salary: parseSalary(j.salary || ''),\n        posted: parseDate(j.created_at || j.published_at)\n      }));\n      break;\n\n    case 'jobicy':\n      rawJobs = (resp.jobs || []).map(j => ({\n        title:  str(j.jobTitle).trim(),\n        rawLoc: str(j.jobGeo) || str(j.jobRegion) || 'Remote',\n        rawCC:  '',\n        type:   str(j.jobType),\n        mode:   'Remote',\n        url:    str(j.url),\n        desc:   str(j.jobExcerpt),\n        salary: (j.annualSalaryMin || j.annualSalaryMax)\n                  ? parseSalary({ min: j.annualSalaryMin, max: j.annualSalaryMax, currency: j.salaryCurrency || 'USD', interval: 'YEAR' })\n                  : '',\n        posted: parseDate(j.pubDate || j.postDate)\n      }));\n      break;\n\n    case 'lever': {\n      const list = Array.isArray(resp) ? resp : (resp && resp.text ? [resp] : []);\n      rawJobs = list.map(j => ({\n        title:  str(j.text).trim(),\n        rawLoc: str(j.categories && j.categories.location),\n        rawCC:  '',\n        type:   str(j.categories && j.categories.commitment),\n        mode:   null,\n        url:    str(j.hostedUrl) || str(j.applyUrl),\n        desc:   str(j.descriptionPlain),\n        salary: (j.salaryRange && (j.salaryRange.min || j.salaryRange.max))\n                  ? parseSalary({\n                      min:      j.salaryRange.min,\n                      max:      j.salaryRange.max,\n                      currency: j.salaryRange.currency || 'USD',\n                      interval: j.salaryRange.interval || 'YEAR'\n                    })\n                  : '',\n        posted: parseDate(j.createdAt)\n      }));\n      break;\n    }\n\n    case 'greenhouse':\n      rawJobs = (resp.jobs || []).map(j => ({\n        title:  str(j.title).trim(),\n        rawLoc: str(j.location && j.location.name),\n        rawCC:  '',\n        type:   '',\n        mode:   null,\n        url:    str(j.absolute_url) || ('https://boards.greenhouse.io/' + cfgSlug),\n        desc:   str(j.content),\n        salary: '',\n        posted: parseDate(j.updated_at || j.created_at)\n      }));\n      break;\n\n    case 'workable':\n      rawJobs = (resp.results || []).map(j => {\n        const loc = j.location || {};\n        const city = str(loc.city), cc = str(loc.country_code) || str(loc.country);\n        const rem  = loc.telecommuting || j.remote || false;\n        return {\n          title:  str(j.title).trim(),\n          rawLoc: rem ? ('Remote' + (city ? ', '+city : '')) : [city, cc].filter(Boolean).join(', '),\n          rawCC:  cc,\n          type:   str(j.type),\n          mode:   rem ? 'Remote' : null,\n          url:    str(j.url) || ('https://apply.workable.com/' + cfgSlug),\n          desc:   str(j.description),\n          salary: '',\n          posted: parseDate(j.published_on || j.created_at)\n        };\n      });\n      break;\n\n    case 'smartrecruiters':\n      rawJobs = (resp.content || []).map(j => {\n        const loc  = j.location || {};\n        const city = str(loc.city), cc = str(loc.country);\n        const rem  = loc.remote || false;\n        const comp = j.compensation;\n        return {\n          title:  str(j.name).trim(),\n          rawLoc: rem ? ('Remote' + (city ? ', '+city : '')) : [city, cc].filter(Boolean).join(', '),\n          rawCC:  cc,\n          type:   str(j.typeOfEmployment && j.typeOfEmployment.label),\n          mode:   rem ? 'Remote' : null,\n          url:    str(j.ref) || ('https://careers.smartrecruiters.com/' + cfgSlug),\n          desc:   str(j.jobAdText),\n          salary: comp\n                    ? parseSalary({ min: comp.min, max: comp.max, currency: comp.currency, interval: comp.remuneration })\n                    : '',\n          posted: parseDate(j.releasedDate || j.createdOn)\n        };\n      });\n      break;\n\n    case 'ashby':\n      rawJobs = (resp.jobs || []).map(j => {\n        const addr = (j.address && j.address.postalAddress) || {};\n        return {\n          title:  str(j.title).trim(),\n          rawLoc: str(j.location) || [str(addr.addressLocality), str(addr.addressRegion), str(addr.addressCountry)].filter(Boolean).join(', '),\n          rawCC:  str(addr.addressCountry),\n          type:   str(j.employmentType),\n          mode:   str(j.workplaceType) || (j.isRemote ? 'Remote' : null),\n          url:    str(j.jobUrl) || str(j.applyUrl) || ('https://jobs.ashbyhq.com/' + cfgSlug),\n          desc:   str(j.descriptionHtml) || str(j.descriptionPlain),\n          salary: j.compensationTierSummary\n                    ? parseSalary(str(j.compensationTierSummary))\n                    : (j.salary ? parseSalary(j.salary) : ''),\n          posted: parseDate(j.publishedDate || j.createdAt)\n        };\n      });\n      break;\n\n    default:\n      console.log('Unknown ATS: ' + ats);\n      continue;\n  }\n\n  console.log('[' + ats + '] ' + company + ': ' + rawJobs.length + ' raw jobs');\n  const kept = buildOutput(rawJobs, ats, company);\n  console.log('[' + ats + '] ' + company + ': ' + kept.length + ' kept after filter');\n  for (const job of kept) allJobs.push(job);\n}\n\nconsole.log('Parse v10 total: ' + allJobs.length + ' jobs');\nreturn allJobs.length > 0 ? allJobs : [{ json: { _empty: true } }];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "05459557-5a0e-452f-a4a5-0b54b9dbb22a",
+          "name": "Trigger and Config",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1824,
+            2640
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 668,
+            "height": 280,
+            "content": "## 1. Source Discovery and Trigger\nDefines target ATS sources and schedules the daily sync process."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "2931956b-1e57-4945-8209-033742390573",
+          "name": "Parsing and Enrichment",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1104,
+            2640
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 684,
+            "height": 280,
+            "content": "## 2. Request and Normalization\nExecutes HTTP requests and uses advanced logic to map inconsistent ATS payloads to a standard schema."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "feb79c94-0130-47ac-ae6b-9b70d65c15c5",
+          "name": "Destination",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -384,
+            2640
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 600,
+            "height": 280,
+            "content": "## 3. Storage and Output\nUpserts standardized job data into Supabase and updates the target Google Sheet."
+          },
+          "typeVersion": 1
+        }
+      ],
+      "connections": {
+        "Company List": {
+          "main": [
+            [
+              {
+                "node": "Loop Batches (5)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "HTTP Request": {
+          "main": [
+            [
+              {
+                "node": "Parse and Enrich and Filter",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Daily 8AM IST": {
+          "main": [
+            [
+              {
+                "node": "Company List",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Prepare Request": {
+          "main": [
+            [
+              {
+                "node": "HTTP Request",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Loop Batches (5)": {
+          "main": [
+            [],
+            [
+              {
+                "node": "Prepare Request",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Upsert to Supabase": {
+          "main": [
+            [
+              {
+                "node": "Write to Google Sheet",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Write to Google Sheet": {
+          "main": [
+            [
+              {
+                "node": "Loop Batches (5)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Parse and Enrich and Filter": {
+          "main": [
+            [
+              {
+                "node": "Upsert to Supabase",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 12,
+      "nodeTypes": {
+        "n8n-nodes-base.code": {
+          "count": 3
+        },
+        "n8n-nodes-base.postgres": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 4
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 1
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 1
+        },
+        "n8n-nodes-base.splitInBatches": {
+          "count": 1
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Panth1823",
+      "username": "panth1823",
+      "bio": "Curious builder automating various problems using n8n",
+      "verified": true,
+      "links": [
+        "https://www.linkedin.com/in/panth1823/"
+      ],
+      "avatar": "https://gravatar.com/avatar/a456b345ac9e437cca46f9b3b9127be2beaed3e25ba50c4ec7e5b3854499821e?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 30,
+        "icon": "file:postgres.svg",
+        "name": "n8n-nodes-base.postgres",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-i-chose-n8n-over-zapier-in-2020/",
+                  "icon": "😍",
+                  "label": "Why I chose n8n over Zapier in 2020"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.postgres/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/postgres/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Data & Storage"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Postgres"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgNzkgODEiPjx1c2UgeGxpbms6aHJlZj0iI2EiIHg9Ii41IiB5PSIuNSIvPjxzeW1ib2wgaWQ9ImEiIG92ZXJmbG93PSJ2aXNpYmxlIj48ZyBmaWxsLXJ1bGU9Im5vbnplcm8iIHN0cm9rZT0ibm9uZSI+PHBhdGggZmlsbD0iIzAwMCIgZD0iTTc3LjM5MSA0Ny45MjJjLS40NjYtMS40MTItMS42ODgtMi4zOTYtMy4yNjgtMi42MzItLjc0NS0uMTExLTEuNTk4LS4wNjQtMi42MDguMTQ0LTEuNzYuMzYzLTMuMDY1LjUwMS00LjAxOC41MjggMy41OTYtNi4wNzIgNi41MjEtMTIuOTk3IDguMjA0LTE5LjUxNSAyLjcyMi0xMC41NCAxLjI2OC0xNS4zNDEtLjQzMi0xNy41MTNDNzAuNzcgMy4xODUgNjQuMjA2LjA5NyA1Ni4yODcuMDAyYy00LjIyNC0uMDUyLTcuOTMzLjc4Mi05Ljg2NyAxLjM4MmEzNyAzNyAwIDAgMC01Ljc3LS41MjhjLTMuODA5LS4wNjEtNy4xNzQuNzctMTAuMDUgMi40NzZhNDYgNDYgMCAwIDAtNy4wOTgtMS43ODJDMTYuNTYxLjQxMSAxMC45NjggMS4yOTkgNi44NzYgNC4xOSAxLjkyMiA3LjY4OS0uMzc1IDEzLjc3LjA1IDIyLjI2MmMuMTM1IDIuNjk2IDEuNjQzIDEwLjkgNC4wMTggMTguNjggMS4zNjUgNC40NzIgMi44MiA4LjE4NSA0LjMyNiAxMS4wMzggMi4xMzUgNC4wNDYgNC40MTkgNi40MjggNi45ODQgNy4yODQgMS40MzguNDc5IDQuMDQ5LjgxNCA2Ljc5Ny0xLjQ3M2E2IDYgMCAwIDAgMS40MjkgMS4yM2MuNzgzLjQ5NCAxLjc0Ljg5NyAyLjY5NiAxLjEzNiAzLjQ0Ni44NjIgNi42NzQuNjQ2IDkuNDI3LS41NjFsLjA0MSAxLjM2Mi4wNiAxLjg5OWMuMTYzIDQuMDY0LjQ0IDcuMjIzIDEuMjU5IDkuNDM0LjA0NS4xMjIuMTA1LjMwNy4xNjkuNTAzLjQwOSAxLjI1MSAxLjA5MiAzLjM0NiAyLjgzIDQuOTg3IDEuOCAxLjY5OSAzLjk3OCAyLjIyIDUuOTcyIDIuMjIgMSAwIDEuOTU1LS4xMzEgMi43OTItLjMxMSAyLjk4NC0uNjM5IDYuMzczLTEuNjE0IDguODI0LTUuMTA0IDIuMzE4LTMuMyAzLjQ0NC04LjI3IDMuNjQ4LTE2LjEwMWwuMDc0LS42MzQuMDQ4LS40MTQuNTQ2LjA0OC4xNDEuMDFjMy4wMzkuMTM4IDYuNzU1LS41MDYgOS4wMzctMS41NjYgMS44MDMtLjgzNyA3LjU4Mi0zLjg4OCA2LjIyMS04LjAwNyIvPjxwYXRoIGZpbGw9IiMzMzY3OTEiIGQ9Ik03Mi4xOTUgNDguNzIzYy05LjAzNiAxLjg2NC05LjY1Ny0xLjE5NS05LjY1Ny0xLjE5NSA5LjU0MS0xNC4xNTcgMTMuNTI5LTMyLjEyNyAxMC4wODctMzYuNTI1QzYzLjIzNS0uOTk0IDQ2Ljk4MSA0LjY4IDQ2LjcxIDQuODI3bC0uMDg3LjAxNmMtMS43ODUtLjM3MS0zLjc4My0uNTkxLTYuMDI5LS42MjgtNC4wODktLjA2Ny03LjE5IDEuMDcyLTkuNTQ0IDIuODU3IDAgMC0yOC45OTUtMTEuOTQ1LTI3LjY0NyAxNS4wMjMuMjg3IDUuNzM3IDguMjIzIDQzLjQxIDE3LjY4OSAzMi4wMzEgMy40Ni00LjE2MSA2LjgwMy03LjY3OSA2LjgwMy03LjY3OSAxLjY2IDEuMTAzIDMuNjQ4IDEuNjY2IDUuNzMyIDEuNDYzbC4xNjItLjEzN2E2LjMgNi4zIDAgMCAwIC4wNjUgMS42MmMtMi40MzkgMi43MjUtMS43MjIgMy4yMDMtNi41OTcgNC4yMDYtNC45MzMgMS4wMTctMi4wMzUgMi44MjYtLjE0MyAzLjI5OSAyLjI5NC41NzQgNy42IDEuMzg2IDExLjE4NS0zLjYzM2wtLjE0My41NzNjLjk1Ni43NjUgMS42MjYgNC45NzggMS41MTQgOC43OTdzLS4xODggNi40NDEuNTY1IDguNDg5IDEuNTAzIDYuNjU2IDcuOTEyIDUuMjgyYzUuMzU1LTEuMTQ4IDguMTMtNC4xMjEgOC41MTYtOS4wODEuMjc0LTMuNTI2Ljg5NC0zLjAwNS45MzMtNi4xNThsLjQ5Ny0xLjQ5M2MuNTczLTQuNzguMDkxLTYuMzIyIDMuMzktNS42MDVsLjgwMi4wN2MyLjQyOC4xMSA1LjYwNi0uMzkxIDcuNDcxLTEuMjU3IDQuMDE2LTEuODY0IDYuMzk4LTQuOTc2IDIuNDM4LTQuMTU4Ii8+PHBhdGggZD0iTTMyLjc0NyAyNC42NmMtLjgxNC0uMTEzLTEuNTUyLS4wMDgtMS45MjUuMjc0YS43LjcgMCAwIDAtLjI5Mi40N2MtLjA0Ny4zMzYuMTg4LjcwNy4zMzMuODk4LjQwOS41NDIgMS4wMDYuOTE1IDEuNTk4Ljk5N2EyIDIgMCAwIDAgLjI1Ni4wMThjLjk4NiAwIDEuODgzLS43NjggMS45NjItMS4zMzUuMDk5LS43MS0uOTMyLTEuMTgzLTEuOTMxLTEuMzIybTI2Ljk3NS4wMjJjLS4wNzgtLjU1Ni0xLjA2OC0uNzE1LTIuMDA3LS41ODRzLTEuODQ4LjU1NC0xLjc3MiAxLjExMmMuMDYxLjQzNC44NDQgMS4xNzQgMS43NzEgMS4xNzRxLjExNyAwIC4yMzctLjAxNmMuNjE5LS4wODYgMS4wNzMtLjQ3OSAxLjI4OC0uNzA1LjMyOS0uMzQ1LjUxOC0uNzMuNDg0LS45OG0xNS40NzcgMjMuODI4Yy0uMzQ1LTEuMDQyLTEuNDUzLTEuMzc3LTMuMjk2LS45OTctNS40NzEgMS4xMjktNy40My4zNDctOC4wNzMtLjEyNyA0LjI1Mi02LjQ3OCA3Ljc1LTE0LjMwOCA5LjYzNy0yMS42MTQuODk0LTMuNDYxIDEuMzg4LTYuNjc1IDEuNDI4LTkuMjk0LjA0NS0yLjg3Ni0uNDQ1LTQuOTg4LTEuNDU1LTYuMjc5LTQuMDcyLTUuMjAzLTEwLjA0OC03Ljk5NC0xNy4yODMtOC4wNy00Ljk3My0uMDU2LTkuMTc1IDEuMjE3LTkuOTkgMS41NzVhMjUgMjUgMCAwIDAtNS42MjItLjcyMmMtMy43MzQtLjA2LTYuOTYxLjgzNC05LjYzMyAyLjY1NWE0MyA0MyAwIDAgMC03LjgyOC0yLjA1MmMtNi4zNDItMS4wMjEtMTEuMzgxLS4yNDgtMTQuOTc4IDIuMy00LjI5MSAzLjA0LTYuMjcyIDguNDc1LTUuODg4IDE2LjE1Mi4xMjkgMi41ODMgMS42MDEgMTAuNTI5IDMuOTIzIDE4LjEzOSAzLjA1NyAxMC4wMTYgNi4zOCAxNS42ODYgOS44NzcgMTYuODUyYTQuNCA0LjQgMCAwIDAgMS40MDIuMjMyYzEuMjc2IDAgMi44MzktLjU3NSA0LjQ2Ni0yLjUzMWExNjEgMTYxIDAgMCAxIDYuMTU2LTYuOTY2IDkuOSA5LjkgMCAwIDAgNC40MjkgMS4xOTFsLjAxLjEyMWMtLjMxLjM2OC0uNTY0LjY5LS43ODEuOTY1LTEuMDcgMS4zNTgtMS4yOTMgMS42NDEtNC43MzggMi4zNTEtLjk4LjIwMi0zLjU4Mi43MzgtMy42MiAyLjU2My0uMDQxIDEuOTkzIDMuMDc2IDIuODMgMy40MzEgMi45MTkgMS4yMzguMzEgMi40My40NjMgMy41NjguNDYzIDIuNzY2IDAgNS4yLS45MDkgNy4xNDUtMi42NjgtLjA2IDcuMTA2LjIzNiAxNC4xMDcgMS4wODkgMTYuMjQxLjY5OSAxLjc0NiAyLjQwNiA2LjAxNCA3Ljc5OCA2LjAxNC43OTEgMCAxLjY2Mi0uMDkyIDIuNjItLjI5NyA1LjYyNy0xLjIwNyA4LjA3MS0zLjY5NCA5LjAxNi05LjE3Ny41MDYtMi45MyAxLjM3NC05LjkyOCAxLjc4Mi0xMy42ODIuODYyLjI2OSAxLjk3MS4zOTIgMy4xNy4zOTIgMi41MDEgMCA1LjM4Ny0uNTMxIDcuMTk3LTEuMzcyIDIuMDMzLS45NDQgNS43MDItMy4yNjEgNS4wMzctNS4yNzR6TTYxLjggMjMuMTQ3Yy0uMDE5IDEuMTA4LS4xNzEgMi4xMTQtLjMzMyAzLjE2NC0uMTc0IDEuMTI5LS4zNTQgMi4yOTctLjM5OSAzLjcxNS0uMDQ1IDEuMzc5LjEyOCAyLjgxNC4yOTQgNC4yLjMzNyAyLjgwMS42ODIgNS42ODUtLjY1NSA4LjUzMWExMSAxMSAwIDAgMS0uNTkyLTEuMjE4Yy0uMTY2LS40MDMtLjUyNy0xLjA1LTEuMDI3LTEuOTQ2LTEuOTQ0LTMuNDg3LTYuNDk3LTExLjY1Mi00LjE2Ny0xNC45ODQuNjk0LS45OTIgMi40NTYtMi4wMTEgNi44NzktMS40NjN6TTU2LjQzOSA0LjM3NGM2LjQ4Mi4xNDMgMTEuNjA5IDIuNTY4IDE1LjI0IDcuMjA3IDIuNzg0IDMuNTU4LS4yODIgMTkuNzQ5LTkuMTU4IDMzLjcxNmwtLjI2OS0uMzM5LS4xMTItLjE0YzIuMjk0LTMuNzg4IDEuODQ1LTcuNTM2IDEuNDQ2LTEwLjg1OS0uMTY0LTEuMzY0LS4zMTktMi42NTItLjI4LTMuODYxLjA0MS0xLjI4My4yMS0yLjM4Mi4zNzQtMy40NDYuMjAyLTEuMzExLjQwNy0yLjY2Ny4zNS00LjI2NWExLjggMS44IDAgMCAwIC4wMzctLjYwMWMtLjE0NC0xLjUzMy0xLjg5NC02LjEyLTUuNDYyLTEwLjI3My0xLjk1MS0yLjI3MS00Ljc5Ny00LjgxMy04LjY4Mi02LjUyN2EyOS4zIDI5LjMgMCAwIDEgNi41MTUtLjYxMnpNMjAuMTY3IDUzLjI5OGMtMS43OTMgMi4xNTUtMy4wMzEgMS43NDItMy40MzggMS42MDctMi42NTMtLjg4NS01LjczLTYuNDkxLTguNDQ0LTE1LjM4Mi0yLjM0OC03LjY5My0zLjcyLTE1LjQyOC0zLjgyOS0xNy41OTctLjM0My02Ljg2IDEuMzItMTEuNjQxIDQuOTQzLTE0LjIxIDUuODk2LTQuMTgxIDE1LjU4OS0xLjY3OSAxOS40ODQtLjQwOWwtLjE3LjE2M2MtNi4zOTEgNi40NTUtNi4yNCAxNy40ODMtNi4yMjQgMTguMTU3YTIyIDIyIDAgMCAwIC4wNTEgMS4xMzVjLjExIDEuODU1LjMxNSA1LjMwNy0uMjMyIDkuMjE3LS41MDggMy42MzMuNjEyIDcuMTg5IDMuMDcyIDkuNzU2cS4zODMuMzk4Ljc5NS43NWExNjQgMTY0IDAgMCAwLTYuMDA4IDYuODE0em02LjgzLTkuMTEzYy0xLjk4My0yLjA2OS0yLjg4NC00Ljk0Ny0yLjQ3MS03Ljg5Ni41NzctNC4xMy4zNjQtNy43MjcuMjUtOS42NTlsLS4wMzktLjY5NGMuOTM0LS44MjggNS4yNjEtMy4xNDYgOC4zNDYtMi40MzkgMS40MDguMzIzIDIuMjY2IDEuMjgxIDIuNjIzIDIuOTMxIDEuODQ2IDguNTM5LjI0NCAxMi4wOTgtMS4wNDMgMTQuOTU3LS4yNjUuNTg5LS41MTYgMS4xNDYtLjczIDEuNzIybC0uMTY2LjQ0NWMtLjQyIDEuMTI2LS44MTEgMi4xNzMtMS4wNTMgMy4xNjctMi4xMDgtLjAwNi00LjE1OS0uOTA3LTUuNzE4LTIuNTM0em0uMzI0IDExLjUxNmE1IDUgMCAwIDEtMS40OTQtLjY0MmMuMjcxLS4xMjguNzU0LS4zMDEgMS41OTEtLjQ3NCA0LjA1Mi0uODM0IDQuNjc4LTEuNDIzIDYuMDQ1LTMuMTU4LjMxMy0uMzk4LjY2OS0uODQ5IDEuMTYtMS4zOTguNzMzLS44MjEgMS4wNjgtLjY4MiAxLjY3Ni0uNDMuNDkzLjIwNC45NzIuODIxIDEuMTY3IDEuNTAxLjA5Mi4zMjEuMTk1LjkzLS4xNDMgMS40MDQtMi44NTUgMy45OTctNy4wMTUgMy45NDYtMTAuMDAzIDMuMTk4em0yMS4yMDcgMTkuNzM1Yy00Ljk1NyAxLjA2Mi02LjcxMy0xLjQ2Ny03Ljg2OS00LjM1OS0uNzQ3LTEuODY3LTEuMTEzLTEwLjI4NS0uODUzLTE5LjU4MmExLjEgMS4xIDAgMCAwLS4wNDgtLjM1NiA1IDUgMCAwIDAtLjEzOS0uNjU3Yy0uMzg3LTEuMzUzLTEuMzMxLTIuNDg0LTIuNDYyLTIuOTUzLS40NS0uMTg2LTEuMjc1LS41MjgtMi4yNjctLjI3NC4yMTItLjg3MS41NzgtMS44NTUuOTc2LTIuOTIxbC4xNjctLjQ0OGMuMTg4LS41MDUuNDIzLTEuMDI5LjY3My0xLjU4MyAxLjM0Ny0yLjk5MiAzLjE5Mi03LjA5MSAxLjE5LTE2LjM1LS43NS0zLjQ2OC0zLjI1NC01LjE2MS03LjA1LTQuNzY4LTIuMjc2LjIzNS00LjM1OCAxLjE1NC01LjM5NiAxLjY4cS0uMzM0LjE2OS0uNjE4LjMyOWMuMjktMy40OTQgMS4zODUtMTAuMDI0IDUuNDgxLTE0LjE1NiAyLjU3OS0yLjYwMSA2LjAxNC0zLjg4NiAxMC4xOTktMy44MTcgOC4yNDYuMTM1IDEzLjUzNCA0LjM2NyAxNi41MTggNy44OTMgMi41NzEgMy4wMzkgMy45NjQgNi4xIDQuNTIgNy43NTEtNC4xNzktLjQyNS03LjAyMi40LTguNDYzIDIuNDYtMy4xMzUgNC40ODEgMS43MTUgMTMuMTc4IDQuMDQ2IDE3LjM1OC40MjcuNzY2Ljc5NiAxLjQyOC45MTIgMS43MDkuNzU5IDEuODM5IDEuNzQyIDMuMDY3IDIuNDU5IDMuOTY0LjIyLjI3NS40MzMuNTQxLjU5Ni43NzQtMS4yNjYuMzY1LTMuNTM5IDEuMjA4LTMuMzMyIDUuNDIyLS4xNjcgMi4xMTUtMS4zNTYgMTIuMDE2LTEuOTU5IDE1LjUxNC0uNzk3IDQuNjIxLTIuNDk3IDYuMzQzLTcuMjc5IDcuMzY4em0yMC42OTMtMjMuNjhjLTEuMjk0LjYwMS0zLjQ2IDEuMDUyLTUuNTE4IDEuMTQ4LTIuMjczLjEwNy0zLjQzLS4yNTUtMy43MDItLjQ3Ny0uMTI4LTIuNjI2Ljg1LTIuOTAxIDEuODg0LTMuMTkxLjE2My0uMDQ2LjMyMS0uMDkuNDc0LS4xNDRhNCA0IDAgMCAwIC4zMTMuMjNjMS44MjcgMS4yMDYgNS4wODUgMS4zMzYgOS42ODUuMzg2bC4wNS0uMDFjLS42Mi41OC0xLjY4MiAxLjM1OS0zLjE4NyAyLjA1OHoiLz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Postgres",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 5,
+            "name": "Development"
+          }
+        ]
+      },
+      {
+        "id": 39,
+        "icon": "fa:sync",
+        "name": "n8n-nodes-base.splitInBatches",
+        "codex": {
+          "data": {
+            "alias": [
+              "Loop",
+              "Concatenate",
+              "Batch",
+              "Split",
+              "Split In Batches"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.splitinbatches/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Loop Over Items",
+          "color": "#007755"
+        },
+        "iconData": {
+          "icon": "sync",
+          "type": "icon"
+        },
+        "displayName": "Loop Over Items (Split in Batches)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 17,
+        "name": "HR"
+      }
+    ],
+    "image": []
+  }
+}

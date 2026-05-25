@@ -1,0 +1,2803 @@
+{
+  "workflow": {
+    "id": 14511,
+    "name": "Send weekly TMetric time reports to employees on Slack",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-03-31T07:24:03.159Z",
+    "description": "## What Is This?\n\nThis workflow is an automated employee time tracking and reporting system that monitors weekly work hours via TMetric, then delivers personalized summaries directly to each team member on Slack. It compares actual logged hours against individual work schedules, accounts for approved time-off requests, and flags anyone falling behind their hourly quota.\n\nIt works with any team using TMetric for time tracking and Slack for communication, making it ideal for remote-first companies, IT agencies, and consulting firms managing distributed teams.\n\n## Who Is It For?\n\nDesigned for team leads, operations managers, and HR departments in small to medium-sized companies who want effortless visibility into employee time tracking compliance — without micromanaging or manually pulling reports.\n\nSoftware development agencies, MSPs, and consulting firms billing clients by the hour will find this especially valuable, as it keeps employees accountable and ensures time entries are complete and up to date before payroll or invoicing cycles.\n\n## How Does It Work?\n\nThe workflow operates in two modes: a one-time **Setup** and a recurring **Weekly Report**.\n\n**Setup** builds a mapping table between TMetric and Slack user accounts. It checks whether the required N8N Data Table already exists, creates it if not, then fetches all TMetric and Slack users. Each Slack user receives a message asking them to identify their corresponding TMetric account via an interactive dropdown form. Responses are saved to the Data Table for use in subsequent runs.\n\n![image.png](fileId:5294)\n![image.png](fileId:5295)\n\n**Weekly Report** runs automatically every Friday at 4:00 PM. It fetches users, their work schedules, and approved time-off requests from TMetric, then processes each employee individually — retrieving their time entries, filtering out any currently running tasks, and calculating total hours worked. The workflow accounts for time-off when determining expected hours, then computes how far ahead or behind schedule each person is. Finally, it looks up each user's Slack ID from the mapping table and sends them a personalized Block Kit message summarizing their week: hours worked, schedule adherence status, and a project-by-project breakdown.\n\n## How To Set It Up?\n\n**Prerequisites:**\n\n- An active N8N account or self-hosted instance\n- A TMetric account with API access\n- A Slack workspace with bot permissions\n\n**Step 1: Configure the Globals node**\n\n- **tmAccountId** — found in your TMetric URL: `https://app.tmetric.com/#/tracker/YOUR_ID/`\n- **Allow hours missing percentage** — tolerance threshold before flagging a user as behind (default: 10%)\n- **tmetricToSlackUserDataTableName** — name of the N8N Data Table used for user mapping (default: `Tmetric to Slack user map`)\n\n![image.png](fileId:5292)\n\n**Step 2: Set up TMetric authentication**\n\nOpen any HTTP Request node, select **Authentication → Generic Credential Type → Header Auth**, and create a new credential:\n\n- **Name**: `Authorization`\n- **Value**: `&lt;Your TMetric API Key&gt;`\n\nYou can generate an API key in your TMetric account settings. Full API documentation is available [here](https://app.tmetric.com/api-docs/).\n\n**Step 3: Configure Slack credentials**\n\nConnect your Slack workspace using OAuth2 in the Slack nodes. Ensure your bot has permissions to list users and send direct messages.\n\n![image.png](fileId:5293)\n\n**Step 4: Run Setup**\n\nTrigger the **Setup** manual trigger once. It will create the mapping table and send a form to each Slack user. Once all responses are collected, the workflow is ready for scheduled operation.\n\n**Step 5: Customize the Slack message** _(optional)_\n\nEdit the **Send a message** node to adjust the message layout, change delivery from DM to a channel, or add additional fields to the report.\n\n![image.png](fileId:5296)\n\n## What's More?\n\n**Flexible time-off handling:** Approved time-off requests are subtracted from expected working hours, ensuring employees aren't penalized for legitimate absences.\n\n**Running task filtering:** Time entries without an end time are excluded from calculations, preventing inflated hours from active timers.\n\n**Visual status indicators:** Slack messages use color-coded action buttons — green for on-track employees, red for those behind schedule — giving recipients immediate visual feedback at a glance.\n\n**Project breakdown:** Each report includes a per-project summary showing time spent across the reporting period, giving employees and managers full transparency into where hours went.\n\n**Safe re-runs:** The Setup flow can be triggered again at any time to onboard new team members or correct mapping mistakes without affecting existing records.\n\n---\n\nNeed help? Reach out at [developers@sailingbyte.com](mailto:developers@sailingbyte.com) or visit [sailingbyte.com](https://sailingbyte.com/).\n\nHappy hacking!",
+    "workflow": {
+      "meta": {
+        "instanceId": ""
+      },
+      "nodes": [
+        {
+          "id": "aac23c1f-e615-4b0d-984c-377700019233",
+          "name": "Run Once a Week",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            -2528,
+            656
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "field": "weeks",
+                  "triggerAtDay": [
+                    5
+                  ],
+                  "triggerAtHour": 16
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "0797665f-5803-4378-9098-e4ac6ec914bd",
+          "name": "Get TMetric Users",
+          "type": "n8n-nodes-base.httpRequest",
+          "maxTries": 5,
+          "position": [
+            -1696,
+            464
+          ],
+          "parameters": {
+            "url": "={{$('Globals').item.json.apiBaseUrl}}/accounts/{{ $('Globals').item.json[\"tmAccountId\"] }}/reports/projects/filter",
+            "options": {},
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth"
+          },
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "SLLNT2qCu7kAj0pS",
+              "name": "TMetric API Key"
+            }
+          },
+          "retryOnFail": true,
+          "typeVersion": 3,
+          "waitBetweenTries": 5000
+        },
+        {
+          "id": "a94e162d-14ba-4a09-8dfe-fa7bdde9e7ff",
+          "name": "Split Users Data",
+          "type": "n8n-nodes-base.itemLists",
+          "position": [
+            -1440,
+            464
+          ],
+          "parameters": {
+            "options": {},
+            "fieldToSplitOut": "users"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "482deb18-fdc2-49d4-aefe-754e978dd972",
+          "name": "Process Each User Separately",
+          "type": "n8n-nodes-base.splitInBatches",
+          "position": [
+            -288,
+            496
+          ],
+          "parameters": {
+            "options": {}
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "7cf6836a-c937-4873-a4a0-86b045107b58",
+          "name": "Get TMetric User Work Schedule",
+          "type": "n8n-nodes-base.httpRequest",
+          "maxTries": 5,
+          "position": [
+            -1696,
+            640
+          ],
+          "parameters": {
+            "url": "={{$('Globals').item.json.apiBaseUrl}}/accounts/{{ $('Globals').item.json.tmAccountId }}/schedule",
+            "options": {},
+            "sendQuery": true,
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth",
+            "queryParameters": {
+              "parameters": [
+                {
+                  "name": "startDate",
+                  "value": "={{ $('Globals').item.json.beginningOfTheMonth }}"
+                },
+                {
+                  "name": "endDate",
+                  "value": "={{ $('Globals').item.json.fullEndDate }}"
+                }
+              ]
+            }
+          },
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "SLLNT2qCu7kAj0pS",
+              "name": "TMetric API Key"
+            }
+          },
+          "retryOnFail": true,
+          "typeVersion": 3,
+          "waitBetweenTries": 5000
+        },
+        {
+          "id": "7ba51941-90c8-419d-8bf7-fe16850e211f",
+          "name": "Globals",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -2288,
+            656
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "3d75f148-28b5-40c2-be14-be432060c4ad",
+                  "name": "tmAccountId",
+                  "type": "string",
+                  "value": ""
+                },
+                {
+                  "id": "576633ab-0cf1-4e3f-b839-ac77acfa0cd3",
+                  "name": "Allow hours missing percentage",
+                  "type": "number",
+                  "value": 10
+                },
+                {
+                  "id": "1f92de22-2252-49d2-8960-fc259844d228",
+                  "name": "tmetricToSlackUserDataTableName",
+                  "type": "string",
+                  "value": "Tmetric to Slack user map"
+                },
+                {
+                  "id": "889bf3ce-a139-499b-8744-c71e498b3cc3",
+                  "name": "apiBaseUrl",
+                  "type": "string",
+                  "value": "https://app.tmetric.com/api/v3"
+                },
+                {
+                  "id": "04388835-8fd6-426a-9c09-8a065f224a2c",
+                  "name": "fullEndDate",
+                  "type": "string",
+                  "value": "={{ $now.format('yyyy-LL-dd') }}"
+                },
+                {
+                  "id": "fce6bbbf-4edc-42be-903c-b54f5523bdc8",
+                  "name": "beginningOfTheMonth",
+                  "type": "string",
+                  "value": "={{\n    new Date()\n      .toDateTime()\n      .set({\n        month: $now.month,\n        year: $now.year,\n        day: 1,\n      })\n      .format(\"yyyy-LL-dd\");\n  }}"
+                },
+                {
+                  "id": "b2747f37-4b7d-4a05-8ac5-e7cd60e17b6d",
+                  "name": "endOfTheMonth",
+                  "type": "string",
+                  "value": "={{\n    new Date()\n      .toDateTime()\n      .set({\n        month: $now.month + 1,\n        year: $now.year,\n        day: 0,\n      })\n      .format(\"yyyy-LL-dd\");\n  }}"
+                }
+              ]
+            },
+            "includeOtherFields": true
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "d2ba9f61-45aa-4c75-8bf9-ed633257d2df",
+          "name": "Get TMetric Time Off Requests",
+          "type": "n8n-nodes-base.httpRequest",
+          "maxTries": 5,
+          "position": [
+            -1696,
+            816
+          ],
+          "parameters": {
+            "url": "={{$('Globals').item.json.apiBaseUrl}}/accounts/{{ $('Globals').item.json[\"tmAccountId\"] }}/timeoff/requests",
+            "options": {},
+            "sendQuery": true,
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth",
+            "queryParameters": {
+              "parameters": [
+                {
+                  "name": "startDate",
+                  "value": "={{ $('Globals').item.json.beginningOfTheMonth }}"
+                },
+                {
+                  "name": "endDate",
+                  "value": "={{ $('Globals').item.json.endOfTheMonth }}"
+                }
+              ]
+            }
+          },
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "SLLNT2qCu7kAj0pS",
+              "name": "TMetric API Key"
+            }
+          },
+          "retryOnFail": true,
+          "typeVersion": 3,
+          "waitBetweenTries": 5000
+        },
+        {
+          "id": "304df868-05a3-4fb5-b744-b1a7d34801c4",
+          "name": "Edit Fields",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -1440,
+            816
+          ],
+          "parameters": {
+            "options": {
+              "dotNotation": false
+            },
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "63f0bad7-d96f-4fb2-824e-0a69454759eb",
+                  "name": "requestId",
+                  "type": "number",
+                  "value": "={{ $json.id }}"
+                },
+                {
+                  "id": "f29d8faa-c308-4b73-8cbe-9d0465d6f862",
+                  "name": "requesterId",
+                  "type": "number",
+                  "value": "={{ $json.requester.id }}"
+                },
+                {
+                  "id": "f5412568-7a70-4e84-b1b9-485df4d310f7",
+                  "name": "startDate",
+                  "type": "string",
+                  "value": "={{ $json.startDate }}"
+                },
+                {
+                  "id": "6eb42aa4-e4c6-458d-8ac2-7af1f5ab6bd3",
+                  "name": "endDate",
+                  "type": "string",
+                  "value": "={{ $json.endDate }}"
+                },
+                {
+                  "id": "d0755bc5-3105-4aed-9b85-600969c8e3ba",
+                  "name": "approved",
+                  "type": "boolean",
+                  "value": "={{ $json.status === 'Approved' }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "3327f549-bd31-4e67-b584-7129cc467321",
+          "name": "Get Tmetric Time Entries per user",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            16,
+            640
+          ],
+          "parameters": {
+            "url": "={{$('Globals').item.json.apiBaseUrl}}/accounts/{{$('Globals').item.json.tmAccountId}}/timeentries",
+            "options": {},
+            "sendQuery": true,
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth",
+            "queryParameters": {
+              "parameters": [
+                {
+                  "name": "userId",
+                  "value": "={{ $json.user.id }}"
+                },
+                {
+                  "name": "startDate",
+                  "value": "={{$('Globals').item.json.beginningOfTheMonth}}"
+                },
+                {
+                  "name": "endDate",
+                  "value": "={{$('Globals').item.json.fullEndDate}}"
+                }
+              ]
+            }
+          },
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "SLLNT2qCu7kAj0pS",
+              "name": "TMetric API Key"
+            }
+          },
+          "typeVersion": 4.3,
+          "alwaysOutputData": true
+        },
+        {
+          "id": "046b0bbd-1dc4-48f6-a6e8-667d3fd37fe1",
+          "name": "Wait",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            1152,
+            816
+          ],
+          "webhookId": "fd1fb0f4-f6d7-4fb2-8b9a-7f3ba3dabef1",
+          "parameters": {},
+          "typeVersion": 1.1
+        },
+        {
+          "id": "b4f17fc5-d4c6-4176-b89c-79336b62653e",
+          "name": "Filter out running tasks",
+          "type": "n8n-nodes-base.filter",
+          "position": [
+            320,
+            640
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "5ea8fc2b-a93b-473f-8476-9d903ec5a24b",
+                  "operator": {
+                    "type": "string",
+                    "operation": "exists",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json?.endTime }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3,
+          "alwaysOutputData": true
+        },
+        {
+          "id": "42920371-649f-4ec8-81c0-ace49ff8be73",
+          "name": "Rename Keys",
+          "type": "n8n-nodes-base.renameKeys",
+          "position": [
+            -1440,
+            640
+          ],
+          "parameters": {
+            "keys": {
+              "key": [
+                {
+                  "newKey": "workSchedule",
+                  "currentKey": "days"
+                }
+              ]
+            },
+            "additionalOptions": {}
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "8a970255-ae6d-43d8-8630-18675550cf07",
+          "name": "Group Time off requests",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -1216,
+            816
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "cf496be6-8686-47ba-b9d6-b4b0f4342e80",
+                  "name": "=timeOffRequests",
+                  "type": "array",
+                  "value": "={{ $input.all().map(({json})=>json).filter(item=>item.requesterId == $json.requesterId) }}"
+                },
+                {
+                  "id": "e1b2ae83-66f8-4f1c-b04d-d9ba8f335a84",
+                  "name": "user",
+                  "type": "object",
+                  "value": "={\nid: {{ $json.requesterId }}\n}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "a127edc8-f6cc-47c2-b929-41ef76335354",
+          "name": "Remove Duplicates",
+          "type": "n8n-nodes-base.removeDuplicates",
+          "position": [
+            -992,
+            816
+          ],
+          "parameters": {
+            "compare": "selectedFields",
+            "options": {},
+            "fieldsToCompare": "user.id"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "1a0d9f70-28e4-40f6-b1e4-a238b3cb9101",
+          "name": "Add User Work Schedule",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            -1216,
+            480
+          ],
+          "parameters": {
+            "mode": "combine",
+            "options": {},
+            "advanced": true,
+            "joinMode": "enrichInput1",
+            "mergeByFields": {
+              "values": [
+                {
+                  "field1": "id",
+                  "field2": "user.id"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "62e0f9ea-aa6e-42b6-abbc-68694744b10d",
+          "name": "Add Time off requests",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            -752,
+            496
+          ],
+          "parameters": {
+            "mode": "combine",
+            "options": {},
+            "advanced": true,
+            "joinMode": "enrichInput1",
+            "mergeByFields": {
+              "values": [
+                {
+                  "field1": "user.id",
+                  "field2": "user.id"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "37b225ba-7484-464c-9423-80c51c08194c",
+          "name": "User Repo",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -512,
+            496
+          ],
+          "parameters": {
+            "mode": "raw",
+            "options": {},
+            "jsonOutput": "={\n  \"user\": {{ $json.user }},\n  \"workSchedule\": {{ $if($json.workSchedule.isNotEmpty(), $json.workSchedule, []) }},\n  \"timeOffRequests\": {{ $if($json.timeOffRequests.isNotEmpty(), $json.timeOffRequests, []) }}\n}\n"
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "8cd20b81-637f-4533-a553-cdc6422e92f8",
+          "name": "Create a data table",
+          "type": "n8n-nodes-base.dataTable",
+          "position": [
+            -2640,
+            1728
+          ],
+          "parameters": {
+            "columns": {
+              "column": [
+                {
+                  "name": "tmetric_user_id",
+                  "type": "number"
+                },
+                {
+                  "name": "slack_user_id"
+                },
+                {
+                  "name": "slack_display_name"
+                },
+                {
+                  "name": "slack_name"
+                }
+              ]
+            },
+            "options": {},
+            "resource": "table",
+            "operation": "create",
+            "tableName": "={{ $('Globals').first().json.tmetricToSlackUserDataTableName }}"
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "a272b693-d01d-4b19-be65-b1e168dbf3e2",
+          "name": "Get many users",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            -2160,
+            1728
+          ],
+          "webhookId": "7f1dad95-304b-4a3d-8909-177d5fefd265",
+          "parameters": {
+            "resource": "user",
+            "operation": "getAll",
+            "returnAll": true,
+            "authentication": "oAuth2"
+          },
+          "credentials": {
+            "slackOAuth2Api": {
+              "id": "IvZCxNWZUk2WLNfY",
+              "name": "Slack OAuth2"
+            }
+          },
+          "typeVersion": 2.4
+        },
+        {
+          "id": "6e4a81da-98e7-435f-ae92-99b2ef0f0e6d",
+          "name": "Filter out users",
+          "type": "n8n-nodes-base.filter",
+          "position": [
+            -1920,
+            1728
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "5da844c8-0f2b-4e7d-a60e-da752c818c0e",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "false",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json.is_bot }}",
+                  "rightValue": false
+                },
+                {
+                  "id": "a80edc73-60a2-4657-a338-4f873719ac17",
+                  "operator": {
+                    "type": "string",
+                    "operation": "notEquals"
+                  },
+                  "leftValue": "={{ $json.id }}",
+                  "rightValue": "USLACKBOT"
+                },
+                {
+                  "id": "59cc112d-fab5-48c9-83e4-0f1269103b2a",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "false",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json.deleted }}",
+                  "rightValue": false
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "8042d352-009a-4f12-b530-ed7504bb9671",
+          "name": "Send message and wait for response",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            -2272,
+            2016
+          ],
+          "webhookId": "8df681ca-4a7c-44c2-a034-8f558f261c46",
+          "parameters": {
+            "select": "channel",
+            "message": "=Message for: <@{{ $json.id }}> ({{ $json.profile.display_name }})\nFind and select your TMetric account from the list\nIf not applicable, don't select anythging and press \"Respond\"",
+            "options": {},
+            "channelId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "channel-id",
+              "cachedResultName": "channel-to-sent-notifications-to"
+            },
+            "operation": "sendAndWait",
+            "defineForm": "json",
+            "jsonOutput": "=[\n{{\n    JSON.stringify({\n      fieldLabel: `TMetric account`,\n      fieldType: \"dropdown\",\n      fieldOptions: {\n        values: $(\"Get TMetric Users for user mapping\").item.json.users.map(\n          (user) => ({\n            option: `${user.name} <<${user.id}>>`,\n          }),\n        ),\n      },\n    })\n}}\n]",
+            "responseType": "customForm",
+            "authentication": "oAuth2"
+          },
+          "credentials": {
+            "slackOAuth2Api": {
+              "id": "IvZCxNWZUk2WLNfY",
+              "name": "Slack OAuth2r"
+            }
+          },
+          "executeOnce": false,
+          "typeVersion": 2.4
+        },
+        {
+          "id": "d148f6e0-f1a0-40b8-9b72-b8f6f0e73f31",
+          "name": "Get TMetric Users for user mapping",
+          "type": "n8n-nodes-base.httpRequest",
+          "maxTries": 5,
+          "position": [
+            -2400,
+            1728
+          ],
+          "parameters": {
+            "url": "={{$('Globals').item.json.apiBaseUrl}}/accounts/{{ $('Globals').item.json[\"tmAccountId\"] }}/reports/projects/filter",
+            "options": {},
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth"
+          },
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "SLLNT2qCu7kAj0pS",
+              "name": "TMetric API Key"
+            }
+          },
+          "retryOnFail": true,
+          "typeVersion": 3,
+          "waitBetweenTries": 5000
+        },
+        {
+          "id": "fdd9e332-0afe-43e2-951b-f976f2f5e693",
+          "name": "Setup",
+          "type": "n8n-nodes-base.manualTrigger",
+          "position": [
+            -2512,
+            1520
+          ],
+          "parameters": {},
+          "typeVersion": 1
+        },
+        {
+          "id": "f1f06c41-d192-448a-b96e-e35b477a637f",
+          "name": "Upsert row(s)",
+          "type": "n8n-nodes-base.dataTable",
+          "position": [
+            -2032,
+            2016
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "slack_user_id": "={{ $('Send form for each user').item.json.id }}",
+                "tmetric_user_id": "={{ $json.data[\"TMetric account\"].match(/<<(\\d+)>>/gm)[0].replaceAll('<','').replaceAll('>','') }}",
+                "slack_display_name": "={{ $('Send form for each user').item.json.profile.display_name }}"
+              },
+              "schema": [
+                {
+                  "id": "tmetric_user_id",
+                  "type": "number",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "tmetric_user_id",
+                  "defaultMatch": false
+                },
+                {
+                  "id": "slack_user_id",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "slack_user_id",
+                  "defaultMatch": false
+                },
+                {
+                  "id": "slack_display_name",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "slack_display_name",
+                  "defaultMatch": false
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "filters": {
+              "conditions": [
+                {
+                  "keyName": "=slack_user_id",
+                  "keyValue": "={{ $('Send form for each user').item.json.id }}"
+                }
+              ]
+            },
+            "options": {},
+            "operation": "upsert",
+            "dataTableId": {
+              "__rl": true,
+              "mode": "name",
+              "value": "={{ $('Globals').first().json.tmetricToSlackUserDataTableName }}"
+            }
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "c7fd6f39-9682-436c-94e8-be2d0c8c65b6",
+          "name": "List data tables",
+          "type": "n8n-nodes-base.dataTable",
+          "position": [
+            -2272,
+            1520
+          ],
+          "parameters": {
+            "options": {},
+            "resource": "table"
+          },
+          "typeVersion": 1.1,
+          "alwaysOutputData": true
+        },
+        {
+          "id": "88c0036c-c469-4ba0-b469-b052ceb127ec",
+          "name": "Does Data table already exist?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -2032,
+            1520
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "383376f6-4f47-4921-b1c9-9427151394b3",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ $json.name }}",
+                  "rightValue": "={{ $('Globals').first().json.tmetricToSlackUserDataTableName }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "17552eb1-9842-4d0d-80b9-0cc3988256c7",
+          "name": "Send form for each user",
+          "type": "n8n-nodes-base.splitInBatches",
+          "position": [
+            -2512,
+            1920
+          ],
+          "parameters": {
+            "options": {}
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "802dc733-ab07-4e4b-94df-8d4171186d83",
+          "name": "Merge user info with time entries",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            928,
+            528
+          ],
+          "parameters": {
+            "mode": "combine",
+            "options": {},
+            "combineBy": "combineByPosition"
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "59366b0e-24ab-49b3-8e94-49b65d517f45",
+          "name": "Extract data from Time Entries",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            640,
+            640
+          ],
+          "parameters": {
+            "mode": "raw",
+            "options": {},
+            "jsonOutput": "={\n  \"time_entries\": {{ $input.all().map(({json})=>({\n    \"project\": json?.project,\n    \"task\": $if(json?.task, json?.task.name, json.note),\n    \"startTime\": json.startTime,\n    \"endTime\": json.endTime,\n    \"timeSpentInSeconds\": json?.endTime?.toDateTime().diffTo(json?.startTime, 'seconds'),\n    \"note\": json?.note,\n    \"isBillable\": json?.isBillable,\n    \"isInvoiced\": json?.isInvoiced\n  })).filter(obj=>obj.project) }}\n}\n"
+          },
+          "executeOnce": true,
+          "typeVersion": 3.4
+        },
+        {
+          "id": "57e08fd3-52fe-4b92-863d-ac0732c19760",
+          "name": "Is running Setup?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -2048,
+            656
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "228608a5-9f31-48e9-ac60-149105dc5d70",
+                  "operator": {
+                    "type": "string",
+                    "operation": "exists",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json[\"Day of week\"] }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "be85e888-d502-41f2-88fb-c555ae629dfa",
+          "name": "Send a message",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            640,
+            96
+          ],
+          "webhookId": "52a82aa7-b130-43a6-8190-eb92a66b958e",
+          "parameters": {
+            "user": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $json.slack_user_id }}"
+            },
+            "select": "user",
+            "blocksUi": "={\n\t\"blocks\": [\n\t\t{\n\t\t\t\"type\": \"header\",\n\t\t\t\"text\": {\n\t\t\t\t\"type\": \"plain_text\",\n\t\t\t\t\"text\": \"Hi {{$json.slack_display_name}}\",\n\t\t\t\t\"emoji\": true\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"type\": \"section\",\n\t\t\t\"text\": {\n\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\"text\": \"Here is your weekly report:\"\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"type\": \"divider\"\n\t\t},\n\t\t{\n\t\t\t\"type\": \"actions\",\n\t\t\t\"elements\": [\n                {{ $if($json.computed.percentageBehindSchedule > $('Globals').first().json['Allow hours missing percentage'], `\n{\n\t\t\t\t\t\"type\": \"button\",\n\t\t\t\t\t\"text\": {\n\t\t\t\t\t\t\"type\": \"plain_text\",\n\t\t\t\t\t\t\"emoji\": true,\n\t\t\t\t\t\t\"text\": \"You are ${$json.computed.timeBehindScheduleHours}:${$json.computed.timeBehindScheduleMinutes}h behind the schedule :(\"\n\t\t\t\t\t},\n\t\t\t\t\t\"style\": \"danger\",\n\t\t\t\t\t\"value\": \"click_me_123\"\n\t\t\t\t}\n`, `\n{\n\t\t\t\t\t\"type\": \"button\",\n\t\t\t\t\t\"text\": {\n\t\t\t\t\t\t\"type\": \"plain_text\",\n\t\t\t\t\t\t\"emoji\": true,\n\t\t\t\t\t\t\"text\": \"Good work, everything adds up :)\"\n\t\t\t\t\t},\n\t\t\t\t\t\"style\": \"primary\",\n\t\t\t\t\t\"value\": \"click_me_123\"\n\t\t\t\t}\n`) }}  \n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"type\": \"divider\"\n\t\t},\n\t\t{\n\t\t\t\"type\": \"header\",\n\t\t\t\"text\": {\n\t\t\t\t\"type\": \"plain_text\",\n\t\t\t\t\"text\": \"Projects summary:\",\n\t\t\t\t\"emoji\": true\n\t\t\t}\n\t\t},{{ $json.computed.projects?.map(project=>`\n{\n\t\t\t\"type\": \"section\",\n\t\t\t\"fields\": [\n\t\t\t\t{\n\t\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\t\"text\": \"*Name:*\\\\n${project.project.name}\"\n\t\t\t\t},\n\t\t\t\t{\n\t\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\t\"text\": \"*Client:*\\\\n${project.project.client.name}\"\n\t\t\t\t},\n\t\t\t\t{\n\t\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\t\"text\": \"*Total time spent:*\\\\n${Math.floor(project.project.timeSpentInSeconds / 60 / 60)}:${Math.floor(project.project.timeSpentInSeconds / 60 % 60)}h\"\n\t\t\t\t}\n\t\t\t]\n\t\t},`).join('') }}\n{\n\t\t\t\"type\": \"divider\"\n\t\t}\n\t]\n}",
+            "messageType": "block",
+            "otherOptions": {},
+            "authentication": "oAuth2"
+          },
+          "credentials": {
+            "slackOAuth2Api": {
+              "id": "IvZCxNWZUk2WLNfY",
+              "name": "Slack OAuth2"
+            }
+          },
+          "typeVersion": 2.4
+        },
+        {
+          "id": "93ba4d70-3586-462a-a841-fdf5e735f55e",
+          "name": "Get row(s)",
+          "type": "n8n-nodes-base.dataTable",
+          "position": [
+            16,
+            80
+          ],
+          "parameters": {
+            "operation": "get",
+            "returnAll": true,
+            "dataTableId": {
+              "__rl": true,
+              "mode": "name",
+              "value": "={{ $('Globals').first().json.tmetricToSlackUserDataTableName }}"
+            }
+          },
+          "executeOnce": true,
+          "typeVersion": 1.1
+        },
+        {
+          "id": "4b3867e7-14b3-4033-8cc8-a38e355ae531",
+          "name": "Merge",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            320,
+            96
+          ],
+          "parameters": {
+            "mode": "combine",
+            "options": {},
+            "advanced": true,
+            "joinMode": "enrichInput2",
+            "mergeByFields": {
+              "values": [
+                {
+                  "field1": "tmetric_user_id",
+                  "field2": "user.id"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "331cc624-6e7e-45cc-bafc-b22a4caa8ae1",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1856,
+            176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 1472,
+            "height": 864,
+            "content": "## Step 1:  Collecting the data from Tmetric and process it\nIn this step we use custom API calls to Tmetric API to collect are necessary data. Then we match it to the correct user, assign it to make easier to use later.\n\nFor Work Schedule we get data from beginning of the month up until now, so we can calculate missing time correctly\nFor Projects Data we fetch entire month so we know how much of the budget was spent\n\nIn the end we use set to create cohesieve repository that will be easy to work with\n\nIf you want to learn more about Tmetric API check their docs [here](https://app.tmetric.com/api-docs/)"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "328aef0e-03cc-46e3-95ba-0dc04d2d035d",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2592,
+            176
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 720,
+            "height": 864,
+            "content": "## Set up Globals and check if workflow runs from schedule or click\nBecause we specify in \"Globals\" data that is required also in \"Setup\" we must check what invoked \"If\" node. Luckily, it's very easy, because \"Run Once a Week\" trigger returns data which we can check against in our \"If\" node"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "4b7a5251-112d-4ae2-8e65-00f8cadccd32",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -368,
+            288
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 1952,
+            "height": 752,
+            "content": "## Step 2: Process each user, fetch more user specific data, and generate data for personalized feedback\nIn this step we have to go back to Tmetric API. Using previously obtained User ID, we are obtaining users Time Entries without currently running tasks that are later used to calculate how much time they in fact spent working. \nWe also use Work Schedule and Time Off Requests to see how much time user should actually have spent. Then, we convert it to percentages to see if user met our criteria\n\nWe use wait node to take a short break between successive calls so we don't hit rate limits."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "42d881fb-8cbd-4de1-8698-4ff03f5744df",
+          "name": "Sticky Note5",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -368,
+            -144
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 1952,
+            "height": 416,
+            "content": "## Step 3: Send raport\nIn this step we use N8N Data Table we created previously and look for users Slack ID so we can send them message directly.\n\nMessage is built using Slack Block Builder Kit available under [this link](https://app.slack.com/block-kit-builder/). With it's help we can create styled messages that are not boring. "
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "42a65dee-35c6-4e2b-9553-d55b583439ae",
+          "name": "Sticky Note7",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2704,
+            1056
+          ],
+          "parameters": {
+            "color": 3,
+            "width": 960,
+            "height": 1168,
+            "content": "## Run once before you run on schedule\n\nThis workflow requires N8N Data Table in order to work. Once you run \"Setup\" workflow will check if required Data Table already exists, if no, it will create it.\nThen, it will make API Call to Tmetric, retrieve users data, retrieve Slack users and filter out accounts that are invalid.\n\nThen it will send a message to the channel, pinging specific users to fill out the form where they are requested to select their Tmetric account.\n\nThis is needed in order to be able to send later personalized private messages directly to the users\n\n### Run again\n\nIf new user has been added to Tmetric or Slack, or somebody made mistake, you can safely run this step again. It won't recreate the table but send a form again to all users\n\n### Important\n\nIf user shouldn't be notified they should just submit the form without selecting any value"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "1d4a1351-f469-4dcf-8815-918c9046018f",
+          "name": "Sticky Note8",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -3472,
+            -96
+          ],
+          "parameters": {
+            "width": 864,
+            "height": 1136,
+            "content": "## TMetric to Slack employees time manager\n### How it works\nThis workflow checks weekly if users meet their hourly quota at the end of trhe week.\nIt will help them keep track of how much they worked, on what projects, remind them if they forgot to put entries in the system\n\nIt leverages Tmetric API in order to obtain data, Slack, and N8N Data Tables\n\n#### Create tables\n1. We check if data table with given name already exists, if yes, we skip to the next part, if not, we create it\n2. We get Tmetric and Slack users, filter out users that are bots or inactive\n3. We sen\n\n#### Run Once a Week\n1. We colect data from TMetric using custom HTTP Requests, calculate percentage of project budget spent, getting users, their Work Schedules and Time Off Requests\n2. We process each user individually, get their Time Entries, merge all data together into one cohesieve piece\n3. We get users Slack id from N8N Data table we created during set up using their Tmetric id to send personalized message directly to them\n\n###Setup\nIn order for workflow to work you will need to setup couple variables. Most likely you will be only interested in just 2 first, but you can also set name of the Data Table to prevent any problems\n\n- Fill out \"Globals\" node\n  - tmAccountId - You can find it in URL once you visit Tmetric, in this example it's all 0's: https://app.tmetric.com/#/tracker/000000/\n  - Allow hours missing percentage - If users have more percentages of missing time spent on working they will get information about it\n  - tmetricToSlackUserDataTableName - Name of the data table used across the project \n\n- Auth\nIn order for this workflow to work you have to set up auth for HTTP Request Nodes. In order to do this, open one of these nodes and select:\nAuthentication > General Credential Type > Header Auth \nAnd if you doesn't already have Tmetric credentials Create new of following shape:\n\nName:\nAuthorization\nValue:\n<Your Tmetric API Key>\n\nYou can learn how to get API key [here](https://app.tmetric.com/api-docs/)\n\n### Customize\nIf you want to customize message that is sent on Slack edit \"Send a message\" node. You can also change there if message should be sent directly or to the channel\n\n\n\n\n\nNeed help? Contact us at developers@sailingbyte.com or at sailingbyte.com\n\nHappy hacking!"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "1e1ab902-8d49-4073-9a9f-2523927be8e8",
+          "name": "Calculate data for personalized message",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1408,
+            816
+          ],
+          "parameters": {
+            "jsCode": "const projectsMeta = $('Percentages of budget spent').all().map(p=>p.json)\n\nconsole.log(projectsMeta)\n\nfor (const item of $input.all()) {\n  item.json.computed = {};\n  item.json.computed.timeWorkedInSeconds = item.json.time_entries.reduce(\n    (acc, curr) => {\n      console.log(curr);\n      return acc + curr.timeSpentInSeconds;\n    },\n    0,\n  );\n  const normalizedTimeOffRequests = item.json.timeOffRequests\n    .map((req) => ({\n      ...req,\n      startDate: req.startDate.slice(0, 10),\n      endDate: req.endDate.slice(0, 10),\n    }))\n    .map(({ startDate, endDate, ...req }) => [\n      { ...req, date: startDate },\n      { ...req, date: endDate },\n    ])\n    .flat();\n  console.log(normalizedTimeOffRequests);\n  item.json.computed.workScheduleInSecondsWithoutTimeOffRequests =\n    item.json.workSchedule\n      .filter((workScheduleItem) => workScheduleItem.isWorking)\n      .reduce((acc, curr) => {\n        if (normalizedTimeOffRequests.includes((req) => req.date === curr.date))\n          return 0;\n        return acc + (curr?.hours ?? 0);\n      }, 0) *\n    60 *\n    60;\n  item.json.computed.timeBehindScheduleInSeconds =\n    item.json.computed.workScheduleInSecondsWithoutTimeOffRequests -\n    item.json.computed.timeWorkedInSeconds;\n  item.json.computed.timeBehindScheduleHours = Math.floor(\n    Math.abs(item.json.computed.timeBehindScheduleInSeconds) / 3600,\n  );\n  item.json.computed.timeBehindScheduleMinutes = Math.floor(\n    (Math.abs(item.json.computed.timeBehindScheduleInSeconds) % 3600) / 60,\n  );\n  item.json.computed.percentageBehindSchedule =\n    (item.json.computed.timeBehindScheduleInSeconds /\n      item.json.computed.workScheduleInSecondsWithoutTimeOffRequests) *\n    100;\n  const getSeconds = (start, end) => (new Date(end) - new Date(start)) / 1000;\n  const projectMap = {};\n\n  item.json.time_entries.forEach((entry) => {\n    const projectId = entry.project.id;\n\n    if (!projectMap[projectId]) {\n      projectMap[projectId] = {\n        ...entry.project,\n        timeSpentInSeconds: 0,\n        timeEntries: {},\n      };\n    }\n\n    const project = projectMap[projectId];\n    const duration = getSeconds(entry.startTime, entry.endTime);\n\n    const taskKey = entry.task ? `task-${entry.task.id}` : `note-${entry.note}`;\n\n    if (!project.timeEntries[taskKey]) {\n      project.timeEntries[taskKey] = {\n        note: entry.note,\n        ...(entry.task && { task: entry.task }),\n        tags: entry.tags,\n        isBillable: entry.isBillable,\n        isInvoiced: entry.isInvoiced,\n        startTime: entry.startTime,\n        endTime: entry.endTime,\n        timeSpentInSeconds: 0,\n      };\n    }\n\n    project.timeSpentInSeconds += duration;\n    project.timeEntries[taskKey].timeSpentInSeconds += duration;\n\n    if (\n      new Date(entry.endTime) > new Date(project.timeEntries[taskKey].endTime)\n    ) {\n      project.timeEntries[taskKey].endTime = entry.endTime;\n    }\n  });\n\n  const result = Object.values(projectMap).map((project) => {\n    return {\n      project: {\n        ...project,\n        budgetSpentPercentages: projectsMeta.find(p=>p.id === project.id)?.budget.spentPercentages ?? '[???]',\n        timeEntries: Object.values(project.timeEntries),\n      },\n    };\n  });\n  item.json.computed.projects = result;\n}\n\nreturn $input.all();\n"
+          },
+          "executeOnce": true,
+          "typeVersion": 2
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "Wait": {
+          "main": [
+            [
+              {
+                "node": "Calculate data for personalized message",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Merge": {
+          "main": [
+            [
+              {
+                "node": "Send a message",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Setup": {
+          "main": [
+            [
+              {
+                "node": "Globals",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Globals": {
+          "main": [
+            [
+              {
+                "node": "Is running Setup?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "User Repo": {
+          "main": [
+            [
+              {
+                "node": "Process Each User Separately",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Get row(s)": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Edit Fields": {
+          "main": [
+            [
+              {
+                "node": "Group Time off requests",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Rename Keys": {
+          "main": [
+            [
+              {
+                "node": "Add User Work Schedule",
+                "type": "main",
+                "index": 1
+              }
+            ]
+          ]
+        },
+        "Upsert row(s)": {
+          "main": [
+            [
+              {
+                "node": "Send form for each user",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Get many users": {
+          "main": [
+            [
+              {
+                "node": "Filter out users",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Run Once a Week": {
+          "main": [
+            [
+              {
+                "node": "Globals",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Filter out users": {
+          "main": [
+            [
+              {
+                "node": "Send form for each user",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "List data tables": {
+          "main": [
+            [
+              {
+                "node": "Does Data table already exist?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Split Users Data": {
+          "main": [
+            [
+              {
+                "node": "Add User Work Schedule",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Get TMetric Users": {
+          "main": [
+            [
+              {
+                "node": "Split Users Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Is running Setup?": {
+          "main": [
+            [
+              {
+                "node": "Get TMetric Users",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Get TMetric User Work Schedule",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Get TMetric Time Off Requests",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "List data tables",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Remove Duplicates": {
+          "main": [
+            [
+              {
+                "node": "Add Time off requests",
+                "type": "main",
+                "index": 1
+              }
+            ]
+          ]
+        },
+        "Create a data table": {
+          "main": [
+            [
+              {
+                "node": "Get TMetric Users for user mapping",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Add Time off requests": {
+          "main": [
+            [
+              {
+                "node": "User Repo",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Add User Work Schedule": {
+          "main": [
+            [
+              {
+                "node": "Add Time off requests",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Group Time off requests": {
+          "main": [
+            [
+              {
+                "node": "Remove Duplicates",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Send form for each user": {
+          "main": [
+            [],
+            [
+              {
+                "node": "Send message and wait for response",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Filter out running tasks": {
+          "main": [
+            [
+              {
+                "node": "Extract data from Time Entries",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Process Each User Separately": {
+          "main": [
+            [
+              {
+                "node": "Get row(s)",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 1
+              }
+            ],
+            [
+              {
+                "node": "Get Tmetric Time Entries per user",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Merge user info with time entries",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Get TMetric Time Off Requests": {
+          "main": [
+            [
+              {
+                "node": "Edit Fields",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Does Data table already exist?": {
+          "main": [
+            [
+              {
+                "node": "Get TMetric Users for user mapping",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Create a data table",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Extract data from Time Entries": {
+          "main": [
+            [
+              {
+                "node": "Merge user info with time entries",
+                "type": "main",
+                "index": 1
+              }
+            ]
+          ]
+        },
+        "Get TMetric User Work Schedule": {
+          "main": [
+            [
+              {
+                "node": "Rename Keys",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Get Tmetric Time Entries per user": {
+          "main": [
+            [
+              {
+                "node": "Filter out running tasks",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Merge user info with time entries": {
+          "main": [
+            [
+              {
+                "node": "Wait",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Get TMetric Users for user mapping": {
+          "main": [
+            [
+              {
+                "node": "Get many users",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Send message and wait for response": {
+          "main": [
+            [
+              {
+                "node": "Upsert row(s)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Calculate data for personalized message": {
+          "main": [
+            [
+              {
+                "node": "Process Each User Separately",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 40,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 2
+        },
+        "n8n-nodes-base.set": {
+          "count": 5
+        },
+        "n8n-nodes-base.code": {
+          "count": 1
+        },
+        "n8n-nodes-base.wait": {
+          "count": 1
+        },
+        "n8n-nodes-base.merge": {
+          "count": 4
+        },
+        "n8n-nodes-base.slack": {
+          "count": 3
+        },
+        "n8n-nodes-base.filter": {
+          "count": 2
+        },
+        "n8n-nodes-base.dataTable": {
+          "count": 4
+        },
+        "n8n-nodes-base.itemLists": {
+          "count": 1
+        },
+        "n8n-nodes-base.renameKeys": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 5
+        },
+        "n8n-nodes-base.manualTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.splitInBatches": {
+          "count": 2
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.removeDuplicates": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Łukasz",
+      "username": "lukaszpp",
+      "bio": "Developer, automation architect and CTO/CEO helping businesses turn complex processes into scalable systems. I build smart automations and SaaS solutions for Real Estate, advertising, logistics and more.\n\nMy focus is to remove manual work, increase efficiency, and create measurable business impact.\n\nI support founders and decision-makers in turning ideas into structured, automated operations.\n\nLet’s connect 🤝",
+      "verified": true,
+      "links": [
+        "https://sailingbyte.com"
+      ],
+      "avatar": "https://gravatar.com/avatar/aae1a29225cc13556a92db7f75050da4bb664bf68e1d73407da6c9cd5a7a9a8a?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 24,
+        "icon": "file:merge.svg",
+        "name": "n8n-nodes-base.merge",
+        "codex": {
+          "data": {
+            "alias": [
+              "Join",
+              "Concatenate",
+              "Wait"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-sync-data-between-two-systems/",
+                  "icon": "🏬",
+                  "label": "How to synchronize data between two systems (one-way vs. two-way sync"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.merge/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Merge"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTc3XzUxOCkiPgo8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTAgNDhDMCAyMS40OTAzIDIxLjQ5MDMgMCA0OCAwSDExMkMxMzguNTEgMCAxNjAgMjEuNDkwMyAxNjAgNDhWNTZIMTk2LjI1MkMyNDAuNDM1IDU2IDI3Ni4yNTIgOTEuODE3MiAyNzYuMjUyIDEzNlYxOTJDMjc2LjI1MiAyMTQuMDkxIDI5NC4xNjEgMjMyIDMxNi4yNTIgMjMySDM1MlYyMjRDMzUyIDE5Ny40OSAzNzMuNDkgMTc2IDQwMCAxNzZINDY0QzQ5MC41MSAxNzYgNTEyIDE5Ny40OSA1MTIgMjI0VjI4OEM1MTIgMzE0LjUxIDQ5MC41MSAzMzYgNDY0IDMzNkg0MDBDMzczLjQ5IDMzNiAzNTIgMzE0LjUxIDM1MiAyODhWMjgwSDMxNi4yNTJDMjk0LjE2MSAyODAgMjc2LjI1MiAyOTcuOTA5IDI3Ni4yNTIgMzIwVjM3NkMyNzYuMjUyIDQyMC4xODMgMjQwLjQzNSA0NTYgMTk2LjI1MiA0NTZIMTYwVjQ2NEMxNjAgNDkwLjUxIDEzOC41MSA1MTIgMTEyIDUxMkg0OEMyMS40OTAzIDUxMiAwIDQ5MC41MSAwIDQ2NFY0MDBDMCAzNzMuNDkgMjEuNDkwMyAzNTIgNDggMzUySDExMkMxMzguNTEgMzUyIDE2MCAzNzMuNDkgMTYwIDQwMFY0MDhIMTk2LjI1MkMyMTMuOTI1IDQwOCAyMjguMjUyIDM5My42NzMgMjI4LjI1MiAzNzZWMzIwQzIyOC4yNTIgMjk0Ljc4NCAyMzguODU5IDI3Mi4wNDQgMjU1Ljg1MyAyNTZDMjM4Ljg1OSAyMzkuOTU2IDIyOC4yNTIgMjE3LjIxNiAyMjguMjUyIDE5MlYxMzZDMjI4LjI1MiAxMTguMzI3IDIxMy45MjUgMTA0IDE5Ni4yNTIgMTA0SDE2MFYxMTJDMTYwIDEzOC41MSAxMzguNTEgMTYwIDExMiAxNjBINDhDMjEuNDkwMyAxNjAgMCAxMzguNTEgMCAxMTJWNDhaTTEwNCA0OEMxMDguNDE4IDQ4IDExMiA1MS41ODE3IDExMiA1NlYxMDRDMTEyIDEwOC40MTggMTA4LjQxOCAxMTIgMTA0IDExMkg1NkM1MS41ODE3IDExMiA0OCAxMDguNDE4IDQ4IDEwNFY1NkM0OCA1MS41ODE3IDUxLjU4MTcgNDggNTYgNDhIMTA0Wk00NTYgMjI0QzQ2MC40MTggMjI0IDQ2NCAyMjcuNTgyIDQ2NCAyMzJWMjgwQzQ2NCAyODQuNDE4IDQ2MC40MTggMjg4IDQ1NiAyODhINDA4QzQwMy41ODIgMjg4IDQwMCAyODQuNDE4IDQwMCAyODBWMjMyQzQwMCAyMjcuNTgyIDQwMy41ODIgMjI0IDQwOCAyMjRINDU2Wk0xMTIgNDA4QzExMiA0MDMuNTgyIDEwOC40MTggNDAwIDEwNCA0MDBINTZDNTEuNTgxNyA0MDAgNDggNDAzLjU4MiA0OCA0MDhWNDU2QzQ4IDQ2MC40MTggNTEuNTgxNyA0NjQgNTYgNDY0SDEwNEMxMDguNDE4IDQ2NCAxMTIgNDYwLjQxOCAxMTIgNDU2VjQwOFoiIGZpbGw9IiM1NEI4QzkiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTc3XzUxOCI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Merge",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 36,
+        "icon": "fa:edit",
+        "name": "n8n-nodes-base.renameKeys",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.renamekeys/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Rename Keys",
+          "color": "#772244"
+        },
+        "iconData": {
+          "icon": "edit",
+          "type": "icon"
+        },
+        "displayName": "Rename Keys",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 39,
+        "icon": "fa:sync",
+        "name": "n8n-nodes-base.splitInBatches",
+        "codex": {
+          "data": {
+            "alias": [
+              "Loop",
+              "Concatenate",
+              "Batch",
+              "Split",
+              "Split In Batches"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.splitinbatches/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Loop Over Items",
+          "color": "#007755"
+        },
+        "iconData": {
+          "icon": "sync",
+          "type": "icon"
+        },
+        "displayName": "Loop Over Items (Split in Batches)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 516,
+        "icon": "file:itemLists.svg",
+        "name": "n8n-nodes-base.itemLists",
+        "codex": {
+          "data": {
+            "alias": [
+              "Aggregate",
+              "Dedupe",
+              "Deduplicate",
+              "Duplicates",
+              "Limit",
+              "Remove",
+              "Slice",
+              "Sort",
+              "Split",
+              "Unique",
+              "JSON",
+              "Transform",
+              "Array",
+              "List",
+              "Object",
+              "Item",
+              "Map",
+              "Format",
+              "Nested",
+              "Iterate",
+              "Summarise",
+              "Summarize",
+              "Group",
+              "Pivot",
+              "Sum",
+              "Count",
+              "Min",
+              "Max"
+            ],
+            "details": "",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.itemlists/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Item Lists"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbDpzcGFjZT0icHJlc2VydmUiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgdmlld0JveD0iMCAwIDIxMCAyMTAiPjxwYXRoIGQ9Ik0xOC44IDE4LjhDOC40IDE4LjggMCAyNy4xIDAgMzcuNXM4LjQgMTguOCAxOC44IDE4LjggMTguOC04LjQgMTguOC0xOC44LTguNS0xOC43LTE4LjgtMTguN20wIDYyLjRDOC40IDgxLjIgMCA4OS42IDAgMTAwczguNCAxOC44IDE4LjggMTguOCAxOC44LTguNCAxOC44LTE4LjgtOC41LTE4LjgtMTguOC0xOC44bTAgNjIuNkM4LjQgMTQzLjggMCAxNTIuMSAwIDE2Mi41czguNCAxOC44IDE4LjggMTguOCAxOC44LTguNCAxOC44LTE4LjgtOC41LTE4LjctMTguOC0xOC43bTE3NSA2LjJoLTEyNWMtMy41IDAtNi4yIDIuOC02LjIgNi4ydjEyLjVjMCAzLjUgMi44IDYuMiA2LjIgNi4yaDEyNWMzLjUgMCA2LjItMi44IDYuMi02LjJ2LTEyLjVjMC0zLjQtMi44LTYuMi02LjItNi4ybTAtMTI1aC0xMjVjLTMuNSAwLTYuMiAyLjgtNi4yIDYuMnYxMi41YzAgMy41IDIuOCA2LjIgNi4yIDYuMmgxMjVjMy41IDAgNi4yLTIuOCA2LjItNi4yVjMxLjJjMC0zLjQtMi44LTYuMi02LjItNi4ybTAgNjIuNWgtMTI1Yy0zLjUgMC02LjIgMi44LTYuMiA2LjJ2MTIuNWMwIDMuNSAyLjggNi4yIDYuMiA2LjJoMTI1YzMuNSAwIDYuMi0yLjggNi4yLTYuMlY5My44YzAtMy41LTIuOC02LjMtNi4yLTYuMyIgc3R5bGU9ImZpbGw6I2ZmNmQ1YSIvPjwvc3ZnPg=="
+        },
+        "displayName": "Item Lists",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 838,
+        "icon": "fa:mouse-pointer",
+        "name": "n8n-nodes-base.manualTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.manualworkflowtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "When clicking ‘Execute workflow’",
+          "color": "#909298"
+        },
+        "iconData": {
+          "icon": "mouse-pointer",
+          "type": "icon"
+        },
+        "displayName": "Manual Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 844,
+        "icon": "fa:filter",
+        "name": "n8n-nodes-base.filter",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The Filter node can be used to filter items based on a condition. If the condition is met, the item will be passed on to the next node. If the condition is not met, the item will be omitted. Conditions can be combined together by AND(meet all conditions), or OR(meet at least one condition).",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.filter/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Filter",
+          "color": "#229eff"
+        },
+        "iconData": {
+          "icon": "filter",
+          "type": "icon"
+        },
+        "displayName": "Filter",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1238,
+        "icon": "file:removeDuplicates.svg",
+        "name": "n8n-nodes-base.removeDuplicates",
+        "codex": {
+          "data": {
+            "alias": [
+              "Dedupe",
+              "Deduplicate",
+              "Duplicates",
+              "Remove",
+              "Unique",
+              "Transform",
+              "Array",
+              "List",
+              "Item"
+            ],
+            "details": "",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.removeduplicates/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Remove Duplicates"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJub25lIj48ZyBmaWxsPSIjNTRCOEM5IiBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGQ9Ik0xMzQuMDk3IDExMWgzOC44Mjl2MzIuNTA4SDEzOC4xNnYzNC42MzVoLTMyLjUwOHYtMzguNjk5YzAtMTUuNzA5IDEyLjczNS0yOC40NDQgMjguNDQ1LTI4LjQ0NG03Ny42NTggMzIuNTA4VjExMWg3Ny42NTd2MzIuNTA4em0xMTYuNDg2IDBWMTExaDc3LjY1OHYzMi41MDh6bTExNi40ODcgMFYxMTFoMzguODI5YzE1LjcxIDAgMjguNDQ1IDEyLjczNSAyOC40NDUgMjguNDQ0djM4LjY5OWgtMzIuNTA4di0zNC42MzV6bTM0Ljc2NiA3My4yMzhoMzIuNTA4djM4LjY5OGMwIDE1LjcxLTEyLjczNSAyOC40NDUtMjguNDQ1IDI4LjQ0NWgtMzguODI5di0zMi41MDhoMzQuNzY2ek0wIDI0NC41MzdDMCAyMjkuMzI5IDEyLjczNSAyMTcgMjguNDQ0IDIxN2gzNDkuNDYxYzE1LjcwOSAwIDI4LjQ0NCAxMi4zMjkgMjguNDQ0IDI3LjUzN3YxMjkuODE1YzAgMTUuMjA4LTEyLjczNSAyNy41MzctMjguNDQ0IDI3LjUzN0gyOC40NDVDMTIuNzM0IDQwMS44ODkgMCAzODkuNTYgMCAzNzQuMzUyeiIvPjwvZz48ZGVmcz48Y2xpcFBhdGggaWQ9ImEiPjxwYXRoIGZpbGw9IiNmZmYiIGQ9Ik0wIDBoNTEydjUxMkgweiIvPjwvY2xpcFBhdGg+PC9kZWZzPjwvc3ZnPg=="
+        },
+        "displayName": "Remove Duplicates",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1315,
+        "icon": "fa:table",
+        "name": "n8n-nodes-base.dataTable",
+        "codex": {
+          "data": {
+            "alias": [
+              "data",
+              "table",
+              "knowledge",
+              "data table",
+              "table",
+              "sheet",
+              "database",
+              "data base",
+              "mysql",
+              "postgres",
+              "postgresql",
+              "airtable",
+              "supabase",
+              "noco",
+              "notion"
+            ],
+            "details": "Data table",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.datatable/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes",
+              "Development"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\",\"transform\"]",
+        "defaults": {
+          "name": "Data table"
+        },
+        "iconData": {
+          "icon": "table",
+          "type": "icon"
+        },
+        "displayName": "Data table",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 17,
+        "name": "HR"
+      }
+    ],
+    "image": [
+      {
+        "id": 5292,
+        "url": "https://n8niostorageaccount.blob.core.windows.net/n8nio-strapi-blobs-prod/assets/image_3b99e4b0fa.png"
+      },
+      {
+        "id": 5293,
+        "url": "https://n8niostorageaccount.blob.core.windows.net/n8nio-strapi-blobs-prod/assets/image_f646d23adf.png"
+      },
+      {
+        "id": 5294,
+        "url": "https://n8niostorageaccount.blob.core.windows.net/n8nio-strapi-blobs-prod/assets/image_f7a03525b6.png"
+      },
+      {
+        "id": 5295,
+        "url": "https://n8niostorageaccount.blob.core.windows.net/n8nio-strapi-blobs-prod/assets/image_b04174481e.png"
+      },
+      {
+        "id": 5296,
+        "url": "https://n8niostorageaccount.blob.core.windows.net/n8nio-strapi-blobs-prod/assets/image_3c1c2a6094.png"
+      }
+    ]
+  }
+}

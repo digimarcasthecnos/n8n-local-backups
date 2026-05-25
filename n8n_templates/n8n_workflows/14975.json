@@ -1,0 +1,1304 @@
+{
+  "workflow": {
+    "id": 14975,
+    "name": "Convert Supabase support FAQs to audio with Google Cloud TTS and Webflow",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-10T10:04:17.922Z",
+    "description": "Enhance your support documentation with an audio-first experience. This workflow converts Supabase FAQ entries into high-quality audio using Google Cloud TTS, hosts them via a CDN, and embeds them into your Webflow support pages.\n\n---\n\n## 🎯 What This Workflow Does\n\nThis template transforms static FAQ content into a professional audio library through a multi-stage process.\n\n---\n\n### 🔔 Step 1 — Webhook Intake & Intelligent Fetch\n\n- **Webhook Trigger:** Processes specific FAQ IDs or categories on demand  \n- **Supabase Query:** Fetches unprocessed or requested FAQ records  \n\n---\n\n### 📋 Step 2 — Data Enrichment & SSML Preparation\n\n- **Deduplication:** Ensures each FAQ is processed only once  \n- **SSML Formatting:** Adds pauses and emphasis for natural speech delivery  \n\n---\n\n### 🗣️ Step 3 — Google Cloud TTS & Hosting\n\n- **Audio Generation:** Converts text to MP3 using Google Cloud TTS (WaveNet)  \n- **CDN Hosting:** Uploads audio via UploadToURL to generate a public URL  \n\n---\n\n### 🌐 Step 4 — CMS Update & Database Write-Back\n\n- **Webflow Update:** Inserts audio URL into FAQ pages for playback  \n- **Supabase Update:** Marks records as published with timestamps  \n\n---\n\n### 💼 Step 5 — Reporting & Confirmations\n\n- **Microsoft Teams Alert:** Sends summary with audio links  \n- **Webhook Response:** Returns JSON confirmation to trigger source  \n\n---\n\n## ✨ Key Features\n\n- **Accessibility First:** Enables audio-based support consumption  \n- **SSML Intelligence:** Improves clarity with structured speech formatting  \n- **Rate-Limit Safe:** Processes items sequentially to avoid API limits  \n- **Reliable Hosting:** UploadToURL ensures stable public audio URLs  \n\n---\n\n## 🔧 Setup Requirements\n\n### Required Integrations\n\n- **Supabase:** FAQ table  \n- **Google Cloud TTS:** API enabled  \n- **Webflow:** CMS API access  \n- **UploadToURL:** CDN hosting  \n- **Microsoft Teams:** Webhook URL  \n\n---\n\nUpgrade your support experience. Import this template to turn your FAQ library into a voice-enabled support center.",
+    "workflow": {
+      "meta": {
+        "instanceId": "277842713620d9f5554de3b1518b865a152c8c4db680008bd8aec536fc18b4a8"
+      },
+      "nodes": [
+        {
+          "id": "767380a0-fe54-4f9b-b0a7-ad6502cda9c1",
+          "name": "📋 MAIN — Workflow Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            32,
+            -1152
+          ],
+          "parameters": {
+            "width": 800,
+            "height": 1176,
+            "content": "## 🎧 Customer Support FAQ Audio Library\n### Automatically Convert FAQ Answers into Audio & Embed on Support Pages\n\n**What this workflow does:**\nThis template is triggered by a webhook (from your CMS, Typeform, or any form tool) whenever a new FAQ entry is submitted or a batch audio-generation job is requested. It:\n1. Receives FAQ data via **Webhook** (question + answer + category + FAQ ID)\n2. Reads the **full FAQ batch** from **Supabase** (your FAQ database table) filtered by category or status\n3. **Filters** to only unprocessed FAQs (where `audio_url` is null)\n4. Uses **Item Lists node** to deduplicate and sort FAQs by category\n5. Loops through each FAQ via **Loop Over Items**\n6. Inside the loop: uses **Google Cloud Text-to-Speech API** to generate SSML-enhanced MP3 audio (with pauses, emphasis, and pronunciation hints)\n7. Uploads each MP3 via **UploadToURL** — gets a permanent CDN URL per FAQ\n8. Updates the **Webflow CMS** collection item for that FAQ — writes the audio URL into the `audio_embed` field so it renders an audio player on your support page automatically\n9. Updates the **Supabase** row — stamps `audio_url`, `audio_generated_at`, and sets `status = audio_published`\n10. After the loop completes, sends a **Microsoft Teams** card to your support team channel summarising how many FAQs were processed\n11. **Responds to the original Webhook** with a JSON summary of all processed FAQ IDs and their audio URLs\n\n**Architecture (completely unique — different trigger, TTS provider, DB, CMS, notification, shape):**\n- 🔔 Webhook Trigger — receives FAQ batch job request\n- 🗄️ Supabase — read FAQ rows (NEW database node)\n- 🔽 Filter Node — exclude already-processed rows\n- 📋 Item Lists Node — deduplicate + sort by category\n- 🔁 Loop Over Items — process one FAQ at a time\n- 🗣️ Google Cloud TTS — SSML-enhanced audio (NOT ElevenLabs)\n- ☁️ UploadToURL — host MP3 per FAQ (mandatory)\n- 🌐 Webflow CMS — update support page audio embed field\n- 🗄️ Supabase Update — write audio URL + status back\n- 💼 Microsoft Teams — batch summary card (NOT Slack/Telegram)\n- 📨 Respond to Webhook — return JSON result to caller\n\n**Setup Requirements:**\n1. Webhook URL — connect your CMS or FAQ form to this endpoint\n2. Supabase project URL + service role key. Table: `faqs` with columns: `id`, `question`, `answer`, `category`, `audio_url`, `audio_generated_at`, `status`, `webflow_item_id`\n3. Google Cloud TTS API Key (enable Text-to-Speech API in GCP console)\n4. UploadToURL endpoint configured\n5. Webflow API token + Collection ID for your FAQ support page collection\n6. Microsoft Teams Incoming Webhook URL for your support team channel"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "48e9adc8-8835-4593-8d30-0c5a8767de6c",
+          "name": "📝 Note — Webhook, Supabase Fetch & Filter",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            848,
+            64
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 684,
+            "height": 578,
+            "content": "### 🔔 Step 1 — Webhook Intake & Supabase FAQ Fetch\n**Webhook Node:** Receives POST requests from your CMS, Typeform, or a manual trigger button. Payload can include `category` (to filter FAQs) or `faq_ids` (array of specific IDs to process). Also accepts `force_regenerate: true` to reprocess already-published FAQs.\n**Supabase — Read FAQs:** Queries the `faqs` table using a dynamic filter built from the webhook payload. Uses `select=*` with a `status=neq.audio_published` PostgREST filter by default. Returns all matching FAQ rows as individual items.\n**Filter Node:** Drops any row where `audio_url` is already populated AND `force_regenerate` was not sent — ensuring idempotency without extra Supabase logic."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "600d39fe-ec90-4984-87f7-4bc9754add06",
+          "name": "📝 Note — Item Lists, SSML Build & Loop",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1552,
+            64
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 860,
+            "height": 578,
+            "content": "### 📋 Step 2 — Dedup, Sort & Loop Setup\n**Item Lists Node:** Removes any duplicate FAQ IDs (in case Supabase returned overlapping results from multiple filters) and sorts remaining items alphabetically by `category` — so audio files are generated in logical groupings.\n**Code — Build SSML:** For each FAQ, wraps the answer text in Google Cloud TTS SSML markup — adds `<break>` pauses after the question reading, `<emphasis>` on key terms, and `<prosody rate=\"slow\">` on complex phrases. Also prepends 'Question: [question text]' before the answer for full context audio.\n**Loop Over Items:** Iterates one FAQ at a time through the TTS + upload + CMS update chain. Prevents API rate limit bursts on Google TTS."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f530d75b-098f-414a-a4b1-ac1507de68b9",
+          "name": "📝 Note — Google TTS, Base64 Decode & Upload",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2432,
+            64
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 636,
+            "height": 578,
+            "content": "### 🗣️ Step 3 — Google Cloud TTS & UploadToURL\n**Google Cloud TTS:** Calls the `/v1/text:synthesize` endpoint with the SSML input. Uses `WaveNet` voice (`en-US-WaveNet-D` — deep, professional) at 1x speaking rate. Returns base64-encoded MP3 audio content in the response JSON.\n**Code — Decode Base64 to Binary:** Google TTS returns audio as base64 string inside JSON — this Code node decodes it into actual binary buffer data so the UploadToURL node can handle it as a file.\n**UploadToURL — Host FAQ MP3:** Uploads the decoded binary MP3 and receives a permanent CDN URL. This URL is the source of truth used in both Webflow and Supabase."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "72c4cda0-69cf-43ee-9cfd-ac93ed2efe25",
+          "name": "📝 Note — Webflow CMS Patch & Supabase Write-Back",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3104,
+            64
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 636,
+            "height": 580,
+            "content": "### 🌐 Step 4 — Webflow CMS Update & Supabase Write-Back\n**Webflow — Patch CMS Item:** Uses the Webflow REST API to PATCH the FAQ's CMS collection item (identified by `webflow_item_id` from Supabase). Writes the hosted audio URL into the `audio-embed-url` field and sets `audio-published` to `true`. Webflow automatically re-renders the support page with an audio player.\n**Supabase — Update FAQ Row:** Updates the `faqs` table row — sets `audio_url`, `audio_generated_at` (ISO timestamp), and `status = audio_published`. This prevents reprocessing and gives ops teams a full audit trail."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "709482c2-89b8-4dea-8242-c85112bff3a0",
+          "name": "📝 Note — Teams Card & Webhook Response",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3760,
+            64
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 668,
+            "height": 564,
+            "content": "### 💼 Step 5 — Teams Summary Card & Webhook Response\n**Code — Build Summary:** After the loop finishes, collects all processed FAQ IDs, their questions, categories, and audio URLs into a structured summary object. Also counts successes vs failures.\n**Microsoft Teams — Send Adaptive Card:** Posts a rich Adaptive Card to your support team channel with a table of all newly generated FAQs, their categories, and clickable audio URLs. Uses Teams Incoming Webhook (no OAuth needed).\n**Respond to Webhook:** Returns a structured JSON response to the original caller with `processed_count`, `faq_ids`, `audio_urls`, and `timestamp` — allowing the calling system (CMS, Typeform, etc.) to confirm success."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "7c9aa9c3-f359-4385-9d01-f3d45e1bbf3f",
+          "name": "Webhook — Receive FAQ Audio Job Request",
+          "type": "n8n-nodes-base.webhook",
+          "position": [
+            944,
+            432
+          ],
+          "webhookId": "a5eb48bf-5d0a-4502-98bd-adad7f5c5a8f",
+          "parameters": {
+            "path": "faq-audio-generate",
+            "options": {},
+            "httpMethod": "POST",
+            "responseMode": "responseNode"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "7a569ad6-cdff-48c1-ab7f-b9a5a3c1edba",
+          "name": "Supabase — Read Unprocessed FAQs",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            1168,
+            432
+          ],
+          "parameters": {
+            "url": "=https://{{ $json.body?.supabase_url ?? 'YOUR_SUPABASE_PROJECT_REF' }}.supabase.co/rest/v1/faqs",
+            "options": {
+              "timeout": 15000
+            },
+            "sendQuery": true,
+            "sendHeaders": true,
+            "queryParameters": {
+              "parameters": [
+                {
+                  "name": "select",
+                  "value": "id,question,answer,category,audio_url,audio_generated_at,status,webflow_item_id"
+                },
+                {
+                  "name": "status",
+                  "value": "=neq.audio_published"
+                },
+                {
+                  "name": "order",
+                  "value": "category.asc,id.asc"
+                },
+                {
+                  "name": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "apikey",
+                  "value": "=YOUR_SUPABASE_SERVICE_ROLE_KEY"
+                },
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer YOUR_SUPABASE_SERVICE_ROLE_KEY"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "41febbde-0e11-40df-ad5a-71d770dbc13b",
+          "name": "Code — Filter & Split FAQ Rows",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1392,
+            432
+          ],
+          "parameters": {
+            "jsCode": "// Supabase returns an array — split into individual items\nconst rows = Array.isArray($input.first().json)\n  ? $input.first().json\n  : [$input.first().json];\n\nconst forceRegenerate = $('Webhook — Receive FAQ Audio Job Request').item.json?.body?.force_regenerate === true;\n\nconst valid = rows.filter(row => {\n  if (!row.id || !row.question || !row.answer) return false;\n  // Skip if already published unless force_regenerate\n  if (row.audio_url && !forceRegenerate) return false;\n  // Skip very short answers (under 20 chars — likely test/placeholder data)\n  if ((row.answer || '').trim().length < 20) return false;\n  return true;\n});\n\nreturn valid.map(row => ({ json: row }));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "891647aa-158a-4206-bd8f-061f48021293",
+          "name": "Item Lists — Deduplicate by FAQ ID",
+          "type": "n8n-nodes-base.itemLists",
+          "position": [
+            1600,
+            432
+          ],
+          "parameters": {
+            "compare": "selectedFields",
+            "options": {},
+            "operation": "removeDuplicates"
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "a4a03362-9efc-4818-ad0d-53a7f05d3cc4",
+          "name": "Item Lists — Sort by Category then ID",
+          "type": "n8n-nodes-base.itemLists",
+          "position": [
+            1824,
+            432
+          ],
+          "parameters": {
+            "options": {},
+            "operation": "sort",
+            "sortFieldsUi": {
+              "sortField": [
+                {
+                  "fieldName": "category"
+                },
+                {
+                  "fieldName": "id"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "ea083e79-1671-463a-9533-cc8f7540c11e",
+          "name": "Code — Build SSML for Each FAQ",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2048,
+            432
+          ],
+          "parameters": {
+            "jsCode": "const faq = $input.first().json;\n\n// Clean answer text\nconst cleanAnswer = (faq.answer || '')\n  .replace(/<[^>]+>/g, '')        // strip HTML\n  .replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<')\n  .replace(/&gt;/g, '>')\n  .replace(/&nbsp;/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .trim();\n\nconst cleanQuestion = (faq.question || '').replace(/<[^>]+>/g, '').trim();\n\n// Build SSML — adds pauses, emphasis, natural pacing\nconst ssml = `<speak>\n  <prosody rate=\"0.95\" pitch=\"0st\">\n    <emphasis level=\"moderate\">Question:</emphasis>\n    <break time=\"300ms\"/>\n    ${cleanQuestion}\n    <break time=\"700ms\"/>\n    <emphasis level=\"moderate\">Answer:</emphasis>\n    <break time=\"400ms\"/>\n    ${cleanAnswer}\n    <break time=\"500ms\"/>\n  </prosody>\n</speak>`;\n\nconst slugBase = cleanQuestion\n  .toLowerCase()\n  .replace(/[^a-z0-9]+/g, '-')\n  .substring(0, 50)\n  .replace(/-$/, '');\n\nreturn [{\n  json: {\n    ...faq,\n    cleanQuestion,\n    cleanAnswer,\n    ssml,\n    audioFilename: `faq-${faq.id}-${slugBase}.mp3`\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "189df419-05ed-49aa-a59a-421098ee9693",
+          "name": "Loop Over Items — Process One FAQ at a Time",
+          "type": "n8n-nodes-base.splitInBatches",
+          "position": [
+            2272,
+            432
+          ],
+          "parameters": {
+            "options": {}
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "d255671b-aa46-499e-b999-10a1d025776d",
+          "name": "Google Cloud TTS — Synthesize FAQ Audio",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            2480,
+            432
+          ],
+          "parameters": {
+            "url": "https://texttospeech.googleapis.com/v1/text:synthesize",
+            "method": "POST",
+            "options": {
+              "timeout": 30000
+            },
+            "jsonBody": "={\n  \"input\": {\n    \"ssml\": {{ JSON.stringify($json.ssml) }}\n  },\n  \"voice\": {\n    \"languageCode\": \"en-US\",\n    \"name\": \"en-US-Wavenet-D\",\n    \"ssmlGender\": \"MALE\"\n  },\n  \"audioConfig\": {\n    \"audioEncoding\": \"MP3\",\n    \"speakingRate\": 1.0,\n    \"pitch\": 0,\n    \"volumeGainDb\": 1.0,\n    \"effectsProfileId\": [\"headphone-class-device\"]\n  }\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "X-Goog-Api-Key",
+                  "value": "=YOUR_GOOGLE_CLOUD_TTS_API_KEY"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "4ee30269-ff88-45d8-b819-ad57e40eaeb4",
+          "name": "Code — Decode Base64 Audio to Binary",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2704,
+            432
+          ],
+          "parameters": {
+            "jsCode": "// Google TTS returns base64 audioContent — decode to binary\nconst ttsResp  = $input.first().json;\nconst faqData  = $('Code — Build SSML for Each FAQ').item.json;\n\nconst base64Audio = ttsResp?.audioContent;\nif (!base64Audio) {\n  throw new Error(`Google TTS returned no audioContent for FAQ ID: ${faqData.id}`);\n}\n\n// Decode base64 to Buffer\nconst audioBuffer = Buffer.from(base64Audio, 'base64');\n\nreturn [{\n  json: { ...faqData },\n  binary: {\n    data: {\n      data: audioBuffer,\n      mimeType: 'audio/mpeg',\n      fileName: faqData.audioFilename,\n      fileExtension: 'mp3'\n    }\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "2e4b32a4-6a97-48e3-a485-844f9b0de093",
+          "name": "UploadToURL — Host FAQ MP3 on CDN",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            2928,
+            432
+          ],
+          "parameters": {
+            "url": "https://upload.uploadtourl.com/api/upload",
+            "method": "POST",
+            "options": {
+              "timeout": 60000,
+              "redirect": {
+                "redirect": {}
+              }
+            },
+            "sendBody": true,
+            "contentType": "multipart-form-data",
+            "sendHeaders": true,
+            "bodyParameters": {
+              "parameters": [
+                {
+                  "name": "file",
+                  "parameterType": "formBinaryData",
+                  "inputDataFieldName": "data"
+                }
+              ]
+            },
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Accept",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "f071afcb-5c2b-4b14-b480-a1485f3edbf7",
+          "name": "Code — Capture Audio URL + Timestamp",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            3152,
+            432
+          ],
+          "parameters": {
+            "jsCode": "const uploadResp = $input.first().json;\nconst faqData    = $('Code — Build SSML for Each FAQ').item.json;\n\nconst audioUrl =\n  uploadResp?.url ??\n  uploadResp?.data?.url ??\n  uploadResp?.file?.url ??\n  uploadResp?.link ?? '';\n\nif (!audioUrl) throw new Error(`UploadToURL returned no URL for FAQ ID: ${faqData.id}`);\n\nreturn [{\n  json: {\n    ...faqData,\n    audioUrl,\n    audioGeneratedAt: new Date().toISOString()\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "4714d9be-b101-4663-a703-3a6b74565c0a",
+          "name": "Webflow — Patch FAQ CMS Item with Audio URL",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            3360,
+            432
+          ],
+          "parameters": {
+            "url": "=https://api.webflow.com/v2/collections/YOUR_WEBFLOW_COLLECTION_ID/items/{{ $json.webflow_item_id }}",
+            "method": "PATCH",
+            "options": {
+              "timeout": 15000
+            },
+            "jsonBody": "={\n  \"isArchived\": false,\n  \"isDraft\": false,\n  \"fieldData\": {\n    \"audio-embed-url\": {{ JSON.stringify($json.audioUrl) }},\n    \"audio-published\": true,\n    \"audio-generated-at\": {{ JSON.stringify($json.audioGeneratedAt) }},\n    \"audio-filename\": {{ JSON.stringify($json.audioFilename) }}\n  }\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer YOUR_WEBFLOW_API_TOKEN"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "accept",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "89602260-20f5-43d9-8cad-e56717965a10",
+          "name": "Supabase — Write Audio URL & Status Back",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            3584,
+            432
+          ],
+          "parameters": {
+            "url": "=https://YOUR_SUPABASE_PROJECT_REF.supabase.co/rest/v1/faqs?id=eq.{{ $json.id }}",
+            "method": "PATCH",
+            "options": {
+              "timeout": 10000
+            },
+            "jsonBody": "={\n  \"audio_url\": {{ JSON.stringify($json.audioUrl) }},\n  \"audio_generated_at\": {{ JSON.stringify($json.audioGeneratedAt) }},\n  \"status\": \"audio_published\"\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "apikey",
+                  "value": "=YOUR_SUPABASE_SERVICE_ROLE_KEY"
+                },
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer YOUR_SUPABASE_SERVICE_ROLE_KEY"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "Prefer",
+                  "value": "return=representation"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "a9d79805-4c57-49aa-89db-05efef8e55da",
+          "name": "Code — Build Teams Card & Summary Object",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            3808,
+            432
+          ],
+          "parameters": {
+            "jsCode": "// Collect all processed FAQs from this loop run\nconst allItems = $('Code — Capture Audio URL + Timestamp').all();\n\nconst processed = allItems.map(item => ({\n  id:         item.json.id,\n  question:   item.json.cleanQuestion,\n  category:   item.json.category,\n  audioUrl:   item.json.audioUrl,\n  generatedAt: item.json.audioGeneratedAt\n}));\n\n// Build Teams Adaptive Card table rows\nconst tableRows = processed.map(p =>\n  `| [${p.question.substring(0,45)}...](${p.audioUrl}) | ${p.category} | ▶ [Listen](${p.audioUrl}) |`\n).join('\\n');\n\nconst teamsCard = {\n  type: 'message',\n  attachments: [\n    {\n      contentType: 'application/vnd.microsoft.card.adaptive',\n      content: {\n        '$schema': 'http://adaptivecards.io/schemas/adaptive-card.json',\n        type: 'AdaptiveCard',\n        version: '1.4',\n        body: [\n          {\n            type: 'TextBlock',\n            text: `🎧 FAQ Audio Library Updated — ${processed.length} FAQ${processed.length !== 1 ? 's' : ''} Processed`,\n            weight: 'Bolder',\n            size: 'Medium',\n            color: 'Accent'\n          },\n          {\n            type: 'TextBlock',\n            text: `Generated at: ${new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}`,\n            isSubtle: true,\n            spacing: 'None'\n          },\n          {\n            type: 'FactSet',\n            facts: [\n              { title: 'Total FAQs processed', value: String(processed.length) },\n              { title: 'Categories covered',   value: [...new Set(processed.map(p => p.category))].join(', ') || 'General' }\n            ]\n          },\n          ...processed.slice(0, 8).map(p => ({\n            type: 'ColumnSet',\n            columns: [\n              {\n                type: 'Column', width: 'stretch',\n                items: [{ type: 'TextBlock', text: p.question.substring(0, 60), wrap: true, size: 'Small' }]\n              },\n              {\n                type: 'Column', width: 'auto',\n                items: [{ type: 'TextBlock', text: p.category, isSubtle: true, size: 'Small' }]\n              }\n            ]\n          })),\n          processed.length > 8 ? {\n            type: 'TextBlock',\n            text: `...and ${processed.length - 8} more. Check Supabase for full list.`,\n            isSubtle: true, size: 'Small'\n          } : null\n        ].filter(Boolean),\n        actions: [\n          {\n            type: 'Action.OpenUrl',\n            title: '🔗 View Support Page',\n            url: 'https://YOUR_SUPPORT_SITE_URL/faq'\n          },\n          {\n            type: 'Action.OpenUrl',\n            title: '🗄️ Open Supabase',\n            url: 'https://app.supabase.com/project/YOUR_SUPABASE_PROJECT_REF/editor'\n          }\n        ]\n      }\n    }\n  ]\n};\n\nreturn [{\n  json: {\n    processed,\n    processedCount: processed.length,\n    teamsCard,\n    summaryTimestamp: new Date().toISOString()\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "81754a6c-34cc-4f9d-8d6d-50b8e2639094",
+          "name": "Microsoft Teams — Send FAQ Audio Summary Card",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            4032,
+            432
+          ],
+          "parameters": {
+            "url": "=YOUR_TEAMS_INCOMING_WEBHOOK_URL",
+            "method": "POST",
+            "options": {
+              "timeout": 15000
+            },
+            "jsonBody": "={{ JSON.stringify($json.teamsCard) }}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "a12b3cd1-f898-45ef-ab83-10695fea45d5",
+          "name": "Respond to Webhook — Return JSON Summary",
+          "type": "n8n-nodes-base.respondToWebhook",
+          "position": [
+            4240,
+            432
+          ],
+          "parameters": {
+            "options": {
+              "responseCode": 200,
+              "responseHeaders": {
+                "entries": [
+                  {
+                    "name": "Content-Type",
+                    "value": "application/json"
+                  }
+                ]
+              }
+            },
+            "respondWith": "json",
+            "responseBody": "={\n  \"success\": true,\n  \"processed_count\": {{ $('Code — Build Teams Card & Summary Object').item.json.processedCount }},\n  \"timestamp\": \"{{ $('Code — Build Teams Card & Summary Object').item.json.summaryTimestamp }}\",\n  \"faqs\": {{ JSON.stringify($('Code — Build Teams Card & Summary Object').item.json.processed) }}\n}"
+          },
+          "typeVersion": 1.1
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "Code — Build SSML for Each FAQ": {
+          "main": [
+            [
+              {
+                "node": "Loop Over Items — Process One FAQ at a Time",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Code — Filter & Split FAQ Rows": {
+          "main": [
+            [
+              {
+                "node": "Item Lists — Deduplicate by FAQ ID",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Supabase — Read Unprocessed FAQs": {
+          "main": [
+            [
+              {
+                "node": "Code — Filter & Split FAQ Rows",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "UploadToURL — Host FAQ MP3 on CDN": {
+          "main": [
+            [
+              {
+                "node": "Code — Capture Audio URL + Timestamp",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Item Lists — Deduplicate by FAQ ID": {
+          "main": [
+            [
+              {
+                "node": "Item Lists — Sort by Category then ID",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Code — Capture Audio URL + Timestamp": {
+          "main": [
+            [
+              {
+                "node": "Webflow — Patch FAQ CMS Item with Audio URL",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Code — Decode Base64 Audio to Binary": {
+          "main": [
+            [
+              {
+                "node": "UploadToURL — Host FAQ MP3 on CDN",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Item Lists — Sort by Category then ID": {
+          "main": [
+            [
+              {
+                "node": "Code — Build SSML for Each FAQ",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Google Cloud TTS — Synthesize FAQ Audio": {
+          "main": [
+            [
+              {
+                "node": "Code — Decode Base64 Audio to Binary",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Webhook — Receive FAQ Audio Job Request": {
+          "main": [
+            [
+              {
+                "node": "Supabase — Read Unprocessed FAQs",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Code — Build Teams Card & Summary Object": {
+          "main": [
+            [
+              {
+                "node": "Microsoft Teams — Send FAQ Audio Summary Card",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Supabase — Write Audio URL & Status Back": {
+          "main": [
+            [
+              {
+                "node": "Loop Over Items — Process One FAQ at a Time",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Loop Over Items — Process One FAQ at a Time": {
+          "main": [
+            [
+              {
+                "node": "Google Cloud TTS — Synthesize FAQ Audio",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Webflow — Patch FAQ CMS Item with Audio URL": {
+          "main": [
+            [
+              {
+                "node": "Supabase — Write Audio URL & Status Back",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Microsoft Teams — Send FAQ Audio Summary Card": {
+          "main": [
+            [
+              {
+                "node": "Respond to Webhook — Return JSON Summary",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 22,
+      "nodeTypes": {
+        "n8n-nodes-base.code": {
+          "count": 5
+        },
+        "n8n-nodes-base.webhook": {
+          "count": 1
+        },
+        "n8n-nodes-base.itemLists": {
+          "count": 2
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 6
+        },
+        "n8n-nodes-base.splitInBatches": {
+          "count": 1
+        },
+        "n8n-nodes-base.respondToWebhook": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Jitesh Dugar",
+      "username": "jiteshdugar",
+      "bio": "AI Automation Specialist - OpenAI, CRM & Automation Expert with a solid understanding of various tools that include Zapier, Make, Zoho CRM, Hubspot, Google Sheets, Airtable, Pipedrive, Google Analytics, and more.",
+      "verified": true,
+      "links": [
+        "https://www.linkedin.com/in/jiteshdugar"
+      ],
+      "avatar": "https://gravatar.com/avatar/edaa3abb99806b0586dced559d0a5417f24a507e7c4464a63960f0638a4b1b90?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 39,
+        "icon": "fa:sync",
+        "name": "n8n-nodes-base.splitInBatches",
+        "codex": {
+          "data": {
+            "alias": [
+              "Loop",
+              "Concatenate",
+              "Batch",
+              "Split",
+              "Split In Batches"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.splitinbatches/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Loop Over Items",
+          "color": "#007755"
+        },
+        "iconData": {
+          "icon": "sync",
+          "type": "icon"
+        },
+        "displayName": "Loop Over Items (Split in Batches)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 47,
+        "icon": "file:webhook.svg",
+        "name": "n8n-nodes-base.webhook",
+        "codex": {
+          "data": {
+            "alias": [
+              "HTTP",
+              "API",
+              "Build",
+              "WH"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-custom-incident-response-workflows-with-n8n/",
+                  "label": "How to automate every step of an incident response workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Webhook"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTM1IDM3Yy0yLjIgMC00LTEuOC00LTRzMS44LTQgNC00IDQgMS44IDQgNC0xLjggNC00IDQiLz48cGF0aCBmaWxsPSIjMzc0NzRmIiBkPSJNMzUgNDNjLTMgMC01LjktMS40LTcuOC0zLjdsMy4xLTIuNWMxLjEgMS40IDIuOSAyLjMgNC43IDIuMyAzLjMgMCA2LTIuNyA2LTZzLTIuNy02LTYtNmMtMSAwLTIgLjMtMi45LjdsLTEuNyAxTDIzLjMgMTZsMy41LTEuOSA1LjMgOS40YzEtLjMgMi0uNSAzLS41IDUuNSAwIDEwIDQuNSAxMCAxMFM0MC41IDQzIDM1IDQzIi8+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTE0IDQzQzguNSA0MyA0IDM4LjUgNCAzM2MwLTQuNiAzLjEtOC41IDcuNS05LjdsMSAzLjlDOS45IDI3LjkgOCAzMC4zIDggMzNjMCAzLjMgMi43IDYgNiA2czYtMi43IDYtNnYtMmgxNXY0SDIzLjhjLS45IDQuNi01IDgtOS44IDgiLz48cGF0aCBmaWxsPSIjZTkxZTYzIiBkPSJNMTQgMzdjLTIuMiAwLTQtMS44LTQtNHMxLjgtNCA0LTQgNCAxLjggNCA0LTEuOCA0LTQgNCIvPjxwYXRoIGZpbGw9IiMzNzQ3NGYiIGQ9Ik0yNSAxOWMtMi4yIDAtNC0xLjgtNC00czEuOC00IDQtNCA0IDEuOCA0IDQtMS44IDQtNCA0Ii8+PHBhdGggZmlsbD0iI2U5MWU2MyIgZD0ibTE1LjcgMzQtMy40LTIgNS45LTkuN2MtMi0xLjktMy4yLTQuNS0zLjItNy4zIDAtNS41IDQuNS0xMCAxMC0xMHMxMCA0LjUgMTAgMTBjMCAuOS0uMSAxLjctLjMgMi41bC0zLjktMWMuMS0uNS4yLTEgLjItMS41IDAtMy4zLTIuNy02LTYtNnMtNiAyLjctNiA2YzAgMi4xIDEuMSA0IDIuOSA1LjFsMS43IDF6Ii8+PC9zdmc+"
+        },
+        "displayName": "Webhook",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 516,
+        "icon": "file:itemLists.svg",
+        "name": "n8n-nodes-base.itemLists",
+        "codex": {
+          "data": {
+            "alias": [
+              "Aggregate",
+              "Dedupe",
+              "Deduplicate",
+              "Duplicates",
+              "Limit",
+              "Remove",
+              "Slice",
+              "Sort",
+              "Split",
+              "Unique",
+              "JSON",
+              "Transform",
+              "Array",
+              "List",
+              "Object",
+              "Item",
+              "Map",
+              "Format",
+              "Nested",
+              "Iterate",
+              "Summarise",
+              "Summarize",
+              "Group",
+              "Pivot",
+              "Sum",
+              "Count",
+              "Min",
+              "Max"
+            ],
+            "details": "",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.itemlists/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Item Lists"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbDpzcGFjZT0icHJlc2VydmUiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgdmlld0JveD0iMCAwIDIxMCAyMTAiPjxwYXRoIGQ9Ik0xOC44IDE4LjhDOC40IDE4LjggMCAyNy4xIDAgMzcuNXM4LjQgMTguOCAxOC44IDE4LjggMTguOC04LjQgMTguOC0xOC44LTguNS0xOC43LTE4LjgtMTguN20wIDYyLjRDOC40IDgxLjIgMCA4OS42IDAgMTAwczguNCAxOC44IDE4LjggMTguOCAxOC44LTguNCAxOC44LTE4LjgtOC41LTE4LjgtMTguOC0xOC44bTAgNjIuNkM4LjQgMTQzLjggMCAxNTIuMSAwIDE2Mi41czguNCAxOC44IDE4LjggMTguOCAxOC44LTguNCAxOC44LTE4LjgtOC41LTE4LjctMTguOC0xOC43bTE3NSA2LjJoLTEyNWMtMy41IDAtNi4yIDIuOC02LjIgNi4ydjEyLjVjMCAzLjUgMi44IDYuMiA2LjIgNi4yaDEyNWMzLjUgMCA2LjItMi44IDYuMi02LjJ2LTEyLjVjMC0zLjQtMi44LTYuMi02LjItNi4ybTAtMTI1aC0xMjVjLTMuNSAwLTYuMiAyLjgtNi4yIDYuMnYxMi41YzAgMy41IDIuOCA2LjIgNi4yIDYuMmgxMjVjMy41IDAgNi4yLTIuOCA2LjItNi4yVjMxLjJjMC0zLjQtMi44LTYuMi02LjItNi4ybTAgNjIuNWgtMTI1Yy0zLjUgMC02LjIgMi44LTYuMiA2LjJ2MTIuNWMwIDMuNSAyLjggNi4yIDYuMiA2LjJoMTI1YzMuNSAwIDYuMi0yLjggNi4yLTYuMlY5My44YzAtMy41LTIuOC02LjMtNi4yLTYuMyIgc3R5bGU9ImZpbGw6I2ZmNmQ1YSIvPjwvc3ZnPg=="
+        },
+        "displayName": "Item Lists",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 535,
+        "icon": "file:webhook.svg",
+        "name": "n8n-nodes-base.respondToWebhook",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.respondtowebhook/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes",
+              "Utility"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Respond to Webhook"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTM1IDM3Yy0yLjIgMC00LTEuOC00LTRzMS44LTQgNC00IDQgMS44IDQgNC0xLjggNC00IDQiLz48cGF0aCBmaWxsPSIjMzc0NzRmIiBkPSJNMzUgNDNjLTMgMC01LjktMS40LTcuOC0zLjdsMy4xLTIuNWMxLjEgMS40IDIuOSAyLjMgNC43IDIuMyAzLjMgMCA2LTIuNyA2LTZzLTIuNy02LTYtNmMtMSAwLTIgLjMtMi45LjdsLTEuNyAxTDIzLjMgMTZsMy41LTEuOSA1LjMgOS40YzEtLjMgMi0uNSAzLS41IDUuNSAwIDEwIDQuNSAxMCAxMFM0MC41IDQzIDM1IDQzIi8+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTE0IDQzQzguNSA0MyA0IDM4LjUgNCAzM2MwLTQuNiAzLjEtOC41IDcuNS05LjdsMSAzLjlDOS45IDI3LjkgOCAzMC4zIDggMzNjMCAzLjMgMi43IDYgNiA2czYtMi43IDYtNnYtMmgxNXY0SDIzLjhjLS45IDQuNi01IDgtOS44IDgiLz48cGF0aCBmaWxsPSIjZTkxZTYzIiBkPSJNMTQgMzdjLTIuMiAwLTQtMS44LTQtNHMxLjgtNCA0LTQgNCAxLjggNCA0LTEuOCA0LTQgNCIvPjxwYXRoIGZpbGw9IiMzNzQ3NGYiIGQ9Ik0yNSAxOWMtMi4yIDAtNC0xLjgtNC00czEuOC00IDQtNCA0IDEuOCA0IDQtMS44IDQtNCA0Ii8+PHBhdGggZmlsbD0iI2U5MWU2MyIgZD0ibTE1LjcgMzQtMy40LTIgNS45LTkuN2MtMi0xLjktMy4yLTQuNS0zLjItNy4zIDAtNS41IDQuNS0xMCAxMC0xMHMxMCA0LjUgMTAgMTBjMCAuOS0uMSAxLjctLjMgMi41bC0zLjktMWMuMS0uNS4yLTEgLjItMS41IDAtMy4zLTIuNy02LTYtNnMtNiAyLjctNiA2YzAgMi4xIDEuMSA0IDIuOSA1LjFsMS43IDF6Ii8+PC9zdmc+"
+        },
+        "displayName": "Respond to Webhook",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 7,
+            "name": "Utility"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 40,
+        "name": "Support Chatbot"
+      },
+      {
+        "id": 51,
+        "name": "Multimodal AI"
+      }
+    ],
+    "image": []
+  }
+}

@@ -1,0 +1,973 @@
+{
+  "workflow": {
+    "id": 14828,
+    "name": "Sync Shopify orders to Odoo sales orders with customer and product mapping",
+    "views": 55,
+    "recentViews": 11,
+    "totalViews": 55,
+    "createdAt": "2026-04-06T16:38:58.030Z",
+    "description": "What Problem Does It Solve?\n\n* Keeping product data consistent between Shopify and Odoo is a major operational challenge.\n* Manually creating new products in Odoo every time they are added to Shopify is slow and leads to Barcode errors.\n* Prices and titles change frequently; failing to sync these updates results in pricing discrepancies and customer confusion.\n* This workflow solves these issues by:\n  - Automatically creating a new product in Odoo as soon as it's added to Shopify.\n  - Ensuring Barcode uniqueness by checking for existing products before creation.\n  - Syncing product images directly from Shopify to Odoo.\n  - Real-time updating of product names and prices in Odoo whenever they change in Shopify.\n\nHow to Configure It\n\n* Shopify Setup\n  - Connect your Shopify account using OAuth2.\n  - The workflow uses two triggers: \"products/create\" and \"products/update\".\n* Odoo Setup\n  - Connect your Odoo API credentials in n8n.\n  - Ensure your Shopify \"Vendors\" match the \"Product Categories\" names in Odoo for accurate automated mapping.\n* Image Handling\n  - The workflow automatically downloads the first image from Shopify and converts it to the format required by Odoo's \"image_1920\" field.\n\nHow It Works\n\n* Product Creation Path:\n  - Shopify triggers the \"Product Created\" node.\n  - The workflow checks Odoo for an existing product with the same Barcode.\n  - If not found, it retrieves the Odoo Category ID based on the Shopify Vendor name.\n  - It downloads the product image, extracts the file content, and creates the item in Odoo.\n* Product Update Path:\n  - Shopify triggers the \"Product Updated\" node.\n  - The workflow finds the corresponding product in Odoo by Barcode.\n  - It instantly updates the Odoo record with the new Title and List Price from Shopify.\n\nCustomization Ideas\n\n* Add logic to sync \"Inventory Levels\" so Shopify and Odoo share the same stock count.\n* Map multiple variants (Sizes/Colors) from Shopify to Odoo Product Variants.\n* Integrate with a notification system to alert you if a Shopify Vendor doesn't have a matching Category in Odoo.\n\nFor more info [Contact Me](https://www.linkedin.com/in/khaledyasser01/)",
+    "workflow": {
+      "meta": {
+        "instanceId": "4081d91a2be4d03c9bb282949cb539bf75731317a6e6bf6c8db0bc668ee8f904",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "43c66d84-53a3-4af5-b2ca-bab4c3ed4952",
+          "name": "Shopify Webhook",
+          "type": "n8n-nodes-base.webhook",
+          "position": [
+            0,
+            480
+          ],
+          "webhookId": "6286b198-385c-4818-bf5c-29482c8656ce",
+          "parameters": {
+            "path": "shopify-order-webhook",
+            "options": {},
+            "httpMethod": "POST"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "e1d26e34-15db-41a6-8444-85c9bfe61cf3",
+          "name": "Split Line Items",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1344,
+            480
+          ],
+          "parameters": {
+            "jsCode": "// ==================================================\n// Split Line Items - يفرد المنتجات عشان نلوب عليهم\n// ==================================================\nconst orderData = $('Parse Shopify Order1').first().json;\nconst lineItems = orderData.line_items || [];\nconst inputData = $input.first().json;\nconst partnerId = inputData.id;\n\nreturn lineItems.map((item, index) => ({\n  json: {\n    index: index,\n    partner_id: partnerId,\n    sku: item.sku || '',\n    title: item.title,\n    variant_title: item.variant_title || '',\n    quantity: item.quantity,\n    price_unit: item.price,\n    total_discount: item.total_discount || 0,\n    shopify_product_id: item.shopify_product_id,\n    shopify_variant_id: item.shopify_variant_id,\n    _order_meta: index === 0 ? {\n      shopify_order_id: orderData.shopify_order_id,\n      shopify_order_name: orderData.shopify_order_name,\n      shipping_method: orderData.shipping_method,\n      shipping_cost: orderData.shipping_cost,\n      payment: orderData.payment,\n      totals: orderData.totals,\n      note: orderData.note\n    } : null\n  }\n}));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "2e844456-3d6c-49c1-8d09-8fbee2ce3d40",
+          "name": "Parse Shopify Order1",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            224,
+            480
+          ],
+          "parameters": {
+            "jsCode": "const order = $input.first().json.body || $input.first().json;\nconst customer = order.customer || {};\nconst shippingAddress = order.shipping_address || {};\n\nconst parsedOrder = {\n  shopify_order_id: order.id,\n  shopify_order_name: order.name,\n  created_at: order.created_at,\n  customer: {\n    shopify_customer_id: customer.id || null,\n    email: order.email || customer.email || '',\n    full_name: ((customer.first_name || shippingAddress.first_name || '') + ' ' + \n                (customer.last_name || shippingAddress.last_name || '')).trim(),\n    phone: customer.phone || shippingAddress.phone || order.phone || ''\n  },\n  shipping: {\n    name: shippingAddress.name || '',\n    address1: shippingAddress.address1 || '',\n    address2: shippingAddress.address2 || '',\n    city: shippingAddress.city || '',\n    province: shippingAddress.province || '',\n    country: shippingAddress.country || '',\n    country_code: shippingAddress.country_code || '',\n    zip: shippingAddress.zip || '',\n    phone: shippingAddress.phone || ''\n  },\n  shipping_method: (order.shipping_lines && order.shipping_lines.length > 0) \n    ? order.shipping_lines[0].title : 'Standard Shipping',\n  shipping_cost: (order.shipping_lines && order.shipping_lines.length > 0) \n    ? parseFloat(order.shipping_lines[0].price) : 0,\n  payment: {\n    financial_status: order.financial_status || 'pending',\n    payment_gateway: order.payment_gateway_names \n      ? order.payment_gateway_names.join(', ') : '',\n    currency: order.currency || 'USD'\n  },\n  totals: {\n    subtotal: parseFloat(order.subtotal_price || 0),\n    total: parseFloat(order.total_price || 0),\n    total_tax: parseFloat(order.total_tax || 0),\n    total_discounts: parseFloat(order.total_discounts || 0),\n    discount_codes: order.discount_codes || []\n  },\n  line_items: (order.line_items || []).map(item => ({\n    shopify_product_id: item.product_id,\n    shopify_variant_id: item.variant_id,\n    sku: item.sku || '',\n    title: item.title || item.name || '',\n    variant_title: item.variant_title || '',\n    quantity: item.quantity || 1,\n    price: parseFloat(item.price || 0),\n    total_discount: parseFloat(item.total_discount || 0)\n  })),\n  note: order.note || '',\n  tags: order.tags || ''\n};\n\nreturn [{ json: parsedOrder }];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "9764ad61-8a70-4bb3-a747-f9a505517672",
+          "name": "Customer Exists?1",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            672,
+            480
+          ],
+          "parameters": {
+            "conditions": {
+              "string": [
+                {
+                  "value1": "={{ $json.id }}",
+                  "operation": "isEmpty"
+                }
+              ]
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "a38a10db-8899-416f-839e-9a09e3c5d018",
+          "name": "Get state id1",
+          "type": "n8n-nodes-base.odoo",
+          "position": [
+            896,
+            400
+          ],
+          "parameters": {
+            "options": {},
+            "resource": "custom",
+            "operation": "getAll",
+            "returnAll": true,
+            "filterRequest": {
+              "filter": [
+                {
+                  "value": "={{ $('Parse Shopify Order1').first().json.shipping.province }}",
+                  "operator": "like",
+                  "fieldName": "name"
+                }
+              ]
+            },
+            "customResource": "res.country.state"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "6014013c-0e34-4ace-8891-5a36fcaa5398",
+          "name": "Create Contact1",
+          "type": "n8n-nodes-base.odoo",
+          "position": [
+            1120,
+            400
+          ],
+          "parameters": {
+            "resource": "custom",
+            "customResource": "res.partner",
+            "fieldsToCreateOrUpdate": {
+              "fields": [
+                {
+                  "fieldName": "name",
+                  "fieldValue": "={{ $('Parse Shopify Order1').first().json.customer.full_name }}"
+                },
+                {
+                  "fieldName": "phone",
+                  "fieldValue": "={{ $('Parse Shopify Order1').first().json.customer.phone }}"
+                },
+                {
+                  "fieldName": "email",
+                  "fieldValue": "={{ $('Parse Shopify Order1').first().json.customer.email }}"
+                },
+                {
+                  "fieldName": "street",
+                  "fieldValue": "={{ $('Parse Shopify Order1').first().json.shipping.address1 }}"
+                },
+                {
+                  "fieldName": "city",
+                  "fieldValue": "={{ $('Parse Shopify Order1').first().json.shipping.city }}"
+                },
+                {
+                  "fieldName": "country_id",
+                  "fieldValue": "65"
+                },
+                {
+                  "fieldName": "lang",
+                  "fieldValue": "ar_001"
+                },
+                {
+                  "fieldName": "state_id",
+                  "fieldValue": "={{ $json.id }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "815c259d-7413-4061-8b2f-2f7efdaa9653",
+          "name": "Search Product by Barcode1",
+          "type": "n8n-nodes-base.odoo",
+          "position": [
+            1568,
+            480
+          ],
+          "parameters": {
+            "limit": 1,
+            "options": {
+              "fieldsList": [
+                "id",
+                "name",
+                "default_code",
+                "barcode",
+                "uom_id"
+              ]
+            },
+            "resource": "custom",
+            "operation": "getAll",
+            "filterRequest": {
+              "filter": [
+                {
+                  "value": "={{ $json.sku }}",
+                  "fieldName": "barcode"
+                }
+              ]
+            },
+            "customResource": "product.product"
+          },
+          "typeVersion": 1,
+          "alwaysOutputData": true
+        },
+        {
+          "id": "10c4f69b-aa09-4bc3-b4de-7df5c414921c",
+          "name": "Process Product Result1",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1792,
+            480
+          ],
+          "parameters": {
+            "jsCode": "const allSearchResults = $input.all();\nconst allSplitItems = $('Split Line Items').all();\n\nconst barcodeMap = {};\nfor (const result of allSearchResults) {\n  if (result.json && result.json.barcode) {\n    barcodeMap[result.json.barcode] = result.json;\n  }\n}\n\nconst results = [];\nfor (let i = 0; i < allSplitItems.length; i++) {\n  const currentItem = allSplitItems[i].json;\n  const matchedProduct = barcodeMap[currentItem.sku] || null;\n\n  let productId = null;\n  let productName = currentItem.title;\n\n  if (matchedProduct && matchedProduct.id) {\n    productId = matchedProduct.id;\n    productName = matchedProduct.name || currentItem.title;\n  }\n\n  const unitPrice = currentItem.price_unit;\n  const qty = currentItem.quantity;\n  const totalDiscount = currentItem.total_discount || 0;\n  const discountPercent = (qty > 0 && unitPrice > 0)\n    ? (totalDiscount / (qty * unitPrice)) * 100\n    : 0;\n\n  results.push({\n    json: {\n      product_id: productId,\n      product_name: productName,\n      display_name: currentItem.variant_title\n        ? currentItem.title + ' - ' + currentItem.variant_title\n        : currentItem.title,\n      quantity: currentItem.quantity,\n      price_unit: currentItem.price_unit,\n      discount: Math.round(discountPercent * 100) / 100,\n      sku: currentItem.sku,\n      partner_id: currentItem.partner_id,\n      _order_meta: currentItem._order_meta\n    }\n  });\n}\nreturn results;"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "aaa768f4-6678-4f19-a6a1-f52682cca678",
+          "name": "Aggregate Products1",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2016,
+            480
+          ],
+          "parameters": {
+            "jsCode": "const allProducts = $input.all();\nconst partnerId = allProducts[0].json.partner_id;\n\nlet orderMeta = null;\nfor (const item of allProducts) {\n  if (item.json._order_meta) {\n    orderMeta = item.json._order_meta;\n    break;\n  }\n}\n\nconst foundProducts = allProducts.filter(item => item.json.product_id !== null);\nconst notFoundProducts = allProducts.filter(item => item.json.product_id === null);\n\nconst orderLines = foundProducts.map(item => {\n  return [\n    0, 0, {\n      product_id: item.json.product_id,\n      name: item.json.display_name,\n      product_uom_qty: item.json.quantity,\n      price_unit: item.json.price_unit,\n      discount: item.json.discount,\n      tax_id: [[6, 0, []]]\n    }\n  ];\n});\n\nnotFoundProducts.forEach(item => {\n  orderLines.push([\n    0, 0, {\n      name: '[NOT FOUND] ' + item.json.display_name + ' (SKU: ' + item.json.sku + ')',\n      product_uom_qty: item.json.quantity,\n      price_unit: item.json.price_unit,\n      discount: item.json.discount,\n      tax_id: [[6, 0, []]]\n    }\n  ]);\n});\n\nreturn {\n  json: {\n    partner_id: partnerId,\n    order_lines: orderLines,\n    products_found: foundProducts.length,\n    products_not_found: notFoundProducts.length,\n    products_total: allProducts.length,\n    order_meta: orderMeta\n  }\n};"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "44f3f25b-e198-45c1-b809-b5d0bff7758a",
+          "name": "Add Shipping to Order1",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2240,
+            480
+          ],
+          "parameters": {
+            "jsCode": "const aggregatedData = $input.first().json;\nconst orderLines = aggregatedData.order_lines;\nconst partnerId = aggregatedData.partner_id;\nconst orderMeta = aggregatedData.order_meta || {};\n\nconst shippingCost = orderMeta.shipping_cost || 0;\nif (shippingCost > 0) {\n  orderLines.push([\n    0, 0, {\n      product_id: 16,\n      name: 'مصاريف الشحن',\n      product_uom_qty: 1,\n      price_unit: shippingCost,\n      discount: 0,\n      tax_id: [[6, 0, []]]\n    }\n  ]);\n}\n\nconst noteLines = [\n  'Shopify Order: ' + (orderMeta.shopify_order_name || ''),\n  'Shopify ID: ' + (orderMeta.shopify_order_id || ''),\n  'Payment: ' + (orderMeta.payment ? orderMeta.payment.financial_status + ' (' + orderMeta.payment.payment_gateway + ')' : ''),\n  'Shipping: ' + (orderMeta.shipping_method || ''),\n  orderMeta.note ? 'Note: ' + orderMeta.note : ''\n].filter(l => l).join('\\n');\n\nreturn {\n  json: {\n    partner_id: partnerId,\n    order_line: orderLines,\n    client_order_ref: 'Shopify ' + (orderMeta.shopify_order_name || ''),\n    origin: 'Shopify ' + (orderMeta.shopify_order_name || ''),\n    note: noteLines,\n    source_id: 17,\n    products_found: aggregatedData.products_found,\n    products_not_found: aggregatedData.products_not_found\n  }\n};"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "0d8e586b-74b9-4bde-9d1f-8279067fc59d",
+          "name": "Create Sales Order in Odoo1",
+          "type": "n8n-nodes-base.odoo",
+          "position": [
+            2464,
+            480
+          ],
+          "parameters": {
+            "resource": "custom",
+            "customResource": "sale.order",
+            "fieldsToCreateOrUpdate": {
+              "fields": [
+                {
+                  "fieldName": "partner_id",
+                  "fieldValue": "={{ $json.partner_id }}"
+                },
+                {
+                  "fieldName": "client_order_ref",
+                  "fieldValue": "={{ $json.client_order_ref }}"
+                },
+                {
+                  "fieldName": "origin",
+                  "fieldValue": "={{ $json.origin }}"
+                },
+                {
+                  "fieldName": "note",
+                  "fieldValue": "={{ $json.note }}"
+                },
+                {
+                  "fieldName": "source_id",
+                  "fieldValue": "17"
+                },
+                {
+                  "fieldName": "order_line",
+                  "fieldValue": "={{ $('Add Shipping to Order1').first().json.order_line }}"
+                },
+                {
+                  "fieldName": "pricelist_id",
+                  "fieldValue": "9"
+                },
+                {
+                  "fieldName": "user_id",
+                  "fieldValue": "12"
+                }
+              ]
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "78a6a1a0-6dc1-451e-9f3a-b264dfbe4911",
+          "name": "Search Customer in Odoo1",
+          "type": "n8n-nodes-base.odoo",
+          "position": [
+            448,
+            480
+          ],
+          "parameters": {
+            "options": {
+              "fieldsList": [
+                "id"
+              ]
+            },
+            "resource": "custom",
+            "operation": "getAll",
+            "returnAll": true,
+            "filterRequest": {
+              "filter": [
+                {
+                  "value": "={{ $json.customer.phone }}",
+                  "fieldName": "phone_mobile_search"
+                }
+              ]
+            },
+            "customResource": "res.partner"
+          },
+          "typeVersion": 1,
+          "alwaysOutputData": true
+        },
+        {
+          "id": "cfd1a050-15b8-401b-97f8-be59b8ea46e1",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -992,
+            112
+          ],
+          "parameters": {
+            "width": 800,
+            "height": 618,
+            "content": "### How it works\nThis workflow automatically syncs new Shopify orders to Odoo as Sales Orders.\nIt parses the order payload, checks if the customer exists by phone number (creating them if not), matches products via SKU/Barcode, applies shipping costs, and generates a draft Sales Order in Odoo.\n\n### Setup steps\n1. **Webhook:** Add the Webhook URL to your Shopify Admin > Notifications > Webhooks (Order Creation).\n2. **Odoo Credentials:** Connect your Odoo account in n8n.\n3. **Shipping Product:** Open the \"Add Shipping to Order\" code node and update `product_id: 16` to match your Odoo Shipping service ID.\n4. **Sales Order Details:** Open the \"Create Sales Order\" node and adjust `pricelist_id`, `user_id`, and `source_id` to match your system."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "1e90ad78-a573-4582-ba2d-2ff6b4184391",
+          "name": "Sticky Note 1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -48,
+            352
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 420,
+            "height": 250,
+            "content": "## 1. Receive & Parse Order\nCatches the incoming webhook payload from Shopify and uses custom code to extract and format only the required customer, shipping, and product details."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9abd446e-a6f3-412f-8e01-96c538242934",
+          "name": "Sticky Note 2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            432,
+            288
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 850,
+            "height": 350,
+            "content": "## 2. Customer Lookup & Creation\nSearches Odoo for an existing customer using their phone number. If they don't exist, it resolves their State/Province ID and dynamically creates a new Contact profile before proceeding."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "cb1588b8-5774-4bdd-8370-5cc72dd937cb",
+          "name": "Sticky Note 3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1312,
+            352
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 1050,
+            "height": 250,
+            "content": "## 3. Product Matching & Order Build\nSplits the Shopify line items to search Odoo by SKU/Barcode individually. It then matches the results, calculates equivalent discounts, and aggregates everything back into a valid Odoo `order_line` payload format."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "7f05ccff-2a64-4d94-9eae-8c0411c8258d",
+          "name": "Sticky Note 4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2400,
+            352
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 300,
+            "height": 250,
+            "content": "## 4. Finalize Order\nBuilds the final double-entry payload (including shipping costs and dynamic notes) and pushes the Draft Sales Order directly to your Odoo ERP."
+          },
+          "typeVersion": 1
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "Get state id1": {
+          "main": [
+            [
+              {
+                "node": "Create Contact1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Create Contact1": {
+          "main": [
+            [
+              {
+                "node": "Split Line Items",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Shopify Webhook": {
+          "main": [
+            [
+              {
+                "node": "Parse Shopify Order1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Split Line Items": {
+          "main": [
+            [
+              {
+                "node": "Search Product by Barcode1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Customer Exists?1": {
+          "main": [
+            [
+              {
+                "node": "Get state id1",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Split Line Items",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Aggregate Products1": {
+          "main": [
+            [
+              {
+                "node": "Add Shipping to Order1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Parse Shopify Order1": {
+          "main": [
+            [
+              {
+                "node": "Search Customer in Odoo1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Add Shipping to Order1": {
+          "main": [
+            [
+              {
+                "node": "Create Sales Order in Odoo1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Process Product Result1": {
+          "main": [
+            [
+              {
+                "node": "Aggregate Products1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Search Customer in Odoo1": {
+          "main": [
+            [
+              {
+                "node": "Customer Exists?1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Search Product by Barcode1": {
+          "main": [
+            [
+              {
+                "node": "Process Product Result1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 17,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 5
+        },
+        "n8n-nodes-base.odoo": {
+          "count": 5
+        },
+        "n8n-nodes-base.webhook": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 5
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "khaled yasser",
+      "username": "khaledyasser01",
+      "bio": "Odoo ERP Specialist (5+ Years) | MS Outlook & Microsoft Expert (9+ Years) | n8n Verified Creator | Ai Automation",
+      "verified": true,
+      "links": [
+        "https://www.linkedin.com/in/khaledyasser01/?skipRedirect=true"
+      ],
+      "avatar": "https://gravatar.com/avatar/b745dbe81ba146f51ad79e3500a918ab7ad1f5aa6fafc3c3a01a987fe7e1bfaa?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 47,
+        "icon": "file:webhook.svg",
+        "name": "n8n-nodes-base.webhook",
+        "codex": {
+          "data": {
+            "alias": [
+              "HTTP",
+              "API",
+              "Build",
+              "WH"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-custom-incident-response-workflows-with-n8n/",
+                  "label": "How to automate every step of an incident response workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Webhook"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTM1IDM3Yy0yLjIgMC00LTEuOC00LTRzMS44LTQgNC00IDQgMS44IDQgNC0xLjggNC00IDQiLz48cGF0aCBmaWxsPSIjMzc0NzRmIiBkPSJNMzUgNDNjLTMgMC01LjktMS40LTcuOC0zLjdsMy4xLTIuNWMxLjEgMS40IDIuOSAyLjMgNC43IDIuMyAzLjMgMCA2LTIuNyA2LTZzLTIuNy02LTYtNmMtMSAwLTIgLjMtMi45LjdsLTEuNyAxTDIzLjMgMTZsMy41LTEuOSA1LjMgOS40YzEtLjMgMi0uNSAzLS41IDUuNSAwIDEwIDQuNSAxMCAxMFM0MC41IDQzIDM1IDQzIi8+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTE0IDQzQzguNSA0MyA0IDM4LjUgNCAzM2MwLTQuNiAzLjEtOC41IDcuNS05LjdsMSAzLjlDOS45IDI3LjkgOCAzMC4zIDggMzNjMCAzLjMgMi43IDYgNiA2czYtMi43IDYtNnYtMmgxNXY0SDIzLjhjLS45IDQuNi01IDgtOS44IDgiLz48cGF0aCBmaWxsPSIjZTkxZTYzIiBkPSJNMTQgMzdjLTIuMiAwLTQtMS44LTQtNHMxLjgtNCA0LTQgNCAxLjggNCA0LTEuOCA0LTQgNCIvPjxwYXRoIGZpbGw9IiMzNzQ3NGYiIGQ9Ik0yNSAxOWMtMi4yIDAtNC0xLjgtNC00czEuOC00IDQtNCA0IDEuOCA0IDQtMS44IDQtNCA0Ii8+PHBhdGggZmlsbD0iI2U5MWU2MyIgZD0ibTE1LjcgMzQtMy40LTIgNS45LTkuN2MtMi0xLjktMy4yLTQuNS0zLjItNy4zIDAtNS41IDQuNS0xMCAxMC0xMHMxMCA0LjUgMTAgMTBjMCAuOS0uMSAxLjctLjMgMi41bC0zLjktMWMuMS0uNS4yLTEgLjItMS41IDAtMy4zLTIuNy02LTYtNnMtNiAyLjctNiA2YzAgMi4xIDEuMSA0IDIuOSA1LjFsMS43IDF6Ii8+PC9zdmc+"
+        },
+        "displayName": "Webhook",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 559,
+        "icon": "file:odoo.svg",
+        "name": "n8n-nodes-base.odoo",
+        "codex": {
+          "data": {
+            "alias": [
+              "ERP"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.odoo/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/odoo/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Odoo"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNTAiIGhlaWdodD0iMTUwIj48Y2lyY2xlIGN4PSI3NSIgY3k9Ijc1IiByPSI3Mi40IiBmaWxsPSIjOWM1Nzg5Ii8+PGNpcmNsZSBjeD0iNzUiIGN5PSI3NSIgcj0iNDIuNyIgZmlsbD0iI2ZmZiIvPjwvc3ZnPg=="
+        },
+        "displayName": "Odoo",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 39,
+        "name": "CRM"
+      }
+    ],
+    "image": []
+  }
+}

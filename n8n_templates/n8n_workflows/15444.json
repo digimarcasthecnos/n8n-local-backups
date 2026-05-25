@@ -1,0 +1,2303 @@
+{
+  "workflow": {
+    "id": 15444,
+    "name": "Extract sitemap URLs in bulk via chat and export them to a CSV download link",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-05-02T16:00:46.514Z",
+    "description": "Extracting URLs from multiple XML sitemaps manually is tedious, and combining them into a single usable file is time-consuming. This workflow solves this by acting as an automated bulk extractor. You simply paste multiple XML sitemap URLs into the chat, and the workflow validates the links, safely downloads the data, flattens all the URLs into a single standardized list, and provides a direct link to download the combined CSV file.\n\n## How It Works\n* **Phase 1: Input & Validation:** The workflow listens for the user to submit a text message containing one or more sitemap URLs. It then parses the input into an array of URLs and flags any invalid entries, limiting the request to a maximum of 10 sitemap URLs.\n* **Phase 2: Bulk Data Fetching & Triage:** It executes HTTP GET requests to download the raw XML data from the valid URLs. The workflow safely routes successful fetches forward while isolating exact URLs that failed to download so they can be accurately reported back to the user. A delay node ensures error messages regarding failed URLs are delivered to the chat before final success messages.\n* **Phase 3: Parsing & Extraction Loop:** The workflow iterates through the successfully downloaded sitemaps one by one. It converts the raw XML into a JSON object, scans for nested sitemap indexes, and flattens the nested array of URLs into individual items.\n* **Phase 4: Output & Delivery:** It compiles the massive, flattened list of standardized URLs into a single binary CSV file. This file is uploaded to an external file-hosting service (`uguu.se`) to bypass chat attachment limits, and a final public download link is sent to the user alongside the total number of URLs extracted.\n\n## Key Features\n* **Automated Triage:** Provides immediate, clear chat feedback on exactly which sitemap URLs failed to download or were nested index files. This allows the rest of the loop to continue processing valid sitemaps without crashing.\n* **Data Standardization:** Maps raw URL strings and `&lt;lastmod&gt;` tags to clean, consistent field names before compiling the final document.\n* **Batch Processing:** Utilizes a loop to ensure each XML payload is individually parsed and safely processed without overloading the workflow's memory.\n\n## Dependencies & Limitations\n* **Nested Indexes:** This workflow does not recursively scrape nested sitemap indexes (sitemaps inside sitemaps). If detected, it skips the file, alerts the user in the chat, and continues processing the rest of your valid sitemaps.\n* **Batch Limits:** Users are restricted to submitting a maximum of 10 sitemap URLs per request.\n* **Memory Limits:** Processing dozens of massive sitemaps (e.g., 50,000+ URLs each) simultaneously may cause memory timeout errors depending on your specific n8n server resources.\n* **External File Hosting:** The workflow uses a generic HTTP Request to POST the binary CSV to a temporary public host (`uguu.se`), meaning files will typically expire and be deleted within 24-48 hours. You can swap this node for AWS S3, Google Drive, or Dropbox if you prefer private storage.",
+    "workflow": {
+      "id": "W3WSZpiYaHSGGr4gA13Ef",
+      "meta": {
+        "instanceId": "edf1ced83e9ab9272c6f8c5577054e33710c688c25fbcb912c88d83471eb73e3"
+      },
+      "name": "Extract Bulk Sitemaps to CSV via Chat",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "b78af31e-fe23-446a-b3a7-cca24c3a6aba",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1456,
+            752
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 264,
+            "content": "### 🔍 Parse & Validate Input\n\nIntercepts the raw chat message to extract and validate the provided URLs. This ensures the workflow only attempts to process properly formatted links, preventing unnecessary errors downstream.\n\n**Configuration:**\n* **Node Type:** Code / Edit Fields\n* **Setup:** Parses the input text into an array of URLs and flags any invalid entries."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "8626abe6-9a2e-4f48-951d-be72c38e432b",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1808,
+            752
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 264,
+            "content": "### 💬 When Chat Message Received\n\nActs as the entry point for the bulk workflow. It listens for the user to submit a text message containing one or more sitemap URLs, passing the raw input forward for validation.\n\n**Configuration:**\n* **Node Type:** Chat Trigger\n* **Setup:** Listens for the `chatInput` string from the user."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ca9e0bec-20bb-4597-91d9-38cfe5051446",
+          "name": "Listen for Bulk URLs",
+          "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+          "position": [
+            -1680,
+            592
+          ],
+          "webhookId": "b3ce4fbf-71f4-45fe-9e3b-8f74767449b3",
+          "parameters": {
+            "options": {
+              "responseMode": "responseNodes"
+            }
+          },
+          "typeVersion": 1.4
+        },
+        {
+          "id": "b6b85d9b-a00a-4198-ae81-9c9c9119858c",
+          "name": "Fetch XML Data",
+          "type": "n8n-nodes-base.httpRequest",
+          "onError": "continueErrorOutput",
+          "maxTries": 5,
+          "position": [
+            -16,
+            720
+          ],
+          "parameters": {
+            "url": "={{ $json.url }}",
+            "options": {
+              "response": {
+                "response": {
+                  "fullResponse": true
+                }
+              }
+            }
+          },
+          "notesInFlow": true,
+          "retryOnFail": true,
+          "typeVersion": 4.3,
+          "waitBetweenTries": 3000
+        },
+        {
+          "id": "172f7cf7-aade-4f18-98c6-061df4bccb51",
+          "name": "Parse & Validate URLs",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -1360,
+            592
+          ],
+          "parameters": {
+            "jsCode": "const input = $input.first().json.chatInput || \"\";\nconst urlRegex = /(https?:\\/\\/[^\\s,]+)/gi;\nconst matches = input.match(urlRegex) || [];\n\nconst xmlUrls = matches.filter(url => /\\.xml$/i.test(url));\n\nif (xmlUrls.length === 0) {\n  return [{ json: { error: \"No valid sitemap URLs found. Please provide at least one URL ending in .xml.\" } }];\n}\n\nif (xmlUrls.length > 10) {\n  return [{ json: { error: `You provided ${xmlUrls.length} URLs. Please limit your request to a maximum of 10 sitemap URLs.` } }];\n}\n\nreturn xmlUrls.map(url => ({\n  json: { url }\n}));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "68f63a68-f88f-4442-adf6-908a6b0cc5fe",
+          "name": "Check for Validation Errors",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -992,
+            592
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-error-exists",
+                  "operator": {
+                    "type": "string",
+                    "operation": "exists",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json.error }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "10eb6a2b-a2cd-40ac-84e3-91813e1a7d45",
+          "name": "Alert User: Invalid URLs",
+          "type": "@n8n/n8n-nodes-langchain.chat",
+          "position": [
+            -544,
+            192
+          ],
+          "parameters": {
+            "message": "={{ $json.error }}",
+            "options": {},
+            "waitUserReply": false
+          },
+          "executeOnce": true,
+          "typeVersion": 1
+        },
+        {
+          "id": "cf6dbb39-eac1-47ab-a6d6-ae485f5787af",
+          "name": "Cache Validated URLs",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -576,
+            688
+          ],
+          "parameters": {
+            "jsCode": "const items = $input.all();\n\nreturn items.map(item => ({\n  json: {\n    url: item.json.url,\n    sourceUrl: item.json.url\n  }\n}));"
+          },
+          "executeOnce": false,
+          "typeVersion": 2
+        },
+        {
+          "id": "01bb208f-d9ec-432f-9991-127bfc18e669",
+          "name": "Format Successful Data",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            416,
+            560
+          ],
+          "parameters": {
+            "jsCode": "const successItems = $input.all();\nconst originalItems = $('Cache Validated URLs').all();\n\nreturn successItems.map((item, index) => ({\n  json: {\n    url: originalItems[index]?.json?.sourceUrl || originalItems[index]?.json?.url || 'Unknown URL',\n    statusCode: item.json.statusCode || 200\n  }\n}));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "01673ca1-2639-41b8-8f6e-a1a0caa49c7b",
+          "name": "Aggregate Successful Data",
+          "type": "n8n-nodes-base.aggregate",
+          "position": [
+            768,
+            560
+          ],
+          "parameters": {
+            "options": {},
+            "fieldsToAggregate": {
+              "fieldToAggregate": [
+                {
+                  "fieldToAggregate": "url"
+                }
+              ]
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "00dd3600-9afb-4c59-a35e-7da677693fa2",
+          "name": "Delay Chat Sequence",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            1216,
+            560
+          ],
+          "webhookId": "07cf0204-71f6-4822-bf72-474b36de3866",
+          "parameters": {
+            "amount": 3
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "ab85cc78-5bed-4949-9743-868ba6fecc4d",
+          "name": "Alert User: Accessible URLs",
+          "type": "@n8n/n8n-nodes-langchain.chat",
+          "position": [
+            1584,
+            560
+          ],
+          "parameters": {
+            "message": "=The following URLs returned a 200 (OK) Http status code:\nURLs:\n{{ $json.url }}",
+            "options": {},
+            "waitUserReply": false
+          },
+          "executeOnce": true,
+          "typeVersion": 1
+        },
+        {
+          "id": "35bd7416-2c8d-4d17-8f60-31714a6448a4",
+          "name": "Isolate Failed URLs",
+          "type": "n8n-nodes-base.splitOut",
+          "position": [
+            432,
+            800
+          ],
+          "parameters": {
+            "options": {},
+            "fieldToSplitOut": "url, error.status"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "16bd6f64-fc5e-4103-aee7-a4a38f424b18",
+          "name": "Aggregate Failed URLs",
+          "type": "n8n-nodes-base.aggregate",
+          "position": [
+            832,
+            800
+          ],
+          "parameters": {
+            "options": {},
+            "fieldsToAggregate": {
+              "fieldToAggregate": [
+                {
+                  "fieldToAggregate": "url"
+                },
+                {
+                  "fieldToAggregate": "error.status"
+                }
+              ]
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "68ee02ce-b675-4e45-b3d2-28671c354cff",
+          "name": "Alert User: Failed URLs",
+          "type": "@n8n/n8n-nodes-langchain.chat",
+          "position": [
+            1248,
+            800
+          ],
+          "parameters": {
+            "message": "=The following sitemap URLs are returning http status code: {{ $json.status }}\n\nURLs:\n{{ $json.url }}",
+            "options": {},
+            "waitUserReply": false
+          },
+          "executeOnce": true,
+          "typeVersion": 1
+        },
+        {
+          "id": "71c0f161-cbed-4753-b11e-33d1622e7e7d",
+          "name": "Process Each Sitemap",
+          "type": "n8n-nodes-base.splitInBatches",
+          "position": [
+            2064,
+            704
+          ],
+          "parameters": {
+            "options": {}
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "2d744ffb-c5f9-46d1-a712-ee7a7aa72d8d",
+          "name": "Parse XML Data",
+          "type": "n8n-nodes-base.xml",
+          "position": [
+            2240,
+            512
+          ],
+          "parameters": {
+            "options": {},
+            "dataPropertyName": "=data"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "19172674-07c3-47f7-8804-9184cdf68494",
+          "name": "Scan for Sitemap Indexes",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2576,
+            512
+          ],
+          "parameters": {
+            "jsCode": "const allUrls = [];\nlet hasIndex = false;\n\nfor (const item of $input.all()) {\n  const data = item.json;\n  if ($input.first().json.sitemapindex) {\n    hasIndex = true;\n    break;\n  }\n  if (data.urlset && data.urlset.url) {\n    let urls = Array.isArray(data.urlset.url) ? data.urlset.url : [data.urlset.url];\n    allUrls.push(...urls);\n  }\n}\n\nif (hasIndex) {\n  return [{ json: { isIndex: true, error: \"The following URLs are sitemap index files:\" } }];\n}\n\nreturn [{ json: { isIndex: false, urls: allUrls, totalCount: allUrls.length } }];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "defdbd53-552d-4240-9645-f37b6d580052",
+          "name": "Check if Nested Index",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            2928,
+            512
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-is-index",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json.isIndex }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "002eb065-a0c0-43e8-9efc-c2944429123d",
+          "name": "Alert User: Nested Index Found",
+          "type": "@n8n/n8n-nodes-langchain.chat",
+          "position": [
+            3312,
+            496
+          ],
+          "parameters": {
+            "message": "={{ `The following URLs are sitemap index files and weren't processed:\\n\\n${$('Cache Validated URLs').all().map(item => item.json.url).slice(-1).join('\\n')}` }}",
+            "options": {},
+            "waitUserReply": false
+          },
+          "executeOnce": true,
+          "typeVersion": 1
+        },
+        {
+          "id": "90dcfa3f-2fe6-49f7-8155-86fed15d68c0",
+          "name": "Isolate Individual URLs",
+          "type": "n8n-nodes-base.splitOut",
+          "position": [
+            3664,
+            528
+          ],
+          "parameters": {
+            "options": {},
+            "fieldToSplitOut": "urls"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "4b228f5e-dcaf-4984-a4ce-8ecad145a95a",
+          "name": "Standardize URL Data",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            4016,
+            528
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "assign-loc",
+                  "name": "loc",
+                  "type": "string",
+                  "value": "={{ $json.loc }}"
+                },
+                {
+                  "id": "assign-lastmod",
+                  "name": "lastmod",
+                  "type": "string",
+                  "value": "={{ $json.lastmod }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "b1dd7b36-918b-4953-a7ef-7955344afab6",
+          "name": "Generate CSV File",
+          "type": "n8n-nodes-base.convertToFile",
+          "position": [
+            4576,
+            528
+          ],
+          "parameters": {
+            "options": {
+              "headerRow": true
+            }
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "6068390e-8089-475d-86b2-064a628a5d5a",
+          "name": "Upload CSV to Host",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            4944,
+            528
+          ],
+          "parameters": {
+            "url": "https://uguu.se/upload",
+            "method": "POST",
+            "options": {},
+            "sendBody": true,
+            "contentType": "multipart-form-data",
+            "bodyParameters": {
+              "parameters": [
+                {
+                  "name": "output",
+                  "value": "csv"
+                },
+                {
+                  "name": "files[]",
+                  "parameterType": "formBinaryData",
+                  "inputDataFieldName": "data"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.3
+        },
+        {
+          "id": "39bfacbc-a363-41ed-b531-a333f4e9c9b6",
+          "name": "Extract Download URL",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            5328,
+            528
+          ],
+          "parameters": {
+            "jsCode": "const url = $json.files?.[0]?.url;\nreturn [\n  {\n    json: {\n      message: `<${url}>`\n    }\n  }\n];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "815103ff-d313-47d6-a310-e11f9505ec5a",
+          "name": "Send Download Link",
+          "type": "@n8n/n8n-nodes-langchain.chat",
+          "position": [
+            5664,
+            528
+          ],
+          "parameters": {
+            "message": "=Download your sitemap files here:\n{{ $json.message }}\n\nTotal URLs extracted: {{ $items(\"Scan for Sitemap Indexes\")[0].json.totalCount }}\n",
+            "options": {},
+            "waitUserReply": false
+          },
+          "executeOnce": true,
+          "typeVersion": 1
+        },
+        {
+          "id": "5f9bc43a-ab16-4d9c-a523-166c97a7e071",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1088,
+            752
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 280,
+            "content": "### 🔀 Check for Validation Errors\n\nEvaluates the output from the validation node to see if any formatting errors were flagged in the user's input. Routes invalid URLs to an immediate error message ('True') and passes valid URLs forward to be processed ('False').\n\n**Configuration:**\n* **Node Type:** IF\n* **Setup:** Checks the boolean validation flag to determine the routing path."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "4dc8805d-8f1c-48d1-af8b-61cff62cc9bc",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -640,
+            336
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 300,
+            "content": "### 🛑 Alert User: Invalid URLs\n\nSends an immediate error message back to the chat if the user's input contained malformed or invalid URLs, halting this specific branch so the user can correct their input.\n\n**Configuration:**\n* **Node Type:** Chat Response\n* **Setup:** Outputs a friendly error message detailing which URLs failed the validation check."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "24e843cb-d92e-4e69-a18d-f510d02075e4",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -672,
+            832
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 284,
+            "content": "### 💾 Cache Validated URLs\n\nTemporarily stores the clean, validated list of URLs so it can be easily referenced later in the workflow, particularly when cross-referencing successful and failed downloads during error handling.\n\n**Configuration:**\n* **Node Type:** Edit Fields / Code\n* **Setup:** Saves the valid URLs into a structured array to be passed to the HTTP Request node."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "07e3fa9b-420a-4a45-bd0b-5bcf106a1202",
+          "name": "Sticky Note5",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -128,
+            880
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 332,
+            "content": "### 🌐 Fetch XML Data\n\nExecutes HTTP GET requests to download the raw XML sitemap data from the cached list of valid URLs. This node acts as the primary data gatherer, configured to safely route successful fetches to the top branch and errors to the bottom branch without crashing the workflow.\n\n**Configuration:**\n* **Node Type:** HTTP Request\n* **Setup:** Iterates through the validated URLs, outputting responses as Strings and handling errors gracefully."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ce701eb0-5cbe-43df-9264-d8911e99c5ee",
+          "name": "Sticky Note6",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            288,
+            240
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 296,
+            "content": "### 🧹 Format Successful Data\n\nProcesses the successful HTTP responses to extract the raw XML string and pairs it with its original source URL. This prepares the clean, paired data for the next aggregation step.\n\n**Configuration:**\n* **Node Type:** Code / Edit Fields\n* **Setup:** Maps the successful XML payloads and standardizes the item structure."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "56a7e83e-0d4f-4183-ba4f-dd759307579e",
+          "name": "Sticky Note7",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            672,
+            256
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 280,
+            "content": "### 📦 Aggregate Successful Data\n\nCollects all the individually formatted XML responses and bundles them back into a single array. This ensures the downstream loop node receives a clean, manageable list of successful sitemaps to process.\n\n**Configuration:**\n* **Node Type:** Aggregate\n* **Setup:** Groups all incoming items from the successful HTTP fetches."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "200b46c5-082b-4338-af2b-c04f4b3be5a0",
+          "name": "Sticky Note8",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1088,
+            224
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 316,
+            "content": "### ⏳ Delay Chat Sequence\n\nPauses the workflow execution for a few seconds. This critical step ensures that any error messages regarding failed URLs are delivered to the chat interface *before* the final success messages, keeping the user experience logical and orderly.\n\n**Configuration:**\n* **Node Type:** Wait\n* **Setup:** Configured to delay execution for a short, fixed duration (e.g., 2-5 seconds)."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "6d695515-3440-44ef-98e0-0f4081bec16c",
+          "name": "Sticky Note9",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1472,
+            240
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 296,
+            "content": "### ✅ Alert User: Accessible URLs\n\nSends a chat message confirming how many sitemaps were successfully downloaded and are moving into the extraction loop. This keeps the user informed of the workflow's progress.\n\n**Configuration:**\n* **Node Type:** Chat Response\n* **Setup:** Outputs a success message referencing the aggregated list of valid URLs."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "2c25607b-0421-4302-a8fb-41fe19f0f94c",
+          "name": "Sticky Note10",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            320,
+            944
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 280,
+            "content": "### ✂️ Isolate Failed URLs\n\nTakes the bulk error response from the HTTP fetch and splits it into individual items. This isolates the exact URLs that failed to download so they can be accurately reported back to the user.\n\n**Configuration:**\n* **Node Type:** Item Lists / Split Out\n* **Setup:** Targets the error object to separate the failed URLs into distinct items."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ca03fb03-256a-4b6e-9ff3-4fce5dac62cb",
+          "name": "Sticky Note11",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            736,
+            944
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 264,
+            "content": "### 📦 Aggregate Failed URLs\n\nCollects all the isolated failed URLs from the HTTP request and bundles them into a single array. This prepares the data so it can be reported to the user in one comprehensive summary message.\n\n**Configuration:**\n* **Node Type:** Aggregate\n* **Setup:** Groups the individual failed URL items back into a single list."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "8ff5cf78-b4fb-411a-ae36-1ca297c131a1",
+          "name": "Sticky Note12",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1152,
+            944
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 300,
+            "content": "### ⚠️ Alert User: Failed URLs\n\nSends a chat message to the user detailing exactly which sitemap URLs failed to download. This provides immediate, clear feedback on what needs to be checked or fixed without stopping the successful URLs from processing.\n\n**Configuration:**\n* **Node Type:** Chat Response\n* **Setup:** Outputs a message referencing the aggregated list of failed URLs."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "b322273e-59f0-4a40-a1f5-522c0d7af6ac",
+          "name": "Sticky Note13",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1952,
+            848
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 300,
+            "content": "### 🔁 Process Each Sitemap\n\nIterates through the successfully downloaded list of sitemaps one by one. This loop ensures each XML payload is individually parsed, checked for nested indexes, and safely processed without overloading the workflow's memory.\n\n**Configuration:**\n* **Node Type:** Loop\n* **Setup:** Iterates over the items provided by the success aggregation node."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f8c64307-578c-4400-b1ca-6905f59edb4c",
+          "name": "Sticky Note14",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2112,
+            192
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 300,
+            "content": "### 🧩 Parse XML Data\n\nConverts the raw XML string from each sitemap into a structured JSON object. This is a crucial translation step that allows n8n to easily read, target, and extract the individual URL elements.\n\n**Configuration:**\n* **Node Type:** XML to JSON\n* **Setup:** Targets the XML property from the input and outputs a parsed JSON structure."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "b82fdf27-d996-401c-9b06-f5423ba638d6",
+          "name": "Sticky Note15",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2464,
+            176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 316,
+            "content": "### 🔍 Scan for Sitemap Indexes\n\nInspects the parsed JSON payload to determine if the file is a standard sitemap containing URLs, or a nested \"sitemap index\" (a sitemap that just links to other sitemaps).\n\n**Configuration:**\n* **Node Type:** Code / Edit Fields\n* **Setup:** Checks for the existence of index-specific tags (like `<sitemapindex>`) and sets a boolean flag."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9ca42704-42ec-4e2e-8598-9b4e422b6d4a",
+          "name": "Sticky Note16",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2816,
+            192
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 280,
+            "content": "### 🔀 Check if Nested Index\n\nEvaluates the results of the index scan. If a nested index is detected ('True'), it routes the data to an error message. If it is a standard sitemap ('False'), it proceeds to extract the URLs.\n\n**Configuration:**\n* **Node Type:** IF\n* **Setup:** Routes execution based on the boolean index flag."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f539c0be-2ad0-430a-bc07-a35e2f4dafa8",
+          "name": "Sticky Note17",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3184,
+            192
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 272,
+            "content": "### 🚫 Alert User: Nested Index Found\n\nSends a chat message warning the user that a specific URL was actually a nested sitemap index. This gracefully skips the unsupported file while letting the rest of the loop continue processing valid sitemaps.\n\n**Configuration:**\n* **Node Type:** Chat Response\n* **Setup:** Outputs a warning message detailing which URL was skipped."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "a70b55a3-4a42-4240-a4b3-bf7c97f84005",
+          "name": "Sticky Note18",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3552,
+            208
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 300,
+            "content": "### ✂️ Isolate Individual URLs\n\nFlattens the nested array of URLs extracted from the sitemap into individual items. This critical step ensures that each URL is treated as a separate, distinct row for the final CSV export.\n\n**Configuration:**\n* **Node Type:** Item Lists / Split Out\n* **Setup:** Targets the specific array property containing the `<loc>` tags to split them into separate items."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "1cec9a97-aad6-4165-a9ee-a606e61a094a",
+          "name": "Sticky Note19",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3904,
+            224
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 280,
+            "content": "### 🧹 Standardize URL Data\n\nCleans up the isolated URL items, ensuring only the exact web address is retained and formatted properly. This removes any unnecessary metadata before compiling the final document.\n\n**Configuration:**\n* **Node Type:** Edit Fields / Code\n* **Setup:** Maps the raw URL string to a clean, consistent field name (like `URL`)."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "31b8649c-e16a-49cb-aa8c-73d3e0ec1323",
+          "name": "Sticky Note20",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            4448,
+            224
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 284,
+            "content": "### 📄 Generate CSV File\n\nCompiles the massive, flattened list of standardized URLs into a single binary CSV file. This prepares the bulk data for external hosting so the user can easily download it all at once.\n\n**Configuration:**\n* **Node Type:** Convert to File / Spreadsheet File\n* **Setup:** Converts the JSON input into a CSV formatted binary file."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "af1188ae-e9b8-4bba-89e4-a915289be4bd",
+          "name": "Sticky Note21",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            4832,
+            208
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 300,
+            "content": "### ☁️ Upload CSV to Host\n\nTransmits the newly generated binary CSV file to an external file-hosting service. This allows the workflow to bypass chat attachment limits by generating a simple, shareable download link.\n\n**Configuration:**\n* **Node Type:** HTTP Request\n* **Setup:** Configured as a POST request sending `multipart/form-data` with the binary CSV attached."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "b8c5ded7-c106-4add-88e9-150351548cce",
+          "name": "Sticky Note22",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            5184,
+            224
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 264,
+            "content": "### 🔗 Extract Download URL\n\nParses the response from the file-hosting service to retrieve the direct public link to the newly uploaded CSV file.\n\n**Configuration:**\n* **Node Type:** Code / Edit Fields\n* **Setup:** Targets the specific property in the upload response that contains the generated file URL."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "69bcf248-8c1e-4b5d-a496-15806277dd25",
+          "name": "Sticky Note23",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            5568,
+            240
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 264,
+            "content": "### 🚀 Send Download Link\n\nDelivers the final public download link back to the user in the chat window, successfully completing the extraction workflow.\n\n**Configuration:**\n* **Node Type:** Chat Response\n* **Setup:** Outputs a friendly success message containing the final, clickable URL for the user to grab their CSV."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "89f6808b-c53d-4dbe-94b0-fc9af29497a4",
+          "name": "Sticky Note24",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2688,
+            400
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 722,
+            "height": 388,
+            "content": "### 📖 README: Extract Bulk Sitemaps to CSV via Chat\n\n**The Problem:**\nExtracting URLs from multiple XML sitemaps manually is tedious, and combining them into a single usable file is time-consuming.\n\n**The Solution:**\nThis workflow acts as an automated bulk extractor. You simply paste multiple XML sitemap URLs into the chat. The workflow validates the links, safely downloads the data (reporting any unreachable links), flattens all the URLs into a single standardized list, and provides a direct link to download the combined CSV file.\n\n**How to Use:**\n1. Click **Open chat** at the bottom of the canvas.\n2. Paste one or more direct sitemap URLs into the chat.\n3. Let the workflow process the files.\n4. Click the final generated link to download your aggregated CSV."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "7ceb0768-e3ea-4bed-a07c-baffafeb3095",
+          "name": "Sticky Note25",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2688,
+            848
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 722,
+            "height": 340,
+            "content": "### ⚠️ Dependencies & Limitations\n\n**Dependencies:**\n* **External File Hosting:** To bypass chat attachment limits, this workflow uses a generic HTTP Request to POST the binary CSV to an external file host (`uguu.se`). You can swap this HTTP node out for an AWS S3, Google Drive, or Dropbox node if you prefer private storage.\n\n**Limitations:**\n* **Nested Indexes:** This workflow does *not* recursively scrape nested sitemap indexes (sitemaps inside sitemaps). If it detects one, it will skip it, alert you in the chat, and continue processing the rest of your valid sitemaps.\n* **File Expiration:** Files uploaded to temporary public hosts like `uguu.se` will typically expire and be deleted within 24-48 hours.\n* **Memory Limits:** Processing dozens of massive sitemaps (e.g., 50,000+ URLs each) simultaneously may cause memory timeout errors depending on your specific n8n server resources."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "09425fec-8053-4776-8efd-9439b74eede6",
+          "name": "Sticky Note26",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1840,
+            48
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 1560,
+            "height": 104,
+            "content": "## 1️⃣ Phase 1: Input & Validation\n**Purpose:** Handles the initial chat trigger, parses the raw input, validates the URLs, and caches them for processing."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "03eabc01-10b7-4d1f-85c6-894691efa8cb",
+          "name": "Sticky Note27",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -160,
+            32
+          ],
+          "parameters": {
+            "color": 3,
+            "width": 1992,
+            "height": 120,
+            "content": "## 2️⃣ Phase 2: Bulk Data Fetching & Triage\n**Purpose:** Downloads the XML payloads, isolates failed downloads to alert the user, and bundles successful data together."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "e7560627-173a-408a-b0b8-caec0c0b0d69",
+          "name": "Sticky Note28",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1920,
+            32
+          ],
+          "parameters": {
+            "color": 2,
+            "width": 2320,
+            "height": 120,
+            "content": "## 3️⃣ Phase 3: Parsing & Extraction Loop\n**Purpose:** Iterates through successful sitemaps, bypasses nested indexes, and flattens all valid links into a standardized list."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "de89c0aa-eaa3-4e44-a936-dab08c9da6d8",
+          "name": "Sticky Note29",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            4272,
+            88
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 1728,
+            "height": 80,
+            "content": "## 4️⃣ Phase 4: Output & Delivery\n**Purpose:** Compiles the massive list of URLs into a single binary CSV, uploads it to an external host, and delivers the download link."
+          },
+          "typeVersion": 1
+        }
+      ],
+      "active": true,
+      "pinData": {},
+      "settings": {
+        "availableInMCP": false,
+        "executionOrder": "v1"
+      },
+      "versionId": "e6d71000-9d15-4230-bbb5-7c0a3957f3af",
+      "connections": {
+        "Fetch XML Data": {
+          "main": [
+            [
+              {
+                "node": "Format Successful Data",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Process Each Sitemap",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Isolate Failed URLs",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Parse XML Data": {
+          "main": [
+            [
+              {
+                "node": "Scan for Sitemap Indexes",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Generate CSV File": {
+          "main": [
+            [
+              {
+                "node": "Upload CSV to Host",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Send Download Link": {
+          "main": [
+            [
+              {
+                "node": "Process Each Sitemap",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Upload CSV to Host": {
+          "main": [
+            [
+              {
+                "node": "Extract Download URL",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Delay Chat Sequence": {
+          "main": [
+            [
+              {
+                "node": "Alert User: Accessible URLs",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Isolate Failed URLs": {
+          "main": [
+            [
+              {
+                "node": "Aggregate Failed URLs",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Cache Validated URLs": {
+          "main": [
+            [
+              {
+                "node": "Fetch XML Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Extract Download URL": {
+          "main": [
+            [
+              {
+                "node": "Send Download Link",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Listen for Bulk URLs": {
+          "main": [
+            [
+              {
+                "node": "Parse & Validate URLs",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Process Each Sitemap": {
+          "main": [
+            [],
+            [
+              {
+                "node": "Parse XML Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Standardize URL Data": {
+          "main": [
+            [
+              {
+                "node": "Generate CSV File",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Aggregate Failed URLs": {
+          "main": [
+            [
+              {
+                "node": "Alert User: Failed URLs",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Check if Nested Index": {
+          "main": [
+            [
+              {
+                "node": "Alert User: Nested Index Found",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Isolate Individual URLs",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Parse & Validate URLs": {
+          "main": [
+            [
+              {
+                "node": "Check for Validation Errors",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Format Successful Data": {
+          "main": [
+            [
+              {
+                "node": "Aggregate Successful Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Isolate Individual URLs": {
+          "main": [
+            [
+              {
+                "node": "Standardize URL Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Scan for Sitemap Indexes": {
+          "main": [
+            [
+              {
+                "node": "Check if Nested Index",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Aggregate Successful Data": {
+          "main": [
+            [
+              {
+                "node": "Delay Chat Sequence",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Alert User: Accessible URLs": {
+          "main": [
+            []
+          ]
+        },
+        "Check for Validation Errors": {
+          "main": [
+            [
+              {
+                "node": "Alert User: Invalid URLs",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Cache Validated URLs",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Alert User: Nested Index Found": {
+          "main": [
+            [
+              {
+                "node": "Process Each Sitemap",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 54,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 2
+        },
+        "n8n-nodes-base.set": {
+          "count": 1
+        },
+        "n8n-nodes-base.xml": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 5
+        },
+        "n8n-nodes-base.wait": {
+          "count": 1
+        },
+        "n8n-nodes-base.splitOut": {
+          "count": 2
+        },
+        "n8n-nodes-base.aggregate": {
+          "count": 2
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 30
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 2
+        },
+        "n8n-nodes-base.convertToFile": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.chat": {
+          "count": 5
+        },
+        "n8n-nodes-base.splitInBatches": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.chatTrigger": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Siddharth Gupta",
+      "username": "siddharth",
+      "bio": "I build no-code workflows that bridge the gap between technical SEO and daily productivity. My focus is on creating streamlined, user-friendly automation tools—like chat-based sitemap extractors and data parsers—that help marketers and technical teams save hours on site audits, migrations, and bulk data processing.",
+      "verified": false,
+      "links": [
+        "https://www.linkedin.com/in/siddharthgupta21/"
+      ],
+      "avatar": "https://gravatar.com/avatar/db53eb86d01d07e9cb5e5e7b543dc073e61dbdd87044610a1bd7da6a6bc2a47e?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 39,
+        "icon": "fa:sync",
+        "name": "n8n-nodes-base.splitInBatches",
+        "codex": {
+          "data": {
+            "alias": [
+              "Loop",
+              "Concatenate",
+              "Batch",
+              "Split",
+              "Split In Batches"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.splitinbatches/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Loop Over Items",
+          "color": "#007755"
+        },
+        "iconData": {
+          "icon": "sync",
+          "type": "icon"
+        },
+        "displayName": "Loop Over Items (Split in Batches)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 48,
+        "icon": "fa:file-code",
+        "name": "n8n-nodes-base.xml",
+        "codex": {
+          "data": {
+            "alias": [
+              "Parse"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.xml/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "XML",
+          "color": "#333377"
+        },
+        "iconData": {
+          "icon": "file-code",
+          "type": "icon"
+        },
+        "displayName": "XML",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1234,
+        "icon": "file:convertToFile.svg",
+        "name": "n8n-nodes-base.convertToFile",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Spreadsheet",
+              "Excel",
+              "xls",
+              "xlsx",
+              "ods",
+              "tabular",
+              "encode",
+              "encoding",
+              "Move Binary Data",
+              "Binary",
+              "File",
+              "JSON",
+              "HTML",
+              "ICS",
+              "iCal",
+              "RTF",
+              "64",
+              "Base64"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.converttofile/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Files",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Convert to File"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEzLjc2MTkgMkMxMy4yNDM3IDIgMTIuODIzNiAyLjQyMDA5IDEyLjgyMzYgMi45MzgzMVYxNS4yNTI2QzEzLjMxOTkgMTUuNDY0MyAxMy43ODUxIDE1Ljc3MiAxNC4xOTEgMTYuMTc1N0wyMS4yMjgzIDIzLjE3MzlDMjIuMDU0OCAyMy45OTU4IDIyLjUxOTUgMjUuMTEzMiAyMi41MTk1IDI2LjI3ODhDMjIuNTE5NSAyNy40NDQzIDIyLjA1NDggMjguNTYxOCAyMS4yMjgzIDI5LjM4MzdMMTQuMTkxIDM2LjM4MTlDMTMuNzg1IDM2Ljc4NTYgMTMuMzE5OSAzNy4wOTMyIDEyLjgyMzYgMzcuMzA1VjM3LjM1MjdDMTIuODIzNiAzNy44NzA5IDEzLjI0MzcgMzguMjkxIDEzLjc2MTkgMzguMjkxSDM5LjA2MTdDMzkuNTc5OSAzOC4yOTEgNDAgMzcuODcwOSA0MCAzNy4zNTI3TDQwIDE1Ljc5NEgyNy4xNDQzQzI2LjYyNjEgMTUuNzk0IDI2LjIwNiAxNS4zNzM5IDI2LjIwNiAxNC44NTU3VjJIMTMuNzYxOVoiIGZpbGw9IiMzQTQyRTkiLz4KPHBhdGggZD0iTTI4Ljg2NDUgMkMyOC43NzgxIDIgMjguNzA4MSAyLjA3MDAyIDI4LjcwODEgMi4xNTYzOVYxMi44MjI3QzI4LjcwODEgMTMuMDgxOCAyOC45MTgyIDEzLjI5MTkgMjkuMTc3MyAxMy4yOTE5SDM5Ljg0MzZDMzkuOTMgMTMuMjkxOSA0MCAxMy4yMjE5IDQwIDEzLjEzNTVMNDAgMTIuNjI2M0M0MCAxMi4zNzc4IDM5LjkwMTQgMTIuMTM5NSAzOS43MjYgMTEuOTYzNkwzMC4wNjEgMi4yNzU2MUMyOS44ODUgMi4wOTkxNiAyOS42NDYgMiAyOS4zOTY3IDJIMjguODY0NVoiIGZpbGw9IiMzQTQyRTkiLz4KPHBhdGggZD0iTTkuNzcyNjggMzQuNjAwM0M5LjA0MTg2IDMzLjg2NTQgOS4wNDUxNyAzMi42NzcyIDkuNzgwMDcgMzEuOTQ2NEwxMy42MzE1IDI4LjExNjNMMC45MzgzMTEgMjguMTE2M0MwLjQyMDA5NiAyOC4xMTYzIC0yLjI2NTE5ZS0wOCAyNy42OTYyIDAgMjcuMTc4TDguMjAyOTdlLTA4IDI1LjMwMTRDMS4wNDY4MmUtMDcgMjQuNzgzMiAwLjQyMDA5NSAyNC4zNjMxIDAuOTM4MzExIDI0LjM2MzFIMTMuNTUyOUw5Ljc4MDA3IDIwLjYxMTJDOS4wNDUxNyAxOS44ODA0IDkuMDQxODYgMTguNjkyMiA5Ljc3MjY4IDE3Ljk1NzNDMTAuNTAzNSAxNy4yMjI0IDExLjY5MTcgMTcuMjE5MSAxMi40MjY2IDE3Ljk0OTlMMTkuNDYzOSAyNC45NDgxQzE5LjgxODEgMjUuMzAwNCAyMC4wMTczIDI1Ljc3OTMgMjAuMDE3MyAyNi4yNzg4QzIwLjAxNzMgMjYuNzc4MyAxOS44MTgxIDI3LjI1NzIgMTkuNDYzOSAyNy42MDk1TDEyLjQyNjYgMzQuNjA3N0MxMS42OTE3IDM1LjMzODUgMTAuNTAzNSAzNS4zMzUyIDkuNzcyNjggMzQuNjAwM1oiIGZpbGw9IiMzQTQyRTkiLz4KPC9zdmc+Cg=="
+        },
+        "displayName": "Convert to File",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1236,
+        "icon": "file:aggregate.svg",
+        "name": "n8n-nodes-base.aggregate",
+        "codex": {
+          "data": {
+            "alias": [
+              "Aggregate",
+              "Combine",
+              "Flatten",
+              "Transform",
+              "Array",
+              "List",
+              "Item"
+            ],
+            "details": "",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.aggregate/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Aggregate"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJub25lIj48ZyBmaWxsPSIjRkY2RDVBIiBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTMyIDE0OGMwLTYuNjI3IDUuMzczLTEyIDEyLTEyaDE0NmM2LjYyNyAwIDEyIDUuMzczIDEyIDEydjI0YzAgNi42MjctNS4zNzMgMTItMTIgMTJINDRjLTYuNjI3IDAtMTItNS4zNzMtMTItMTJ6bTAgOTZjMC02LjYyNyA1LjM3My0xMiAxMi0xMmgxNDZjNi42MjcgMCAxMiA1LjM3MyAxMiAxMnYyNGMwIDYuNjI3LTUuMzczIDEyLTEyIDEySDQ0Yy02LjYyNyAwLTEyLTUuMzczLTEyLTEyem0wIDk2YzAtNi42MjcgNS4zNzMtMTIgMTItMTJoMTQ2YzYuNjI3IDAgMTIgNS4zNzMgMTIgMTJ2MjRjMCA2LjYyNy01LjM3MyAxMi0xMiAxMkg0NGMtNi42MjcgMC0xMi01LjM3My0xMi0xMnoiIGNsaXAtcnVsZT0iZXZlbm9kZCIvPjxwYXRoIGQ9Ik03NCA3NmMwIDYuNjI3IDUuMzczIDEyIDEyIDEyaDExNi4yMTdjMTcuNjczIDAgMzIgMTQuMzI3IDMyIDMydjU2YzAgMjYuOTc4IDEwLjI3MiA1MS41NTcgMjcuMTE5IDcwLjAzOSA1LjA1NSA1LjU0NSA1LjA1NSAxNC4zNzcgMCAxOS45MjItMTYuODQ3IDE4LjQ4Mi0yNy4xMTkgNDMuMDYxLTI3LjExOSA3MC4wMzl2NTZjMCAxNy42NzMtMTQuMzI3IDMyLTMyIDMySDg2Yy02LjYyNyAwLTEyIDUuMzczLTEyIDEydjI0YzAgNi42MjcgNS4zNzMgMTIgMTIgMTJoMTE2LjIxN2M0NC4xODMgMCA4MC0zNS44MTcgODAtODB2LTU2YzAtMzAuOTI4IDI1LjA3Mi01NiA1Ni01NmE1Ljc4MyA1Ljc4MyAwIDAgMCA1Ljc4My01Ljc4M3YtMzYuNDM0YTUuNzgzIDUuNzgzIDAgMCAwLTUuNzgzLTUuNzgzYy0zMC45MjggMC01Ni0yNS4wNzItNTYtNTZ2LTU2YzAtNDQuMTgzLTM1LjgxNy04MC04MC04MEg4NmMtNi42MjcgMC0xMiA1LjM3My0xMiAxMnoiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0zNzYgMjQ0YzAtNi42MjcgNS4zNzMtMTIgMTItMTJoMTEyYzYuNjI3IDAgMTIgNS4zNzMgMTIgMTJ2MjRjMCA2LjYyNy01LjM3MyAxMi0xMiAxMkgzODhjLTYuNjI3IDAtMTItNS4zNzMtMTItMTJ6IiBjbGlwLXJ1bGU9ImV2ZW5vZGQiLz48L2c+PGRlZnM+PGNsaXBQYXRoIGlkPSJhIj48cGF0aCBmaWxsPSIjZmZmIiBkPSJNMCAwaDUxMnY1MTJIMHoiLz48L2NsaXBQYXRoPjwvZGVmcz48L3N2Zz4="
+        },
+        "displayName": "Aggregate",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1239,
+        "icon": "file:splitOut.svg",
+        "name": "n8n-nodes-base.splitOut",
+        "codex": {
+          "data": {
+            "alias": [
+              "Split",
+              "Nested",
+              "Transform",
+              "Array",
+              "List",
+              "Item"
+            ],
+            "details": "",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.splitout/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Split Out"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJub25lIj48ZyBmaWxsPSIjOUI2REQ1IiBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTQ4MCAxNDhjMC02LjYyNy01LjM3My0xMi0xMi0xMkgzMjJjLTYuNjI3IDAtMTIgNS4zNzMtMTIgMTJ2MjRjMCA2LjYyNyA1LjM3MyAxMiAxMiAxMmgxNDZjNi42MjcgMCAxMi01LjM3MyAxMi0xMnptMCA5NmMwLTYuNjI3LTUuMzczLTEyLTEyLTEySDMyMmMtNi42MjcgMC0xMiA1LjM3My0xMiAxMnYyNGMwIDYuNjI3IDUuMzczIDEyIDEyIDEyaDE0NmM2LjYyNyAwIDEyLTUuMzczIDEyLTEyem0wIDk2YzAtNi42MjctNS4zNzMtMTItMTItMTJIMzIyYy02LjYyNyAwLTEyIDUuMzczLTEyIDEydjI0YzAgNi42MjcgNS4zNzMgMTIgMTIgMTJoMTQ2YzYuNjI3IDAgMTItNS4zNzMgMTItMTJ6IiBjbGlwLXJ1bGU9ImV2ZW5vZGQiLz48cGF0aCBkPSJNNDM4IDc2YzAgNi42MjctNS4zNzMgMTItMTIgMTJIMzA5Ljc4M2MtMTcuNjczIDAtMzIgMTQuMzI3LTMyIDMydjU2YzAgMjYuOTc4LTEwLjI3MiA1MS41NTctMjcuMTE5IDcwLjAzOS01LjA1NSA1LjU0NS01LjA1NSAxNC4zNzcgMCAxOS45MjIgMTYuODQ3IDE4LjQ4MiAyNy4xMTkgNDMuMDYxIDI3LjExOSA3MC4wMzl2NTZjMCAxNy42NzMgMTQuMzI3IDMyIDMyIDMySDQyNmM2LjYyNyAwIDEyIDUuMzczIDEyIDEydjI0YzAgNi42MjctNS4zNzMgMTItMTIgMTJIMzA5Ljc4M2MtNDQuMTgzIDAtODAtMzUuODE3LTgwLTgwdi01NmMwLTMwLjkyOC0yNS4wNzItNTYtNTYtNTZhNS43ODMgNS43ODMgMCAwIDEtNS43ODMtNS43ODN2LTM2LjQzNGE1Ljc4MyA1Ljc4MyAwIDAgMSA1Ljc4My01Ljc4M2MzMC45MjggMCA1Ni0yNS4wNzIgNTYtNTZ2LTU2YzAtNDQuMTgzIDM1LjgxNy04MCA4MC04MEg0MjZjNi42MjcgMCAxMiA1LjM3MyAxMiAxMnoiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0xMzYgMjQ0YzAtNi42MjctNS4zNzMtMTItMTItMTJIMTJjLTYuNjI3IDAtMTIgNS4zNzMtMTIgMTJ2MjRjMCA2LjYyNyA1LjM3MyAxMiAxMiAxMmgxMTJjNi42MjcgMCAxMi01LjM3MyAxMi0xMnoiIGNsaXAtcnVsZT0iZXZlbm9kZCIvPjwvZz48ZGVmcz48Y2xpcFBhdGggaWQ9ImEiPjxwYXRoIGZpbGw9IiNmZmYiIGQ9Ik01MTIgMEgwdjUxMmg1MTJ6Ii8+PC9jbGlwUGF0aD48L2RlZnM+PC9zdmc+"
+        },
+        "displayName": "Split Out",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1247,
+        "icon": "fa:comments",
+        "name": "@n8n/n8n-nodes-langchain.chatTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-langchain.chattrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes",
+              "Langchain"
+            ]
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "When chat message received"
+        },
+        "iconData": {
+          "icon": "comments",
+          "type": "icon"
+        },
+        "displayName": "Chat Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1313,
+        "icon": "fa:comments",
+        "name": "@n8n/n8n-nodes-langchain.chat",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "wait",
+              "hitl",
+              "respond",
+              "approve",
+              "confirm",
+              "send",
+              "message"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-langchain.respondtochat/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes",
+              "HITL",
+              "Langchain"
+            ],
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Chat"
+        },
+        "iconData": {
+          "icon": "comments",
+          "type": "icon"
+        },
+        "displayName": "Chat",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 35,
+        "name": "Document Extraction"
+      },
+      {
+        "id": 47,
+        "name": "AI Chatbot"
+      }
+    ],
+    "image": []
+  }
+}

@@ -1,0 +1,291 @@
+{
+  "id": 14487,
+  "name": "Notify on menu orders via ntfy and Home Assistant TTS with daily BAC tracking",
+  "totalViews": 0,
+  "price": 0,
+  "purchaseUrl": null,
+  "user": {
+    "id": 100748,
+    "name": "Paolo Ronco",
+    "username": "paoloronco",
+    "bio": "Cybersecurity Analyst passionate about automation, cloud, and infrastructure.\nSince discovering n8n, I automate everything I can: workflows, processes, integrations, and repetitive tasks.\nI love building, optimizing, and making systems more secure, faster, and scalable.",
+    "verified": true,
+    "links": "[\"https://paoloronco.it\"]",
+    "avatar": "https://gravatar.com/avatar/f0b622283139bed01fcf8336ec78291bbd066c115b3b6b419b8b854ecbbb7097?r=pg&d=retro&size=200"
+  },
+  "description": "Notify on menu orders via ntfy and Home Assistant TTS with daily BAC tracking\n\nReceive instant push notifications on your phone and voice announcements on your Google Home every time someone orders from your intranet menu — with cumulative BAC tracking per person.\n\n&gt; Full documentation & step-by-step setup guides:\n&gt; 📖 Notion Documentation\n&gt; 💻 GitHub Repository\n\nWhat This Workflow Does\n\nEvery time a customer submits an order from your intranet menu website, this workflow:\n\nReceives the order via Webhook\nLogs it to an n8n DataTable and reads all orders for that person today\nCalculates the cumulative BAC (Blood Alcohol Content) using the Widmark formula\nSends a push notification via ntfy (with order history + BAC level)\nTriggers a Home Assistant script → voice announcement on Google Home\n\nNo cloud TTS fees. No external AI services. Fully self-hosted.\n\nFlow\n\nWebhook → Prepare Order → DataTable (INSERT) → Read Today's Orders → BAC Calculator → ntfy Push Notification → Home Assistant TTS\n\nExample Output\n\nPush notification (ntfy app):\n\n🛎 Order from Mario\n\nMario: 1x Pizza, 2x Beer 33cl\n🕐 12:30\n📋 Ordered before:\n  1x Prosecco  🕐 11:45\n🍸 BAC ~0.54 g/L  🔴\n\nGoogle Home voice announcement:\n\nMario has ordered Pizza\n\nPrerequisites\n\nBefore importing this workflow, you need:\n\nA running n8n instance (self-hosted or cloud) reachable from the internet\nHome Assistant** on your local network (e.g. homeassistant.local:8123)\nAt least one Google Home (or Chromecast-capable) device added to HA via the Google Cast integration\nntfy** deployed via Docker (self-hosted push notification server)\nA public HTTPS URL for ntfy — recommended via Cloudflare Tunnel (no open ports needed)\nAn Android or iOS device with the ntfy app installed\n\nCredentials Required\n\n| Credential                                             | Used For                                 |\n| ------------------------------------------------------ | ---------------------------------------- |\n| Home Assistant                                     | Calling the annuncia_ordine TTS script |\n| Header Auth (Authorization: Bearer &lt;ntfy_token&gt;) | Sending authenticated requests to ntfy   |\n\nn8n DataTable Schema\n\nCreate a DataTable in n8n → Data → Tables with these columns:\n\n| Column         | Type   | Description                                            |\n| -------------- | ------ | ------------------------------------------------------ |\n| item         | Text   | Full order string (e.g. \"2x Negroni, 1x Messina 33cl\") |\n| person       | Text   | Normalised person name                                 |\n| alcol_grammi | Number | Total grams of alcohol for this order                  |\n| data         | Text   | ISO date (YYYY-MM-DD)                                  |\n| orario       | Text   | Time string from the order                             |\n\nCopy the DataTable ID and paste it into the DataTable nodes inside the workflow.\n\nWebhook Payload\n\nYour menu website must POST this JSON to the Webhook Production URL:\n\n{\n  \"name\": \"Mario\",\n  \"time\": \"26/03/2026, 12:30:00\",\n  \"order\": [\n    { \"section\": \"Food\", \"name\": \"Pizza\", \"details\": \"\", \"quantity\": 1 },\n    { \"section\": \"Drinks\", \"name\": \"Beer\", \"details\": \"33cl\", \"quantity\": 2 }\n  ],\n  \"total\": 3\n}\n\nSetup Steps\n\n1. Deploy ntfy (self-hosted push notifications)\n\nAdd ntfy to your docker-compose.yml:\n\nntfy:\n  image: binwiederhier/ntfy\n  command: serve\n  volumes:\n    ./ntfy/config:/etc/ntfy\n    ./ntfy/data:/var/lib/ntfy\n  ports:\n    \"8095:80\"\n\nIn server.yml, set auth-default-access: deny-all.\n\nThen create an admin user and generate a token:\n\ndocker exec -e NTFY_PASSWORD=\"your_password\" ntfy ntfy user add --role=admin admin\ndocker exec ntfy ntfy token add admin\n\n2. Expose ntfy over HTTPS (Cloudflare Tunnel)\n\nAdd an ingress rule to your Cloudflare Tunnel config:\n\nhostname: ntfy.YOUR_DOMAIN.com\n  service: http://localhost:8095\n\n3. Configure Home Assistant TTS\n\nIn HA, go to Settings → Automations & Scenes → Scripts → Add script → Edit in YAML and paste:\n\nalias: annuncia_ordine\nsequence:\n  action: tts.speak\n    target:\n      entity_id: tts.google_translate_en_com\n    data:\n      media_player_entity_id: media_player.YOUR_GOOGLE_HOME_ENTITY\n      message: \"{{ message }}\"\n      language: it\nmode: single\n\n&gt; Replace media_player.YOUR_GOOGLE_HOME_ENTITY with your actual entity ID.\n\nThen go to your HA profile → Security → Long-lived access tokens → create and copy a token.\n\n4. Import and configure the workflow\n\nImport the workflow JSON into n8n\n\nCreate the DataTable (columns listed above) — copy its ID\n\nCreate the Header Auth credential for ntfy:\n\n   Header Name: Authorization\n   Header Value: Bearer YOUR_NTFY_TOKEN\n\nCreate the Home Assistant credential:\n\n   Host: http://homeassistant.local:8123\n   Access Token: your HA long-lived token\n\nIn the ntfy notification node, replace YOUR_TOPIC in the URL\n\nIn the Home Assistant TTS node, set the message attribute expression:\n\n      ={{ $('Webhook').item.json.body.nome }} has ordered {{ $('Webhook').item.json.body.ordine[0].nome }}\n   \nActivate the workflow and copy the Webhook Production URL\n\n5. Configure your menu website\n\nSet the webhook URL in your menu site config:\n\n// menu-data.js\n\"orderWebhook\": \"https://YOUR_N8N_DOMAIN/webhook/menu\"\n\nBAC Calculation (Widmark Formula)\n\nBAC [g/L] = total_alcohol_grams_today / (70 × 0.68)\n\nAssumes ~70 kg body weight. Italian legal driving limit: 0.5 g/L\n\n| Emoji | Level      | BAC           |\n| ----- | ---------- | ------------- |\n| ⬜     | None       | 0 g/L         |\n| 🟢     | Low        | &lt; 0.2 g/L     |\n| 🟡     | Warning    | 0.2 – 0.5 g/L |\n| 🔴     | Over limit | &gt; 0.5 g/L     |\n\nBAC is cumulative per day per person and resets automatically the next day.\n\nCustomization\n\n| What                                      | How                                                          |\n| ----------------------------------------- | ------------------------------------------------------------ |\n| Change the TTS message                    | Edit the message expression in the HA TTS node             |\n| Announce all ordered items                | Use $json.body.ordine.map(i =&gt; i.quantita + ' ' + i.nome).join(', ') |\n| Change TTS language                       | Edit language in the annuncia_ordine HA script           |\n| Announce on multiple Google Home devices  | Add multiple media_player_entity_id entries to the HA script |\n| Disable TTS (keep only push notification) | Remove or deactivate the Home Assistant TTS node           |\n\nSecurity\n\n| Layer                | Mechanism                                            |\n| -------------------- | ---------------------------------------------------- |\n| Transport (ntfy)     | HTTPS via Cloudflare Tunnel                          |\n| ntfy access          | auth-default-access: deny-all — no anonymous reads |\n| n8n → ntfy           | Dedicated Bearer token (revokable, no expiry)        |\n| n8n → Home Assistant | Long-lived access token                              |\n| Mobile app           | Username/password on the ntfy server                 |\n\nDocumentation & Source\n\n|                          |                                                              |\n| ------------------------ | ------------------------------------------------------------ |\n| 📖 Full documentation | Notion — step-by-step setup guides |\n| 💻 GitHub Repository  | paoloronco/n8n-templates |\n\nRelated Resources\n\nntfy.sh documentation\nHome Assistant TTS documentation\nHome Assistant Scripts\nGoogle Cast integration\nn8n Home Assistant node",
+  "createdAt": "2026-03-30T13:40:50.748Z",
+  "nodes": [
+    {
+      "id": 19,
+      "icon": "file:httprequest.svg",
+      "name": "n8n-nodes-base.httpRequest",
+      "codex": {
+        "data": {
+          "alias": [
+            "API",
+            "Request",
+            "URL",
+            "Build",
+            "cURL"
+          ],
+          "resources": {
+            "generic": [
+              {
+                "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                "icon": "☀️",
+                "label": "2021: The Year to Automate the New You with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                "icon": "🧬",
+                "label": "Why business process automation with n8n can change your daily life"
+              },
+              {
+                "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                "icon": "📈",
+                "label": "Automatically pulling and visualizing data with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                "icon": "✍️",
+                "label": "Learn how to automatically cross-post your content with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                "icon": "🧾",
+                "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                "icon": "🛳",
+                "label": "Running n8n on ships: An interview with Maranics"
+              },
+              {
+                "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                "icon": " 🪢",
+                "label": "What are APIs and how to use them with no code"
+              },
+              {
+                "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                "icon": "⚡️",
+                "label": "5 tasks you can automate with the new Notion API "
+              },
+              {
+                "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                "icon": "📜",
+                "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+              },
+              {
+                "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                "icon": "💡",
+                "label": "15 Google apps you can combine and automate to increase productivity"
+              },
+              {
+                "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                "icon": "🎨",
+                "label": "Automate Designs with Bannerbear and n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                "icon": " 🕸️",
+                "label": "How uProc scraped a multi-page website with a low-code workflow"
+              },
+              {
+                "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                "icon": "📱",
+                "label": "Building an expense tracking app in 10 minutes"
+              },
+              {
+                "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                "icon": "🤖",
+                "label": "5 workflow automations for Mattermost that we love at n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                "icon": "🧰",
+                "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+              },
+              {
+                "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                "icon": "🦄",
+                "label": "Learn how to use webhooks with Mattermost slash commands"
+              },
+              {
+                "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                "icon": "📈",
+                "label": "How a Membership Development Manager automates his work and investments"
+              },
+              {
+                "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                "icon": "📈",
+                "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+              },
+              {
+                "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                "icon": "🎡",
+                "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+              },
+              {
+                "url": "https://n8n.io/blog/automations-for-activists/",
+                "icon": "✨",
+                "label": "How Common Knowledge use workflow automation for activism"
+              },
+              {
+                "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                "icon": "🤟",
+                "label": "Creating scheduled text affirmations with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                "icon": "🛵",
+                "label": "How Goomer automated their operations with over 200 n8n workflows"
+              },
+              {
+                "url": "https://n8n.io/blog/aws-workflow-automation/",
+                "label": "7 no-code workflow automations for Amazon Web Services"
+              }
+            ],
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+              }
+            ]
+          },
+          "categories": [
+            "Development",
+            "Core Nodes"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0",
+          "subcategories": {
+            "Core Nodes": [
+              "Helpers"
+            ]
+          }
+        }
+      },
+      "group": "[\"output\"]",
+      "defaults": {
+        "name": "HTTP Request",
+        "color": "#0004F5"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+      },
+      "displayName": "HTTP Request",
+      "typeVersion": 4,
+      "nodeCategories": [
+        {
+          "id": 5,
+          "name": "Development"
+        },
+        {
+          "id": 9,
+          "name": "Core Nodes"
+        }
+      ]
+    },
+    {
+      "id": 498,
+      "icon": "file:homeAssistant.svg",
+      "name": "n8n-nodes-base.homeAssistant",
+      "codex": {
+        "data": {
+          "resources": {
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.homeassistant/"
+              }
+            ],
+            "credentialDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/credentials/homeassistant/"
+              }
+            ]
+          },
+          "categories": [
+            "Miscellaneous"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0"
+        }
+      },
+      "group": "[\"output\"]",
+      "defaults": {
+        "name": "Home Assistant"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNDAiIGhlaWdodD0iMjQwIiBmaWxsPSJub25lIj48cGF0aCBmaWxsPSIjRjJGNEY5IiBkPSJNMjQwIDIyNC43NjJjMCA4LjI1LTYuNzUgMTUtMTUgMTVIMTVjLTguMjUgMC0xNS02Ljc1LTE1LTE1di05MGMwLTguMjUgNC43Ny0xOS43NjkgMTAuNjEtMjUuNjA5bDk4Ljc4LTk4Ljc4YzUuODMtNS44MyAxNS4zOC01LjgzIDIxLjIxIDBsOTguNzkgOTguNzg5YzUuODMgNS44MyAxMC42MSAxNy4zNiAxMC42MSAyNS42MXY5MHoiLz48cGF0aCBmaWxsPSIjMThCQ0YyIiBkPSJtMjI5LjM5IDEwOS4xNTMtOTguNzgtOTguNzhjLTUuODMtNS44My0xNS4zOC01LjgzLTIxLjIxIDBsLTk4Ljc5IDk4Ljc4QzQuNzggMTE0Ljk4MyAwIDEyNi41MTIgMCAxMzQuNzYydjkwYzAgOC4yNSA2Ljc1IDE1IDE1IDE1aDkyLjI3bC00MC42My00MC42M2MtMi4wOS43Mi00LjMyIDEuMTMtNi42NCAxLjEzLTExLjMgMC0yMC41LTkuMi0yMC41LTIwLjVzOS4yLTIwLjUgMjAuNS0yMC41IDIwLjUgOS4yIDIwLjUgMjAuNWMwIDIuMzMtLjQxIDQuNTYtMS4xMyA2LjY1bDMxLjYzIDMxLjYzdi0xMTUuODhjLTYuOC0zLjM0LTExLjUtMTAuMzItMTEuNS0xOC4zOSAwLTExLjMgOS4yLTIwLjUgMjAuNS0yMC41czIwLjUgOS4yIDIwLjUgMjAuNWMwIDguMDctNC43IDE1LjA1LTExLjUgMTguMzl2ODEuMjdsMzEuNDYtMzEuNDZjLS42Mi0xLjk2LS45Ni00LjA0LS45Ni02LjIgMC0xMS4zIDkuMi0yMC41IDIwLjUtMjAuNXMyMC41IDkuMiAyMC41IDIwLjUtOS4yIDIwLjUtMjAuNSAyMC41Yy0yLjUgMC00Ljg4LS40Ny03LjA5LTEuMjlMMTI5IDIwOC44OTJ2MzAuODhoOTZjOC4yNSAwIDE1LTYuNzUgMTUtMTV2LTkwYzAtOC4yNS00Ljc3LTE5Ljc3LTEwLjYxLTI1LjYxeiIvPjwvc3ZnPg=="
+      },
+      "displayName": "Home Assistant",
+      "typeVersion": 1,
+      "nodeCategories": [
+        {
+          "id": 11,
+          "name": "Miscellaneous"
+        }
+      ]
+    },
+    {
+      "id": 834,
+      "icon": "file:code.svg",
+      "name": "n8n-nodes-base.code",
+      "codex": {
+        "data": {
+          "alias": [
+            "cpde",
+            "Javascript",
+            "JS",
+            "Python",
+            "Script",
+            "Custom Code",
+            "Function"
+          ],
+          "details": "The Code node allows you to execute JavaScript in your workflow.",
+          "resources": {
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+              }
+            ]
+          },
+          "categories": [
+            "Development",
+            "Core Nodes"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0",
+          "subcategories": {
+            "Core Nodes": [
+              "Helpers",
+              "Data Transformation"
+            ]
+          }
+        }
+      },
+      "group": "[\"transform\"]",
+      "defaults": {
+        "name": "Code"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+      },
+      "displayName": "Code",
+      "typeVersion": 2,
+      "nodeCategories": [
+        {
+          "id": 5,
+          "name": "Development"
+        },
+        {
+          "id": 9,
+          "name": "Core Nodes"
+        }
+      ]
+    }
+  ]
+}

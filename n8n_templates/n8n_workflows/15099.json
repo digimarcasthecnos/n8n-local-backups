@@ -1,0 +1,1365 @@
+{
+  "workflow": {
+    "id": 15099,
+    "name": "Send client recap emails after Fireflies meetings using GPT-4o-mini, Gmail and Sheets",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-16T13:17:38.524Z",
+    "description": "### Description\n\nConnect Fireflies to this workflow once and every client meeting you record automatically generates a polished recap email sent directly to your client. The moment transcription finishes, the workflow detects the client's email from the participant list, uses GPT-4o-mini to write a warm 250-word professional recap with key points and action items, and sends it via Gmail with your address as the reply-to. Every sent email is also logged to Google Sheets for tracking. Built for account managers, consultants, and agency owners who want to follow up with clients professionally after every call — without spending 15 minutes writing the email themselves.\n\n---\n\n## What This Workflow Does\n\n- **Triggers automatically when a meeting ends** — Fireflies fires the workflow the moment transcription completes, so the recap reaches your client while the meeting is still fresh\n- **Detects the client email intelligently** — Uses three strategies to find the right recipient: looks for an external participant domain, checks the meeting title for an embedded email, then falls back to your default client email\n- **Writes a warm professional recap** — GPT-4o-mini produces a 250-word email with a greeting, thank-you opener, key points as bullets, action items, and a sign-off — all grounded in real meeting content\n- **Sends the email via Gmail with your reply-to** — The email arrives from your Gmail account and replies come directly back to you, with no AI footprint or Fireflies links visible to the client\n- **Extracts the client name from their email** — Converts the email address into a readable first name for the greeting automatically\n- **Logs every sent recap to Google Sheets** — Appends a 7-column record per email including meeting date, title, client email, subject, status, and Fireflies link for delivery tracking\n\n---\n\n## Setup Requirements\n\n### Tools Needed\n- n8n instance (self-hosted or cloud)\n- Fireflies.ai account with webhook access\n- OpenAI account with GPT-4o-mini API access\n- Gmail account (the account you want to send recaps from)\n- Google Sheets (one sheet with a tab named **Recap Email Log**)\n\n### Credentials Required\n- Fireflies API key (pasted into **2. Set — Config Values**)\n- OpenAI API key\n- Gmail OAuth2\n- Google Sheets OAuth2\n\n**Estimated Setup Time: 15–20 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Import the workflow** — Open n8n → Workflows → Import from JSON → paste the workflow JSON → click Import\n\n2. **Activate the workflow and copy the webhook URL** — Toggle the workflow to Active → click on node **1. Webhook — Fireflies Transcript Done** → copy the Production URL shown\n\n3. **Register the webhook in Fireflies** — Log in to app.fireflies.ai → Settings → Developer Settings → Webhooks → paste the webhook URL → save\n\n4. **Get your Fireflies API key** — In Fireflies, go to Settings → Integrations → Fireflies API → copy your API key\n\n5. **Fill in Config Values** — Open node **2. Set — Config Values** → replace all placeholders:\n\n| Field | What to enter |\n|---|---|\n| `YOUR_FIREFLIES_API_KEY` | Your Fireflies API key from step 4 |\n| `YOUR FULL NAME` | Your name as it should appear in the email sign-off |\n| `you@yourcompany.com` | Your email address (must match the Gmail account you connect in step 8) |\n| `YOUR COMPANY NAME` | Your company name (used in the email sign-off and AI prompt) |\n| `YOUR_GOOGLE_SHEET_ID` | The ID from your Google Sheet URL (the string between `/d/` and `/edit`) |\n| `client@example.com` | A fallback email used when no external participant is detected — set this to your most common client email or a test address |\n| `yourcompany.com` | Your company's email domain (e.g. `incrementors.com`) — used to identify which participant is the client |\n\n&gt; ⚠️ Do NOT change the `meetingId` field — it is extracted automatically from the Fireflies webhook.\n\n6. **Connect OpenAI** — Open node **6. OpenAI — GPT-4o-mini Model** → click the credential dropdown → add your OpenAI API key → test the connection\n\n7. **Create your Google Sheet tab** — Open your Google Sheet → add a tab named exactly **Recap Email Log** → add these 7 column headers in row 1: `Date`, `Meeting Title`, `Client Email`, `Email Subject`, `Status`, `Fireflies URL`, `Logged At`\n\n8. **Connect Gmail** — Open node **8. Gmail — Send Recap Email** → click the credential dropdown → add Gmail OAuth2 → sign in with the Gmail account that matches `senderEmail` in your Config Values → authorize access\n\n9. **Connect Google Sheets** — Open node **9. Google Sheets — Log Sent Recaps** → click the credential dropdown → add Google Sheets OAuth2 → sign in with your Google account → authorize access\n\n10. **Activate the workflow** — Confirm the workflow is Active — Fireflies will now fire it automatically after every recorded meeting\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Webhook: Fireflies Transcript Done**\nThis step listens for a signal from Fireflies. Every time a meeting finishes transcribing, Fireflies sends a request to this webhook URL containing the meeting ID. The workflow fires instantly — no manual trigger is ever needed.\n\n**Step 2 — Set: Config Values**\nYour Fireflies API key, sender name, sender email, company name, Google Sheet ID, sheet tab name, default client email, your company domain, and the meeting ID are all stored here. The meeting ID is extracted automatically from all possible Fireflies payload formats.\n\n**Step 3 — HTTP: Fetch Transcript**\nA request is sent to the Fireflies API using your API key and the meeting ID. It retrieves the meeting title, date, duration, participants, transcript URL, gist, overview, bullet points, keywords, and action items from the Fireflies summary. Only lightweight summary fields are fetched — no full sentence-by-sentence transcript.\n\n**Step 4 — Code: Extract Data and Detect Client Email**\nThis step runs three detection strategies to find the client email. First, it scans the participant list for any email address whose domain does not match your company domain — that participant is the client. Second, if no external participant is found, it checks whether an email address is embedded directly in the meeting title. Third, if neither strategy works, it falls back to the `defaultClientEmail` from your config. Once the client email is identified, the first name is extracted from the email address (e.g. `john.smith@client.com` becomes \"John Smith\") and used as the greeting name. All meeting metadata is also cleaned and formatted here.\n\n**Step 5 — AI Agent: Write Recap Email**\nGPT-4o-mini receives the meeting details, Fireflies summary, key points, action items, client name, and sender details. It writes a plain-text email following a fixed structure: a greeting using the client's name, a warm thank-you opener referencing the meeting topic, 3–4 bullet points summarizing key discussion points from the real meeting content, a next steps section listing action items, a warm closing sentence, and a sign-off with your name and company. The email contains no AI mentions, no Fireflies links, and no internal notes.\n\n**Step 6 — OpenAI: GPT-4o-mini Model**\nThis is the language model powering the writing step. It runs at temperature 0.6 for a natural, warm writing style — not too creative and not too robotic — and is capped at 600 tokens to keep the email within the 250-word target.\n\n**Step 7 — Code: Prepare Email Fields**\nThe AI-generated email body is read and validated — if it is under 50 characters, the step throws an error and stops rather than sending a broken email. The email subject line is assembled automatically as: `Meeting Recap — [Meeting Title] — [Meeting Date]`. All fields needed for both sending and logging are packaged into one clean output.\n\n**Step 8 — Gmail: Send Recap Email**\nThe recap email is sent to the detected client email address. Your sender email is set as the reply-to address so any client reply comes directly back to your inbox. The email has no n8n attribution footer.\n\n**Step 9 — Google Sheets: Log Sent Recaps**\nAt the same time as the email is sent, a new row is appended to your Recap Email Log tab with all 7 columns: meeting date, meeting title, client email, email subject, status (always \"Sent\"), the Fireflies transcript URL, and the logged-at timestamp. Both steps 8 and 9 run simultaneously — logging never delays sending.\n\n---\n\n## Key Features\n\n✅ **Three-strategy client email detection** — Finds the right recipient from participant domain, meeting title, or fallback — no manual input needed per meeting\n✅ **No AI footprint in the email** — The prompt explicitly forbids any mention of AI, automation, or Fireflies — the email reads as if you wrote it personally right after the call\n✅ **Reply-to set to your address** — Client replies go directly to your inbox, not to an n8n webhook or unmonitored address\n✅ **Client name extracted automatically** — The first name is parsed from the client's email address and used in the greeting without any manual entry\n✅ **Parallel sending and logging** — Gmail sends and Google Sheets logs run at exactly the same time — the sheet is always current\n✅ **Error guard on AI output** — If GPT fails to generate a proper email body, the workflow stops cleanly rather than sending a blank or broken message to a client\n✅ **Auto-generated subject line** — The subject is assembled from the meeting title and date automatically — consistent format every time, no editing needed\n✅ **Lightweight Fireflies fetch** — Only summary fields are pulled (no full transcript), keeping each API call fast and the response small\n\n---\n\n## Customisation Options\n\n**Add CC to your manager** — In node **8. Gmail — Send Recap Email**, add a `cc` field in the options and set it to your manager's email address so they are automatically copied on every client recap without you having to remember.\n\n**Change the email tone** — In node **5. AI Agent — Write Recap Email**, edit the prompt instruction from \"warm professional\" to \"formal\" or \"casual\" to match your relationship with different client types — you can also add client-specific instructions like \"this client prefers very brief emails.\"\n\n**Send a Slack notification after every sent recap** — After node **8. Gmail — Send Recap Email**, add a Slack node that posts to a `#client-updates` channel with the client email, meeting title, and a note that the recap was sent — giving your team visibility without checking the sheet.\n\n**Add a 10-minute delay before sending** — After node **7. Code — Prepare Email Fields**, add a Wait step set to 10 minutes before the Gmail step — giving you a window to check the Google Sheet log and cancel if something looks wrong before the client receives it.\n\n**Use a different email for different client domains** — In node **4. Code — Extract Data and Detect Client Email**, add a lookup object that maps known client domains to specific sender names or email addresses — useful for agencies managing multiple branded accounts.\n\n---\n\n## Troubleshooting\n\n**Workflow not triggering when a meeting ends:**\n- Confirm the workflow is Active — inactive workflows do not receive Fireflies webhooks\n- Log in to app.fireflies.ai → Settings → Developer Settings → Webhooks → confirm the URL matches the Production URL from node **1. Webhook — Fireflies Transcript Done** exactly\n- Fireflies only fires webhooks for meetings where you are the organizer — guest meetings will not trigger it\n\n**Email sent to the wrong person or to the fallback address:**\n- Check that `yourEmailDomain` in node **2. Set — Config Values** is your actual company domain (e.g. `incrementors.com`, not `@incrementors.com`) — the `@` symbol must not be included\n- Check the participant list in the Fireflies transcript for this meeting — if all participants share your domain, the workflow will fall through to `defaultClientEmail`\n- For internal-only meetings, update `defaultClientEmail` to a safe test address so the fallback does not send to a real client\n\n**Gmail credential error or email not sending:**\n- Confirm the Gmail OAuth2 credential in node **8. Gmail — Send Recap Email** is connected with the same Gmail account as `senderEmail` in Config Values — mismatched accounts cause auth failures\n- If the Gmail credential expired, re-authorize it in n8n Settings → Credentials → find the Gmail credential → reconnect\n\n**OpenAI not generating the email body:**\n- Confirm the API key is connected in node **6. OpenAI — GPT-4o-mini Model** and your account has available credits\n- If the generated body is under 50 characters, step **7. Code — Prepare Email Fields** throws an error and stops the workflow — check the execution log of node **5. AI Agent — Write Recap Email** for the raw GPT response\n\n**Google Sheets not logging rows:**\n- Confirm the Google Sheets OAuth2 credential in node **9. Google Sheets — Log Sent Recaps** is connected and not expired — re-authorize if needed\n- Check that `YOUR_GOOGLE_SHEET_ID` in node **2. Set — Config Values** is the ID from the sheet URL, not the full URL\n- Confirm the tab is named **Recap Email Log** exactly — capitalization must match `sheetName` in Config Values\n- Verify all 7 column headers in row 1 match exactly: `Date`, `Meeting Title`, `Client Email`, `Email Subject`, `Status`, `Fireflies URL`, `Logged At`\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email: info@incrementors.com\n🌐 Website: https://www.incrementors.com/",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "2edbdfc7-3e64-4f1e-8642-335a3fdb1a39",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2304,
+            -528
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 572,
+            "height": 1108,
+            "content": "## Client Meeting Recap Email — Fireflies + GPT-4o-mini + Gmail + Sheets\n\nFor account managers, consultants, and agency owners who want a polished client recap email sent automatically after every meeting. When Fireflies finishes transcribing a meeting, this workflow detects the client email from participants, uses GPT-4o-mini to write a warm 250-word professional recap, sends it via Gmail with your reply-to address, and logs every sent recap to Google Sheets. The client receives a genuine-sounding email — no AI footprint, no Fireflies links, just a professional summary of what was discussed and what happens next.\n\n## How it works\n- **1. Webhook — Fireflies Transcript Done** receives the meetingId from Fireflies on transcription complete\n- **2. Set — Config Values** stores Fireflies API key, sender details, company name, Sheet ID, and client email detection settings\n- **3. HTTP — Fetch Transcript** calls the Fireflies GraphQL API for title, date, participants, transcript URL, overview, keywords, action items, gist, and bullet points\n- **4. Code — Extract Data and Detect Client Email** detects the client email using three strategies: find a participant whose domain differs from yourEmailDomain, extract an email embedded in the meeting title, or fall back to defaultClientEmail\n- **5. AI Agent — Write Recap Email** uses GPT-4o-mini (temperature 0.6) to write a warm professional recap with greeting, key points, action items, and sign-off\n- **7. Code — Prepare Email Fields** reads the AI output and builds the email subject and all fields for sending and logging\n- **8. Gmail — Send Recap Email** sends the recap to the detected client email with your address as reply-to\n- **9. Google Sheets — Log Sent Recaps** appends one row per sent recap for tracking\n\n## Set up steps\n1. Activate the workflow and copy the webhook URL from node 1\n2. In Fireflies — go to Settings, Developer Settings, Webhooks, and paste the URL\n3. In **2. Set — Config Values** — replace all seven values: Fireflies API key, sender name, sender email, company name, Google Sheet ID, default client email, and your company domain\n4. In **6. OpenAI — GPT-4o-mini Model** — connect your OpenAI credential\n5. In **8. Gmail — Send Recap Email** — connect your Gmail OAuth2 credential using the account that matches senderEmail\n6. In **9. Google Sheets — Log Sent Recaps** — connect your Google Sheets OAuth2 credential\n7. Create a Google Sheet tab named Recap Email Log with columns: Date, Meeting Title, Client Email, Email Subject, Status, Fireflies URL, Logged At"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f321e34f-175a-4006-af8c-038b4ed1a96a",
+          "name": "Section — Webhook, Config, and Transcript Fetch",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1648,
+            -336
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 628,
+            "height": 532,
+            "content": "## Webhook, Config, and Transcript Fetch\nFireflies POSTs a meetingId here on transcription complete. Config stores sender details, client email fallback, and your company domain for smart client detection. HTTP fetches the full Fireflies summary — no full sentences needed."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "04db0f0c-e2d1-427d-ba2d-98df196307a1",
+          "name": "Section — Client Email Detection",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -976,
+            -272
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 360,
+            "height": 436,
+            "content": "## Client Email Detection\nThree-strategy detection: first looks for a participant whose email domain differs from yourEmailDomain, then checks if the meeting title contains an email, then falls back to defaultClientEmail. Also extracts client name from email format."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "6ff473c5-c8ea-4768-a733-3c51ccbe171e",
+          "name": "Section — AI Recap Email Writing",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -528,
+            -480
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 376,
+            "height": 820,
+            "content": "## AI Recap Email Writing\nGPT-4o-mini (temperature 0.6) writes a warm 250-word professional recap. Structure: greeting, thank you opener, key points as bullets, action items, closing, sign-off. Plain text only — no AI mention, no Fireflies links."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f6ffaeb4-7660-40d4-909a-fa855f98246f",
+          "name": "Section — Email Assembly and Parallel Delivery",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -64,
+            -384
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 660,
+            "height": 692,
+            "content": "## Email Assembly and Parallel Delivery\nBuilds email subject and assembles all fields. Gmail sends the recap to the client with your email as reply-to so replies come directly to you. Google Sheets logs every sent recap simultaneously."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "170feb32-f026-466a-822a-9369d312e1e5",
+          "name": "1. Webhook — Fireflies Transcript Done",
+          "type": "n8n-nodes-base.webhook",
+          "position": [
+            -1600,
+            -96
+          ],
+          "webhookId": "ff-recap-email-001",
+          "parameters": {
+            "path": "fireflies-recap-email",
+            "options": {},
+            "httpMethod": "POST"
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "77602922-8f20-46c4-aade-8fb5b12ca04c",
+          "name": "2. Set — Config Values",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -1392,
+            -96
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "cfg-001",
+                  "name": "firefliesApiKey",
+                  "type": "string",
+                  "value": "YOUR_FIREFLIES_API_KEY"
+                },
+                {
+                  "id": "cfg-002",
+                  "name": "senderName",
+                  "type": "string",
+                  "value": "YOUR FULL NAME"
+                },
+                {
+                  "id": "cfg-003",
+                  "name": "senderEmail",
+                  "type": "string",
+                  "value": "user@example.com"
+                },
+                {
+                  "id": "cfg-004",
+                  "name": "companyName",
+                  "type": "string",
+                  "value": "YOUR COMPANY NAME"
+                },
+                {
+                  "id": "cfg-005",
+                  "name": "sheetId",
+                  "type": "string",
+                  "value": "YOUR_GOOGLE_SHEET_ID"
+                },
+                {
+                  "id": "cfg-006",
+                  "name": "sheetName",
+                  "type": "string",
+                  "value": "Recap Email Log"
+                },
+                {
+                  "id": "cfg-007",
+                  "name": "defaultClientEmail",
+                  "type": "string",
+                  "value": "user@example.com"
+                },
+                {
+                  "id": "cfg-008",
+                  "name": "yourEmailDomain",
+                  "type": "string",
+                  "value": "yourcompany.com"
+                },
+                {
+                  "id": "cfg-009",
+                  "name": "meetingId",
+                  "type": "string",
+                  "value": "={{ $json.meetingId || $json.body?.meetingId || $json.data?.meetingId || '' }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "3bfdec37-b20e-4f0e-b170-61b8b93a9b83",
+          "name": "3. HTTP — Fetch Transcript",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -1152,
+            -96
+          ],
+          "parameters": {
+            "url": "https://api.fireflies.ai/graphql",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"query\": \"query GetTranscript($id: String!) { transcript(id: $id) { id title date duration participants host_email transcript_url summary { overview keywords action_items gist bullet_gist } } }\",\n  \"variables\": {\n    \"id\": \"{{ $json.meetingId }}\"\n  }\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $json.firefliesApiKey }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "636bcc64-6451-483c-bf27-247ec441d2df",
+          "name": "4. Code — Extract Data and Detect Client Email",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -848,
+            -96
+          ],
+          "parameters": {
+            "jsCode": "const response = $input.first().json;\nconst config = $('2. Set — Config Values').item.json;\n\nconst t = response?.data?.transcript;\nif (!t || !t.id) throw new Error('Transcript not found for meetingId: ' + config.meetingId);\n\nconst summary = t.summary || {};\nconst participants = t.participants || [];\n\n// Smart client email detection\nconst yourDomain = (config.yourEmailDomain || '').toLowerCase().trim();\nlet clientEmail = config.defaultClientEmail;\nlet clientName = 'Valued Client';\n\n// Strategy 1: find external email from participants\nif (yourDomain) {\n  const externalParticipant = participants.find(p => {\n    const email = (p || '').toLowerCase();\n    return email.includes('@') && !email.includes(yourDomain);\n  });\n  if (externalParticipant) {\n    clientEmail = externalParticipant;\n    const emailPart = externalParticipant.split('@')[0];\n    clientName = emailPart\n      .replace(/[._-]/g, ' ')\n      .replace(/\\b\\w/g, c => c.toUpperCase())\n      .trim();\n  }\n}\n\n// Strategy 2: check if client email is embedded in meeting title\nconst titleEmailMatch = (t.title || '').match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/);\nif (titleEmailMatch) {\n  clientEmail = titleEmailMatch[0];\n}\n\n// Meeting metadata\nconst meetingTitle = t.title || 'Our Meeting';\nconst meetingDate = t.date\n  ? new Date(t.date).toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })\n  : new Date().toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });\nconst durationMin = Math.round((t.duration || 0) / 60);\nconst keywords = (summary.keywords || []).slice(0, 8).join(', ') || 'None';\nconst overview = (summary.overview || '').substring(0, 800);\nconst actionItems = (summary.action_items || []).join('\\n') || 'None noted';\nconst bulletPoints = (summary.bullet_gist || []).join('\\n') || '';\nconst gist = summary.gist || '';\n\nconst loggedAt = new Date().toISOString().replace('T', ' ').substring(0, 16);\n\nreturn [{\n  json: {\n    meetingId: t.id,\n    meetingTitle,\n    meetingDate,\n    durationMin,\n    clientEmail,\n    clientName,\n    participants: participants.join(', '),\n    transcriptUrl: t.transcript_url || 'Not available',\n    keywords,\n    overview,\n    actionItems,\n    bulletPoints,\n    gist,\n    loggedAt,\n    senderName: config.senderName,\n    senderEmail: config.senderEmail,\n    companyName: config.companyName,\n    sheetId: config.sheetId,\n    sheetName: config.sheetName\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "ccfd982e-8a88-45ae-920d-2e2f725cb8dd",
+          "name": "5. AI Agent — Write Recap Email",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            -480,
+            -96
+          ],
+          "parameters": {
+            "text": "=You are a professional account manager at {{ $json.companyName }} writing a post-meeting recap email to a client.\n\nMEETING DETAILS:\nMeeting Title: {{ $json.meetingTitle }}\nDate: {{ $json.meetingDate }}\nDuration: {{ $json.durationMin }} minutes\nSent by: {{ $json.senderName }}, {{ $json.companyName }}\nClient Name: {{ $json.clientName }}\n\nFIREFLIES MEETING SUMMARY:\nGist: {{ $json.gist }}\nOverview: {{ $json.overview }}\nKey Points: {{ $json.bulletPoints }}\nTopics Discussed: {{ $json.keywords }}\n\nACTION ITEMS FROM MEETING:\n{{ $json.actionItems }}\n\nWrite a professional, warm recap email to send to the client after the meeting.\n\nEMAIL STRUCTURE:\n\nLine 1: Greeting using client name (Hi [name], or Dear [name],)\n\nParagraph 1 — Opening:\nThank the client for their time. Reference the meeting title or topic naturally. Keep it warm and genuine. 2 sentences maximum.\n\nParagraph 2 — What We Covered:\nSummarize the key points discussed in 3 to 4 bullet points using plain dashes. Be specific — use real content from the meeting summary. Not generic filler.\n\nParagraph 3 — Next Steps:\nList the action items clearly. Format each as: dash, action description, who is responsible. If no action items write one line: We will follow up shortly with next steps.\n\nParagraph 4 — Closing:\nOne warm closing sentence. Invite them to reach out with any questions.\n\nSign off:\nBest regards,\n[senderName]\n[companyName]\n\nRULES:\n- Plain text only. No markdown. No asterisks. No hashtags.\n- Professional but warm tone — not corporate or robotic.\n- Maximum 250 words total.\n- Do NOT mention that this was generated by AI.\n- Do NOT reveal internal notes or Fireflies links.\n- Write as if you personally attended the meeting and are writing this immediately after.",
+            "options": {},
+            "promptType": "define"
+          },
+          "typeVersion": 1.7
+        },
+        {
+          "id": "8e7aa762-e695-42f6-8538-834eeef4e524",
+          "name": "6. OpenAI — GPT-4o-mini Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            -480,
+            192
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini"
+            },
+            "options": {
+              "maxTokens": 600,
+              "temperature": 0.6
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "ecece264-91cc-4902-a2d4-ba057a51646c",
+          "name": "7. Code — Prepare Email Fields",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -16,
+            -96
+          ],
+          "parameters": {
+            "jsCode": "const aiEmail = $input.first().json.output || '';\nconst data = $('4. Code — Extract Data and Detect Client Email').item.json;\n\nif (!aiEmail || aiEmail.length < 50) {\n  throw new Error('AI could not generate email body. Check OpenAI credentials.');\n}\n\nconst emailSubject = 'Meeting Recap — ' + data.meetingTitle + ' — ' + data.meetingDate;\n\nreturn [{\n  json: {\n    emailBody: aiEmail,\n    emailSubject,\n    clientEmail: data.clientEmail,\n    senderName: data.senderName,\n    senderEmail: data.senderEmail,\n    companyName: data.companyName,\n    meetingTitle: data.meetingTitle,\n    meetingDate: data.meetingDate,\n    transcriptUrl: data.transcriptUrl,\n    loggedAt: data.loggedAt,\n    sheetId: data.sheetId,\n    sheetName: data.sheetName\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "ec475c83-b087-467c-9a29-84ab4fb83180",
+          "name": "8. Gmail — Send Recap Email",
+          "type": "n8n-nodes-base.gmail",
+          "position": [
+            320,
+            -256
+          ],
+          "webhookId": "0ca8e033-78fc-484a-a869-29862801c7de",
+          "parameters": {
+            "sendTo": "={{ $json.clientEmail }}",
+            "message": "={{ $json.emailBody }}",
+            "options": {
+              "replyTo": "={{ $json.senderEmail }}",
+              "appendAttribution": false
+            },
+            "subject": "={{ $json.emailSubject }}"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "6cbb8ac9-639d-4b58-a7c4-88857768be03",
+          "name": "9. Google Sheets — Log Sent Recaps",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            320,
+            64
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "Date": "={{ $('7. Code — Prepare Email Fields').item.json.meetingDate }}",
+                "Status": "Sent",
+                "Logged At": "={{ $('7. Code — Prepare Email Fields').item.json.loggedAt }}",
+                "Client Email": "={{ $('7. Code — Prepare Email Fields').item.json.clientEmail }}",
+                "Email Subject": "={{ $('7. Code — Prepare Email Fields').item.json.emailSubject }}",
+                "Fireflies URL": "={{ $('7. Code — Prepare Email Fields').item.json.transcriptUrl }}",
+                "Meeting Title": "={{ $('7. Code — Prepare Email Fields').item.json.meetingTitle }}"
+              },
+              "mappingMode": "defineBelow"
+            },
+            "options": {
+              "cellFormat": "USER_ENTERED"
+            },
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "={{ $('7. Code — Prepare Email Fields').item.json.sheetName }}"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $('7. Code — Prepare Email Fields').item.json.sheetId }}"
+            }
+          },
+          "typeVersion": 4.5
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "2. Set — Config Values": {
+          "main": [
+            [
+              {
+                "node": "3. HTTP — Fetch Transcript",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "3. HTTP — Fetch Transcript": {
+          "main": [
+            [
+              {
+                "node": "4. Code — Extract Data and Detect Client Email",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. OpenAI — GPT-4o-mini Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "5. AI Agent — Write Recap Email",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. Code — Prepare Email Fields": {
+          "main": [
+            [
+              {
+                "node": "8. Gmail — Send Recap Email",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "9. Google Sheets — Log Sent Recaps",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. AI Agent — Write Recap Email": {
+          "main": [
+            [
+              {
+                "node": "7. Code — Prepare Email Fields",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Webhook — Fireflies Transcript Done": {
+          "main": [
+            [
+              {
+                "node": "2. Set — Config Values",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "4. Code — Extract Data and Detect Client Email": {
+          "main": [
+            [
+              {
+                "node": "5. AI Agent — Write Recap Email",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 14,
+      "nodeTypes": {
+        "n8n-nodes-base.set": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 2
+        },
+        "n8n-nodes-base.gmail": {
+          "count": 1
+        },
+        "n8n-nodes-base.webhook": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 5
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 1
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Incrementors",
+      "username": "incrementors",
+      "bio": "",
+      "verified": true,
+      "links": [
+        "https://www.incrementors.com/"
+      ],
+      "avatar": "https://gravatar.com/avatar/e09b4b6a8c5a00f886a9eedf3be23a4af5a50cc216cd6b2aee2a12c2dfba99dd?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 47,
+        "icon": "file:webhook.svg",
+        "name": "n8n-nodes-base.webhook",
+        "codex": {
+          "data": {
+            "alias": [
+              "HTTP",
+              "API",
+              "Build",
+              "WH"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-custom-incident-response-workflows-with-n8n/",
+                  "label": "How to automate every step of an incident response workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Webhook"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTM1IDM3Yy0yLjIgMC00LTEuOC00LTRzMS44LTQgNC00IDQgMS44IDQgNC0xLjggNC00IDQiLz48cGF0aCBmaWxsPSIjMzc0NzRmIiBkPSJNMzUgNDNjLTMgMC01LjktMS40LTcuOC0zLjdsMy4xLTIuNWMxLjEgMS40IDIuOSAyLjMgNC43IDIuMyAzLjMgMCA2LTIuNyA2LTZzLTIuNy02LTYtNmMtMSAwLTIgLjMtMi45LjdsLTEuNyAxTDIzLjMgMTZsMy41LTEuOSA1LjMgOS40YzEtLjMgMi0uNSAzLS41IDUuNSAwIDEwIDQuNSAxMCAxMFM0MC41IDQzIDM1IDQzIi8+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTE0IDQzQzguNSA0MyA0IDM4LjUgNCAzM2MwLTQuNiAzLjEtOC41IDcuNS05LjdsMSAzLjlDOS45IDI3LjkgOCAzMC4zIDggMzNjMCAzLjMgMi43IDYgNiA2czYtMi43IDYtNnYtMmgxNXY0SDIzLjhjLS45IDQuNi01IDgtOS44IDgiLz48cGF0aCBmaWxsPSIjZTkxZTYzIiBkPSJNMTQgMzdjLTIuMiAwLTQtMS44LTQtNHMxLjgtNCA0LTQgNCAxLjggNCA0LTEuOCA0LTQgNCIvPjxwYXRoIGZpbGw9IiMzNzQ3NGYiIGQ9Ik0yNSAxOWMtMi4yIDAtNC0xLjgtNC00czEuOC00IDQtNCA0IDEuOCA0IDQtMS44IDQtNCA0Ii8+PHBhdGggZmlsbD0iI2U5MWU2MyIgZD0ibTE1LjcgMzQtMy40LTIgNS45LTkuN2MtMi0xLjktMy4yLTQuNS0zLjItNy4zIDAtNS41IDQuNS0xMCAxMC0xMHMxMCA0LjUgMTAgMTBjMCAuOS0uMSAxLjctLjMgMi41bC0zLjktMWMuMS0uNS4yLTEgLjItMS41IDAtMy4zLTIuNy02LTYtNnMtNiAyLjctNiA2YzAgMi4xIDEuMSA0IDIuOSA1LjFsMS43IDF6Ii8+PC9zdmc+"
+        },
+        "displayName": "Webhook",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 356,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmail",
+        "codex": {
+          "data": {
+            "alias": [
+              "email",
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.gmail/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Gmail"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 38,
+        "name": "Lead Nurturing"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

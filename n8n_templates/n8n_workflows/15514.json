@@ -1,0 +1,1860 @@
+{
+  "workflow": {
+    "id": 15514,
+    "name": "Generate multi-agent research reports with Tavily, Groq, Notion and Supabase",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-05-06T17:53:39.511Z",
+    "description": "How it works\n- A manual trigger sets the research topic and generates three parallel Tavily web search queries\n- A Summarizer Agent (Groq Llama 3.3 70B) and an Analyst Agent (OpenRouter GPT) process the search results simultaneously, producing a factual summary and a deep trend analysis\n- A Synthesis Agent (Groq Llama 3.3 70B) combines both outputs into a structured executive report with key findings, strategic implications, and recommended actions\n- The report is chunked and saved as a new Notion database page, then embedded with OpenAI and indexed in Supabase for semantic search\n\nSet up steps\n- Add your Tavily, Groq, and OpenRouter API credentials (~10 min)\n- Connect Notion OAuth2 and point the node to your target database\n- Add your Supabase credentials and confirm your documents table has a vector column![faa.png](fileId:6111)",
+    "workflow": {
+      "id": "JMqGFtkkOnwqm13H",
+      "meta": {
+        "instanceId": "0c60f5dddb636f74d6b3d0a74529c0815daba3345f1b7f6c3f40c522b339af29"
+      },
+      "name": "Multi-Agent Research Pipeline ( Supabase + Notion)",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "870c9e7b-9204-4845-8259-7725cb0b6618",
+          "name": "Start Research",
+          "type": "n8n-nodes-base.manualTrigger",
+          "position": [
+            -1248,
+            352
+          ],
+          "parameters": {},
+          "typeVersion": 1
+        },
+        {
+          "id": "f810ba3b-edb0-4da8-becc-b83ae4a34ad5",
+          "name": "Groq Chat Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+          "position": [
+            800,
+            512
+          ],
+          "parameters": {
+            "model": "llama-3.3-70b-versatile",
+            "options": {}
+          },
+          "credentials": {
+            "groqApi": {
+              "id": "nY5diAQvXNgxMrub",
+              "name": "Groq account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "bb7414f3-1333-4fd9-bd5a-b1f70374f0e6",
+          "name": "Code in JavaScript",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1232,
+            144
+          ],
+          "parameters": {
+            "jsCode": "const output = $input.first().json.output || '';\nconst chunks = [];\nfor (let i = 0; i < output.length; i += 1900) {\n  chunks.push(output.slice(i, i + 1900));\n}\n// Return first 5 chunks max (Notion also limits children blocks)\nreturn chunks.slice(0, 5).map(chunk => ({ json: { ...$input.first().json, chunk } }));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "48bbb50e-2782-47e2-8135-8988ab057793",
+          "name": "Set Research Topic1",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -992,
+            352
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "1",
+                  "name": "topic",
+                  "type": "string",
+                  "value": "AI Automation Trends 2026"
+                },
+                {
+                  "id": "2",
+                  "name": "depth",
+                  "type": "string",
+                  "value": "comprehensive"
+                },
+                {
+                  "id": "3",
+                  "name": "session_id",
+                  "type": "string",
+                  "value": "={{ $now.toMillis() }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "5006f2b0-5b27-43b8-915c-d9ea43061b77",
+          "name": "Parse Orchestrator Tasks1",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -768,
+            352
+          ],
+          "parameters": {
+            "jsCode": "const raw = $input.first().json.output || '';\nlet tasks = {};\ntry {\n  const m = raw.match(/\\{[\\s\\S]*\\}/);\n  if (m) tasks = JSON.parse(m[0]);\n} catch(e) {}\nif (!tasks.search_query_1) {\n  tasks = {\n    summary_task: 'Summarize key developments and recent facts',\n    analysis_task: 'Analyze emerging trends, patterns and implications',\n    synthesis_task: 'Synthesize into actionable strategic insights',\n    search_query_1: 'AI automation 2025 enterprise adoption trends',\n    search_query_2: 'workflow automation machine learning ROI case studies',\n    search_query_3: 'AI agent orchestration frameworks tools comparison'\n  };\n}\nconst topicData = $('Set Research Topic1').first().json;\nreturn [{ json: { ...tasks, topic: topicData.topic, session_id: String(topicData.session_id) } }];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "3ebc28bd-c73b-4ea7-9b9f-5ac3da0f0de5",
+          "name": "Web Search Query ",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -544,
+            160
+          ],
+          "parameters": {
+            "url": "https://api.tavily.com/search",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\"api_key\":\"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\",\"query\":\"{{ $json.search_query_1 }}\",\"search_depth\":\"advanced\",\"max_results\":5,\"include_raw_content\":false}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "267f02a5-51bc-4782-a204-2d20d6565e74",
+          "name": "Merge Search Results1",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            -320,
+            272
+          ],
+          "parameters": {
+            "numberInputs": 3
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "3d7ed53c-1969-443e-ae5f-752ef9778b38",
+          "name": "Web Search Query 4",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -544,
+            352
+          ],
+          "parameters": {
+            "url": "https://api.tavily.com/search",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\"api_key\":\"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\",\"query\":\"{{ $json.search_query_2 }}\",\"search_depth\":\"advanced\",\"max_results\":5,\"include_raw_content\":false}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "8c152adf-b532-43a7-b90a-47f2dd73cd57",
+          "name": "Web Search Query 5",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -544,
+            544
+          ],
+          "parameters": {
+            "url": "https://api.tavily.com/search",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\"api_key\":\"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\",\"query\":\"{{ $json.search_query_3 }}\",\"search_depth\":\"advanced\",\"max_results\":5,\"include_raw_content\":false}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "070ed35c-8d60-4514-867c-132b1a2e16d3",
+          "name": "Aggregate Research Context1",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -96,
+            288
+          ],
+          "parameters": {
+            "jsCode": "const allItems = $input.all();\nconst snippets = [];\nfor (const item of allItems) {\n  const data = item.json;\n  if (data.results && Array.isArray(data.results)) {\n    for (const r of data.results) {\n      snippets.push('SOURCE: ' + (r.title || 'Untitled') + '\\n' + (r.url || '') + '\\n' + ((r.content || r.snippet || '')).substring(0, 500));\n    }\n  }\n}\nconst tasks = $('Parse Orchestrator Tasks1').first().json;\nreturn [{ json: { topic: tasks.topic, session_id: tasks.session_id, summary_task: tasks.summary_task, analysis_task: tasks.analysis_task, synthesis_task: tasks.synthesis_task, research_context: snippets.slice(0, 12).join('\\n\\n---\\n\\n'), source_count: snippets.length } }];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "a4ab5e02-7d69-44f7-b7a6-0dc75677a72b",
+          "name": "Summarizer Sub-Agent1",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            256,
+            64
+          ],
+          "parameters": {
+            "text": "=RESEARCH TASK: {{ $json.summary_task }}\nTOPIC: {{ $json.topic }}\n\nSOURCE MATERIAL:\n{{ $json.research_context }}\n\nProvide a structured summary with:\n1. Key Facts & Statistics (with numbers)\n2. Major Players & Developments\n3. Current State of the Field\n4. Most Important Recent Events\n\nBe specific and cite sources.",
+            "options": {
+              "systemMessage": "You are a specialist research summarizer."
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "c474ac40-d937-4081-a036-279f0d8ff5f4",
+          "name": "Summarizer LLM1",
+          "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+          "position": [
+            336,
+            288
+          ],
+          "parameters": {
+            "model": "llama-3.3-70b-versatile",
+            "options": {}
+          },
+          "credentials": {
+            "groqApi": {
+              "id": "nY5diAQvXNgxMrub",
+              "name": "Groq account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "39c87e44-6f0f-46c4-9403-e8772660f722",
+          "name": "Combine Agent Outputs1",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            640,
+            288
+          ],
+          "parameters": {
+            "mode": "combine",
+            "options": {},
+            "combineBy": "combineByPosition"
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "4f2df28b-d006-4961-b272-b2ed2d671c80",
+          "name": "Analyst Sub-Agent1",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            304,
+            448
+          ],
+          "parameters": {
+            "text": "=ANALYSIS TASK: {{ $json.analysis_task }}\nTOPIC: {{ $json.topic }}\n\nSOURCE MATERIAL:\n{{ $json.research_context }}\n\nProvide deep analysis covering:\n1. Emerging Trends & Patterns\n2. Market/Industry Implications\n3. Key Risks and Challenges\n4. Competitive Landscape\n5. 12-Month Future Projections\n\nBe analytical, specific, and strategic.",
+            "options": {
+              "systemMessage": "You are a specialist research analyst."
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "34c15150-41b5-4e51-bd16-67d733b63ef9",
+          "name": "OpenAi Analyst LLM1",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+          "position": [
+            352,
+            672
+          ],
+          "parameters": {
+            "model": "openai/gpt-oss-20b",
+            "options": {}
+          },
+          "credentials": {
+            "openRouterApi": {
+              "id": "2GKSHIcivT82FpN1",
+              "name": "OpenRouter account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "16c5e97b-dcfb-4b0a-973b-d39c155e3894",
+          "name": "Synthesis Agent1",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            832,
+            288
+          ],
+          "parameters": {
+            "text": "=You are the final synthesis agent. Create the definitive research report.\n\nTOPIC: {{ $(\"Set Research Topic1\").first().json.topic }}\n\nSUMMARY AGENT OUTPUT:\n{{ $json.output || \"\" }}\n\nCreate a final executive research report in markdown:\n\n# Executive Summary\n## Key Findings\n## Trend Analysis\n## Strategic Implications\n## Recommended Actions\n## Research Confidence",
+            "options": {
+              "systemMessage": "You are an expert intelligence analyst."
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "ad432ae6-1cea-431c-808d-61ffe68e7b7a",
+          "name": "Save Report to Notion1",
+          "type": "n8n-nodes-base.notion",
+          "position": [
+            1424,
+            80
+          ],
+          "parameters": {
+            "title": "={{ $(\"Set Research Topic1\").first().json.topic + \" — \" + $now.format(\"yyyy-MM-dd\") }}",
+            "blockUi": {
+              "blockValues": [
+                {
+                  "textContent": "Executive Research Report"
+                },
+                {
+                  "textContent": "={{ $json.chunk }}"
+                }
+              ]
+            },
+            "options": {
+              "icon": "🔬",
+              "iconType": "emoji"
+            },
+            "resource": "databasePage",
+            "databaseId": {
+              "__rl": true,
+              "mode": "url",
+              "value": "https://www.notion.so/35802106fce7800e8126c00c71bdb530?v=35802106fce7804fb9fc000c5d131b48&source=copy_link"
+            },
+            "authentication": "oAuth2"
+          },
+          "credentials": {
+            "notionOAuth2Api": {
+              "id": "4CtjiS7UhglKCnGu",
+              "name": "Notion OAuth2 API"
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "8c0d13b1-b0d3-4646-b342-e385662035f2",
+          "name": "Final Report Output1",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            1232,
+            304
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "1",
+                  "name": "status",
+                  "type": "string",
+                  "value": "completed"
+                },
+                {
+                  "id": "2",
+                  "name": "topic",
+                  "type": "string",
+                  "value": "={{ $(\"Set Research Topic1\").first().json.topic }}"
+                },
+                {
+                  "id": "3",
+                  "name": "session_id",
+                  "type": "string",
+                  "value": "={{ $(\"Set Research Topic1\").first().json.session_id }}"
+                },
+                {
+                  "id": "4",
+                  "name": "agents_used",
+                  "type": "string",
+                  "value": "Orchestrator, Summarizer, Analyst, Synthesizer"
+                },
+                {
+                  "id": "5",
+                  "name": "report",
+                  "type": "string",
+                  "value": "={{ $(\"Synthesis Agent1\").first().json.output || \"Completed\" }}"
+                },
+                {
+                  "id": "6",
+                  "name": "completed_at",
+                  "type": "string",
+                  "value": "={{ $now.toISO() }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "f06efcae-973e-4bb9-8acc-d1a66a89d001",
+          "name": "Supabase Vector Store1",
+          "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+          "position": [
+            1456,
+            304
+          ],
+          "parameters": {
+            "mode": "insert",
+            "options": {},
+            "tableName": {
+              "__rl": true,
+              "mode": "list",
+              "value": "documents",
+              "cachedResultName": "documents"
+            }
+          },
+          "credentials": {
+            "supabaseApi": {
+              "id": "IAJN4LKHImYNezrV",
+              "name": "Supabase account"
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "0334fb0a-2c1a-4957-8c26-a9509224f130",
+          "name": "Embeddings OpenAI1",
+          "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+          "position": [
+            1472,
+            528
+          ],
+          "parameters": {
+            "options": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": null,
+              "name": "",
+              "__aiGatewayManaged": true
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "185d17ed-3e3e-4036-bc7f-4c616b61e148",
+          "name": "Default Data Loader1",
+          "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+          "position": [
+            1600,
+            528
+          ],
+          "parameters": {
+            "options": {
+              "metadata": {
+                "metadataValues": [
+                  {
+                    "name": "topic",
+                    "value": "={{ $json.topic }}"
+                  },
+                  {
+                    "name": "session_id",
+                    "value": "={{ $json.session_id }}"
+                  },
+                  {
+                    "name": "completed_at",
+                    "value": "={{ $json.completed_at }}"
+                  }
+                ]
+              }
+            },
+            "jsonData": "={{ $json.report }}",
+            "jsonMode": "expressionData",
+            "textSplittingMode": "custom"
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "306311f7-de67-4356-a5be-029b95611ea2",
+          "name": "Recursive Character Text Splitter1",
+          "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+          "position": [
+            1600,
+            736
+          ],
+          "parameters": {
+            "options": {
+              "splitCode": "markdown"
+            },
+            "chunkOverlap": 200
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "355286cc-9888-4bed-b733-a7d88a473fa3",
+          "name": "Main Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2368,
+            -96
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 864,
+            "height": 1004,
+            "content": "## 🔬 AI Research Agent — Multi-Source Intelligence Report\n\nThis workflow runs a fully automated multi-agent research pipeline that searches the web across three parallel queries, processes the results through specialized AI sub-agents, synthesizes a structured executive report, saves it to Notion, and indexes it in a Supabase vector store for semantic retrieval.\n\n**Perfect for:** Strategy teams, analysts, and knowledge managers who need on-demand, AI-generated intelligence reports on any topic.\n\n---\n\n## How it works\n\n1. **Start Research** — Manually triggers the research run.\n2. **Set Research Topic1** — Defines the research topic, depth level, and generates a unique session ID.\n3. **Parse Orchestrator Tasks1** — Extracts three tailored search queries and sub-agent task prompts from the topic config.\n4. **Web Search Query** — Executes the first Tavily advanced search (query 1).\n5. **Web Search Query 4** — Executes the second Tavily advanced search (query 2) in parallel.\n6. **Web Search Query 5** — Executes the third Tavily advanced search (query 3) in parallel.\n7. **Merge Search Results1** — Waits for all three searches and combines their outputs.\n8. **Aggregate Research Context1** — Flattens and deduplicates all search snippets into a single research context block.\n9. **Summarizer Sub-Agent1** — Groq Llama 3.3 70B agent that produces a structured factual summary with key statistics and developments.\n10. **Summarizer LLM1** — Provides the Groq Llama 3.3 70B language model to the Summarizer Sub-Agent.\n11. **Analyst Sub-Agent1** — OpenRouter GPT agent that performs deep trend analysis, risk assessment, and 12-month projections.\n12. **OpenAi Analyst LLM1** — Provides the OpenRouter GPT-OSS 20B model to the Analyst Sub-Agent.\n13. **Combine Agent Outputs1** — Merges the summarizer and analyst outputs side-by-side.\n14. **Groq Chat Model** — Provides the Groq Llama 3.3 70B model to the Synthesis Agent.\n15. **Synthesis Agent1** — Final Groq agent that writes the definitive executive research report in structured markdown.\n16. **Final Report Output1** — Packages the completed report with metadata (topic, session ID, agents used, timestamp).\n17. **Code in JavaScript** — Splits the report into 1,900-character chunks for Notion's block size limits.\n18. **Save Report to Notion1** — Creates a new database page in Notion and writes all report chunks as content blocks.\n19. **Supabase Vector Store1** — Inserts the report into a Supabase `documents` table as vector embeddings for semantic search.\n20. **Embeddings OpenAI1** — Generates OpenAI embeddings for the report text before insertion.\n21. **Default Data Loader1** — Loads the report JSON with metadata into the document pipeline.\n22. **Recursive Character Text Splitter1** — Splits the report text using markdown-aware chunking with 200-token overlap.\n\n---\n\n## Setup (~15 minutes)\n\n1. **Tavily API** — Replace the hardcoded `api_key` value in *Web Search Query*, *Web Search Query 4*, and *Web Search Query 5* with your own key from tavily.com.\n2. **Groq API** — Add your Groq credential in the *Summarizer LLM1* and *Groq Chat Model* nodes.\n3. **OpenRouter API** — Add your OpenRouter credential in the *OpenAi Analyst LLM1* node.\n4. **Notion OAuth2** — Connect your Notion account and set the correct `databaseId` in the *Save Report to Notion1* node.\n5. **Supabase** — Add your Supabase credential and confirm the `documents` table exists with a vector column in *Supabase Vector Store1*.\n6. **OpenAI Embeddings** — Add your OpenAI API key (or use AI Gateway) in the *Embeddings OpenAI1* node.\n> ⚠️ The Tavily API key in this workflow is a dev/demo key — replace it before production use. Groq and OpenRouter usage may incur costs depending on your plan."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "04d1aea2-de68-4c96-8e2e-1721aa6ee727",
+          "name": "Section 1: Trigger & Topic Setup",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1456,
+            160
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 792,
+            "height": 396,
+            "content": "## 1️⃣ Trigger & Topic Setup\n\nThe **Start Research** node manually kicks off the workflow on demand. **Set Research Topic1** defines the target research subject (defaulting to \"AI Automation Trends 2026\"), the desired depth, and stamps the run with a unique millisecond session ID. **Parse Orchestrator Tasks1** then decodes those settings into three distinct Tavily search queries and individual task descriptions for the downstream summarizer, analyst, and synthesis agents."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "3ccc0813-56c6-4a52-a570-759f7903035b",
+          "name": "Section 2: Parallel Web Research",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -624,
+            0
+          ],
+          "parameters": {
+            "color": 3,
+            "width": 792,
+            "height": 716,
+            "content": "## 2️⃣ Parallel Web Research\n\n**Web Search Query**, **Web Search Query 4**, and **Web Search Query 5** fire simultaneously against the Tavily advanced search API, each targeting a different angle of the research topic and returning up to five high-quality results. **Merge Search Results1** collects all three streams and passes the combined data to **Aggregate Research Context1**, which flattens all snippets into a single, deduplicated research context block (capped at 12 sources) ready for AI processing."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f677e39e-5ba2-404a-adf7-d057ed77c1d7",
+          "name": "Section 3: Multi-Agent AI Analysis",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            192,
+            -112
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 952,
+            "height": 920,
+            "content": "## 3️⃣ Multi-Agent AI Analysis\n\nThe aggregated research context is split into two parallel AI tracks. **Summarizer Sub-Agent1** (powered by **Summarizer LLM1**, Groq Llama 3.3 70B) extracts key facts, statistics, and major developments into a structured summary. Concurrently, **Analyst Sub-Agent1** (powered by **OpenAi Analyst LLM1**, OpenRouter GPT-OSS 20B) performs deep trend analysis, competitive landscape assessment, and 12-month projections. **Combine Agent Outputs1** merges both outputs, which are then passed to **Synthesis Agent1** — backed by **Groq Chat Model** (Llama 3.3 70B) — to produce the final structured executive research report in markdown format."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "e93c2e18-9865-4586-a2ea-8120b09875b9",
+          "name": "Section 4: Output & Vector Storage",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1184,
+            -144
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 708,
+            "height": 1028,
+            "content": "## 4️⃣ Output & Vector Storage\n\n**Final Report Output1** bundles the completed report with full metadata including topic, session ID, and a list of agents used. **Code in JavaScript** then chunks the report into 1,900-character segments to comply with Notion's block limits, and **Save Report to Notion1** writes each chunk as a content block under a new timestamped database page. In parallel, **Supabase Vector Store1** persists the full report as vector embeddings — using **Embeddings OpenAI1** for embedding generation, **Default Data Loader1** to attach metadata, and **Recursive Character Text Splitter1** to split the markdown text with 200-token overlap — enabling future semantic search and retrieval."
+          },
+          "typeVersion": 1
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "binaryMode": "separate",
+        "executionOrder": "v1"
+      },
+      "versionId": "2abe98ab-4998-482f-88c3-b13c1e6bd30d",
+      "connections": {
+        "Start Research": {
+          "main": [
+            [
+              {
+                "node": "Set Research Topic1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Groq Chat Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Synthesis Agent1",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Summarizer LLM1": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Summarizer Sub-Agent1",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Synthesis Agent1": {
+          "main": [
+            [
+              {
+                "node": "Final Report Output1",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Code in JavaScript",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Web Search Query ": {
+          "main": [
+            [
+              {
+                "node": "Merge Search Results1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Analyst Sub-Agent1": {
+          "main": [
+            [
+              {
+                "node": "Combine Agent Outputs1",
+                "type": "main",
+                "index": 1
+              }
+            ]
+          ]
+        },
+        "Code in JavaScript": {
+          "main": [
+            [
+              {
+                "node": "Save Report to Notion1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Embeddings OpenAI1": {
+          "ai_embedding": [
+            [
+              {
+                "node": "Supabase Vector Store1",
+                "type": "ai_embedding",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Web Search Query 4": {
+          "main": [
+            [
+              {
+                "node": "Merge Search Results1",
+                "type": "main",
+                "index": 1
+              }
+            ]
+          ]
+        },
+        "Web Search Query 5": {
+          "main": [
+            [
+              {
+                "node": "Merge Search Results1",
+                "type": "main",
+                "index": 2
+              }
+            ]
+          ]
+        },
+        "OpenAi Analyst LLM1": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Analyst Sub-Agent1",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Set Research Topic1": {
+          "main": [
+            [
+              {
+                "node": "Parse Orchestrator Tasks1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Default Data Loader1": {
+          "ai_document": [
+            [
+              {
+                "node": "Supabase Vector Store1",
+                "type": "ai_document",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Final Report Output1": {
+          "main": [
+            [
+              {
+                "node": "Supabase Vector Store1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Merge Search Results1": {
+          "main": [
+            [
+              {
+                "node": "Aggregate Research Context1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Summarizer Sub-Agent1": {
+          "main": [
+            [
+              {
+                "node": "Combine Agent Outputs1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Combine Agent Outputs1": {
+          "main": [
+            [
+              {
+                "node": "Synthesis Agent1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Parse Orchestrator Tasks1": {
+          "main": [
+            [
+              {
+                "node": "Web Search Query ",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Web Search Query 4",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Web Search Query 5",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Aggregate Research Context1": {
+          "main": [
+            [
+              {
+                "node": "Summarizer Sub-Agent1",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Analyst Sub-Agent1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Recursive Character Text Splitter1": {
+          "ai_textSplitter": [
+            [
+              {
+                "node": "Default Data Loader1",
+                "type": "ai_textSplitter",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 27,
+      "nodeTypes": {
+        "n8n-nodes-base.set": {
+          "count": 2
+        },
+        "n8n-nodes-base.code": {
+          "count": 3
+        },
+        "n8n-nodes-base.merge": {
+          "count": 2
+        },
+        "n8n-nodes-base.notion": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 5
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 3
+        },
+        "n8n-nodes-base.manualTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 3
+        },
+        "@n8n/n8n-nodes-langchain.lmChatGroq": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.embeddingsOpenAi": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenRouter": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.vectorStoreSupabase": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.documentDefaultDataLoader": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Redowan Ahmed Farhan",
+      "username": "redowanfarhan",
+      "bio": "Automation focused builder creating practical, scalable workflows with n8n. I design real world automations that reduce manual work, improve efficiency, and connect tools seamlessly. Here to contribute by sharing reusable workflows, exploring use cases, and learning from the community while building reliable, impactful systems.\n",
+      "verified": false,
+      "links": [
+        ""
+      ],
+      "avatar": "https://gravatar.com/avatar/6f87cd2199c26ec1a0b3b72c8352a0ddeaeafafef24d3301963cc2c126d5e084?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 24,
+        "icon": "file:merge.svg",
+        "name": "n8n-nodes-base.merge",
+        "codex": {
+          "data": {
+            "alias": [
+              "Join",
+              "Concatenate",
+              "Wait"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-sync-data-between-two-systems/",
+                  "icon": "🏬",
+                  "label": "How to synchronize data between two systems (one-way vs. two-way sync"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.merge/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Merge"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTc3XzUxOCkiPgo8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTAgNDhDMCAyMS40OTAzIDIxLjQ5MDMgMCA0OCAwSDExMkMxMzguNTEgMCAxNjAgMjEuNDkwMyAxNjAgNDhWNTZIMTk2LjI1MkMyNDAuNDM1IDU2IDI3Ni4yNTIgOTEuODE3MiAyNzYuMjUyIDEzNlYxOTJDMjc2LjI1MiAyMTQuMDkxIDI5NC4xNjEgMjMyIDMxNi4yNTIgMjMySDM1MlYyMjRDMzUyIDE5Ny40OSAzNzMuNDkgMTc2IDQwMCAxNzZINDY0QzQ5MC41MSAxNzYgNTEyIDE5Ny40OSA1MTIgMjI0VjI4OEM1MTIgMzE0LjUxIDQ5MC41MSAzMzYgNDY0IDMzNkg0MDBDMzczLjQ5IDMzNiAzNTIgMzE0LjUxIDM1MiAyODhWMjgwSDMxNi4yNTJDMjk0LjE2MSAyODAgMjc2LjI1MiAyOTcuOTA5IDI3Ni4yNTIgMzIwVjM3NkMyNzYuMjUyIDQyMC4xODMgMjQwLjQzNSA0NTYgMTk2LjI1MiA0NTZIMTYwVjQ2NEMxNjAgNDkwLjUxIDEzOC41MSA1MTIgMTEyIDUxMkg0OEMyMS40OTAzIDUxMiAwIDQ5MC41MSAwIDQ2NFY0MDBDMCAzNzMuNDkgMjEuNDkwMyAzNTIgNDggMzUySDExMkMxMzguNTEgMzUyIDE2MCAzNzMuNDkgMTYwIDQwMFY0MDhIMTk2LjI1MkMyMTMuOTI1IDQwOCAyMjguMjUyIDM5My42NzMgMjI4LjI1MiAzNzZWMzIwQzIyOC4yNTIgMjk0Ljc4NCAyMzguODU5IDI3Mi4wNDQgMjU1Ljg1MyAyNTZDMjM4Ljg1OSAyMzkuOTU2IDIyOC4yNTIgMjE3LjIxNiAyMjguMjUyIDE5MlYxMzZDMjI4LjI1MiAxMTguMzI3IDIxMy45MjUgMTA0IDE5Ni4yNTIgMTA0SDE2MFYxMTJDMTYwIDEzOC41MSAxMzguNTEgMTYwIDExMiAxNjBINDhDMjEuNDkwMyAxNjAgMCAxMzguNTEgMCAxMTJWNDhaTTEwNCA0OEMxMDguNDE4IDQ4IDExMiA1MS41ODE3IDExMiA1NlYxMDRDMTEyIDEwOC40MTggMTA4LjQxOCAxMTIgMTA0IDExMkg1NkM1MS41ODE3IDExMiA0OCAxMDguNDE4IDQ4IDEwNFY1NkM0OCA1MS41ODE3IDUxLjU4MTcgNDggNTYgNDhIMTA0Wk00NTYgMjI0QzQ2MC40MTggMjI0IDQ2NCAyMjcuNTgyIDQ2NCAyMzJWMjgwQzQ2NCAyODQuNDE4IDQ2MC40MTggMjg4IDQ1NiAyODhINDA4QzQwMy41ODIgMjg4IDQwMCAyODQuNDE4IDQwMCAyODBWMjMyQzQwMCAyMjcuNTgyIDQwMy41ODIgMjI0IDQwOCAyMjRINDU2Wk0xMTIgNDA4QzExMiA0MDMuNTgyIDEwOC40MTggNDAwIDEwNCA0MDBINTZDNTEuNTgxNyA0MDAgNDggNDAzLjU4MiA0OCA0MDhWNDU2QzQ4IDQ2MC40MTggNTEuNTgxNyA0NjQgNTYgNDY0SDEwNEMxMDguNDE4IDQ2NCAxMTIgNDYwLjQxOCAxMTIgNDU2VjQwOFoiIGZpbGw9IiM1NEI4QzkiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTc3XzUxOCI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Merge",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 487,
+        "icon": "file:notion.svg",
+        "name": "n8n-nodes-base.notion",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.notion/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/notion/"
+                }
+              ]
+            },
+            "categories": [
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Notion"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik03LjU4Mjc2IDYuOTc2NzlDOC44MjA0NyA3Ljk4MjM4IDkuMjg0NzkgNy45MDU2NiAxMS42MDkxIDcuNzUwNTdMMzMuNTIwNiA2LjQzNDg4QzMzLjk4NTMgNi40MzQ4OCAzMy41OTg5IDUuOTcxMjcgMzMuNDQzOSA1Ljg5NDIzTDI5LjgwNDkgMy4yNjM0OEMyOS4xMDc2IDIuNzIyMTMgMjguMTc4NiAyLjEwMjE3IDI2LjM5ODIgMi4yNTcyNkw1LjE4MTE1IDMuODA0NzZDNC40MDczNiAzLjg4MTQ4IDQuMjUyODIgNC4yNjgzNyA0LjU2MDk2IDQuNTc4NDdMNy41ODI3NiA2Ljk3Njc5Wk04Ljg5ODI5IDEyLjA4MzNWMzUuMTM4MUM4Ljg5ODI5IDM2LjM3NzEgOS41MTc0NiAzNi44NDA3IDEwLjkxMSAzNi43NjRMMzQuOTkxOSAzNS4zNzA2QzM2LjM4NjIgMzUuMjkzOSAzNi41NDE1IDM0LjQ0MTcgMzYuNTQxNSAzMy40MzUyVjEwLjUzNTFDMzYuNTQxNSA5LjUzMDE5IDM2LjE1NDkgOC45ODgyOSAzNS4zMDE0IDkuMDY1NjRMMTAuMTM2NyAxMC41MzUxQzkuMjA3OTkgMTAuNjEzMSA4Ljg5ODIxIDExLjA3NzcgOC44OTgyMSAxMi4wODMzSDguODk4MjlaTTMyLjY3MDggMTMuMzJDMzIuODI1MiAxNC4wMTcgMzIuNjcwOCAxNC43MTMzIDMxLjk3MjUgMTQuNzkxN0wzMC44MTIzIDE1LjAyMjlWMzIuMDQzNEMyOS44MDQ5IDMyLjU4NDggMjguODc1OSAzMi44OTQ0IDI4LjEwMTggMzIuODk0NEMyNi44NjI1IDMyLjg5NDQgMjYuNTUyMSAzMi41MDcyIDI1LjYyMzcgMzEuMzQ3NEwxOC4wMzQzIDE5LjQzMjlWMzAuOTYwNUwyMC40MzU5IDMxLjUwMjRDMjAuNDM1OSAzMS41MDI0IDIwLjQzNTkgMzIuODk0NCAxOC40OTgzIDMyLjg5NDRMMTMuMTU2OCAzMy4yMDQyQzEzLjAwMTYgMzIuODk0NCAxMy4xNTY4IDMyLjEyMTQgMTMuNjk4NiAzMS45NjY1TDE1LjA5MjUgMzEuNTgwMlYxNi4zMzg1TDEzLjE1NzIgMTYuMTgzNEMxMy4wMDE5IDE1LjQ4NjQgMTMuMzg4NSAxNC40ODE0IDE0LjQ3MzMgMTQuNDAzNUwyMC4yMDM1IDE0LjAxNzJMMjguMTAxOCAyNi4wODY4VjE1LjQwOTdMMjYuMDg4MSAxNS4xNzg2QzI1LjkzMzUgMTQuMzI2NSAyNi41NTIxIDEzLjcwNzggMjcuMzI2NSAxMy42MzExTDMyLjY3MDggMTMuMzJaTTMuMzk5NzMgMS43MTU5OEwyNS40Njg4IDAuMDkwNzQ1N0MyOC4xNzkgLTAuMTQxNjg4IDI4Ljg3NjMgMC4wMTQwMjQ1IDMwLjU3OTYgMS4yNTEzNUwzNy42MjQzIDYuMjAyNzZDMzguNzg2NyA3LjA1NDIxIDM5LjE3NDIgNy4yODYwMiAzOS4xNzQyIDguMjE0MTlWMzUuMzcwNkMzOS4xNzQyIDM3LjA3MjYgMzguNTU0MiAzOC4wNzkxIDM2LjM4NjUgMzguMjMzMUwxMC43NTc3IDM5Ljc4MDdDOS4xMzA0OSAzOS44NTgzIDguMzU2MDcgMzkuNjI2NCA3LjUwMzkyIDM4LjU0MjZMMi4zMTYwOCAzMS44MTE3QzEuMzg2NTggMzAuNTcyNiAxIDI5LjY0NTcgMSAyOC41NjEzVjQuNDIyODNDMSAzLjAzMTA1IDEuNjIwMTkgMS44NzAwNSAzLjM5OTczIDEuNzE1OThWMS43MTU5OFoiIGZpbGw9ImJsYWNrIi8+Cjwvc3ZnPgo="
+        },
+        "displayName": "Notion",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 838,
+        "icon": "fa:mouse-pointer",
+        "name": "n8n-nodes-base.manualTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.manualworkflowtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "When clicking ‘Execute workflow’",
+          "color": "#909298"
+        },
+        "iconData": {
+          "icon": "mouse-pointer",
+          "type": "icon"
+        },
+        "displayName": "Manual Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1141,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.embeddingsopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Embeddings"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Embeddings OpenAI"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "Embeddings OpenAI",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1191,
+        "icon": "fa:grip-lines-vertical",
+        "name": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.textsplitterrecursivecharactertextsplitter/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Text Splitters"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Recursive Character Text Splitter"
+        },
+        "iconData": {
+          "icon": "grip-lines-vertical",
+          "type": "icon"
+        },
+        "displayName": "Recursive Character Text Splitter",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1231,
+        "icon": "file:supabase.svg",
+        "name": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.vectorstoresupabase/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Vector Stores",
+                "Tools",
+                "Root Nodes"
+              ],
+              "Tools": [
+                "Other Tools"
+              ],
+              "Vector Stores": [
+                "Other Vector Stores"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Supabase Vector Store"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDkiIGhlaWdodD0iMTEzIiBmaWxsPSJub25lIj48cGF0aCBmaWxsPSJ1cmwoI2EpIiBkPSJNNjMuNzA4IDExMC4yODRjLTIuODYgMy42MDEtOC42NTggMS42MjgtOC43MjctMi45N2wtMS4wMDctNjcuMjUxaDQ1LjIyYzguMTkgMCAxMi43NTggOS40NiA3LjY2NSAxNS44NzR6Ii8+PHBhdGggZmlsbD0idXJsKCNiKSIgZmlsbC1vcGFjaXR5PSIuMiIgZD0iTTYzLjcwOCAxMTAuMjg0Yy0yLjg2IDMuNjAxLTguNjU4IDEuNjI4LTguNzI3LTIuOTdsLTEuMDA3LTY3LjI1MWg0NS4yMmM4LjE5IDAgMTIuNzU4IDkuNDYgNy42NjUgMTUuODc0eiIvPjxwYXRoIGZpbGw9IiMzRUNGOEUiIGQ9Ik00NS4zMTcgMi4wNzFjMi44Ni0zLjYwMSA4LjY1Ny0xLjYyOCA4LjcyNiAyLjk3bC40NDIgNjcuMjUxSDkuODNjLTguMTkgMC0xMi43NTktOS40Ni03LjY2NS0xNS44NzV6Ii8+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJhIiB4MT0iNTMuOTc0IiB4Mj0iOTQuMTYzIiB5MT0iNTQuOTc0IiB5Mj0iNzEuODI5IiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHN0b3Agc3RvcC1jb2xvcj0iIzI0OTM2MSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzNFQ0Y4RSIvPjwvbGluZWFyR3JhZGllbnQ+PGxpbmVhckdyYWRpZW50IGlkPSJiIiB4MT0iMzYuMTU2IiB4Mj0iNTQuNDg0IiB5MT0iMzAuNTc4IiB5Mj0iNjUuMDgxIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHN0b3AvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1vcGFjaXR5PSIwIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PC9zdmc+"
+        },
+        "displayName": "Supabase Vector Store",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1243,
+        "icon": "file:binary.svg",
+        "name": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.documentdefaultdataloader/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Document Loaders"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Default Data Loader"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI3NjgiIGhlaWdodD0iMTAyNCI+PHBhdGggZmlsbD0iIzdEN0Q4NyIgZD0iTTAgOTYwVjY0aDU3NmwxOTIgMTkydjcwNHptNzA0LTY0MEw1MTIgMTI4SDY0djc2OGg2NDB6TTMyMCA1MTJIMTI4VjI1NmgxOTJ6bS02NC0xOTJoLTY0djEyOGg2NHptMCA0NDhoNjR2NjRIMTI4di02NGg2NFY2NDBoLTY0di02NGgxMjh6bTI1Ni0zMjBoNjR2NjRIMzg0di02NGg2NFYzMjBoLTY0di02NGgxMjh6bTY0IDM4NEgzODRWNTc2aDE5MnptLTY0LTE5MmgtNjR2MTI4aDY0eiIvPjwvc3ZnPg=="
+        },
+        "displayName": "Default Data Loader",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1263,
+        "icon": "file:groq.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatGroq",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatgroq/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Groq Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjxzdmcKICAgaWQ9IkxheWVyXzIiCiAgIHZpZXdCb3g9IjAgMCA0OTkuOTk5OTkgNDk5Ljk5OTk5IgogICB2ZXJzaW9uPSIxLjEiCiAgIHdpZHRoPSI1MDAiCiAgIGhlaWdodD0iNTAwIgogICB4bWw6c3BhY2U9InByZXNlcnZlIgogICB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciCiAgIHhtbG5zOnN2Zz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxkZWZzCiAgICAgaWQ9ImRlZnM0IiAvPjxnCiAgICAgaWQ9IlBBR0VTIj48Y2lyY2xlCiAgICAgICBzdHlsZT0iZmlsbDojZjU0ZjM1O2ZpbGwtb3BhY2l0eToxO3N0cm9rZS13aWR0aDoxLjEzNjIyIgogICAgICAgaWQ9InBhdGg0IgogICAgICAgY3g9IjI1MCIKICAgICAgIGN5PSIyNTAiCiAgICAgICByPSIyNTAiIC8+PHBhdGgKICAgICAgIGQ9Ik0gMjUwLjUzNjY0LDk3LjEyMjk5NCBDIDE5Mi43MTkzMSw5Ni41ODg2MzggMTQ1LjQ4MjIyLDE0Mi45NzA3NSAxNDQuOTQ3ODYsMjAwLjc4ODA4IGMgLTAuNTM0MzQsNTcuODE3MzMgNDUuODQ3NzcsMTA1LjA1NDQyIDEwMy42NjUxLDEwNS41ODg3NyBoIDM2LjMzNjIxIHYgLTM5LjIyMTc0IGggLTM0LjQxMjUzIGMgLTM2LjEyMjQ4LDAuNDI3NSAtNjUuNzI1OCwtMjguNTM0NjIgLTY2LjE1MzI5LC02NC42NTcwOCAtMC40Mjc0OSwtMzYuMTIyNDggMjguNTM0NjMsLTY1LjcyNTgxIDY0LjY1NzA4LC02Ni4xNTMzIGggMS40OTYyMSBjIDM2LjEyMjQ4LDAgNjUuNDA1MiwyOS4yODI3MiA2NS41MTIwNyw2NS40MDUyIHYgMCA5Ni4zOTc4MyAwIGMgMCwzNS44MDE4NyAtMjkuMTc1ODUsNjQuOTc3NzMgLTY0Ljg3MDgzLDY1LjQwNTIxIC0xNy4wOTk0MSwtMC4xMDY4OCAtMzMuNDUwNzEsLTcuMDUzNTEgLTQ1LjUyNzE3LC0xOS4xMjk5NSBsIC0yNy43ODY1LDI3Ljc4NjUxIGMgMTkuMjM2ODEsMTkuMzQzNyA0NS4zMTMzOSwzMC4zNTE0MyA3Mi41NjU1NiwzMC42NzIwNSBoIDEuMzg5MzMgYyA1Ny4wNjkyNCwtMC44NTQ5NyAxMDIuOTE3LC00Ny4xMzAyMiAxMDMuMjM3NiwtMTA0LjE5OTQ1IFYgMTk5LjI5MTg5IEMgMzUzLjY2NzM5LDE0Mi40MzYzOSAzMDcuMjg1MjcsOTcuMTIyOTk0IDI1MC41MzY2NCw5Ny4xMjI5OTQgWiIKICAgICAgIHN0eWxlPSJmaWxsOiNmZmZmZmY7c3Ryb2tlLXdpZHRoOjBweCIKICAgICAgIGlkPSJwYXRoMS0zIiAvPjwvZz48L3N2Zz4K"
+        },
+        "displayName": "Groq Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1281,
+        "icon": "file:openrouter.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenrouter/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenRouter Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyBmaWxsPSIjOTRBM0I4IiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDI0IDI0IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjx0aXRsZT5PcGVuUm91dGVyPC90aXRsZT48cGF0aCBkPSJNMTYuODA0IDEuOTU3bDcuMjIgNC4xMDV2LjA4N0wxNi43MyAxMC4yMWwuMDE3LTIuMTE3LS44MjEtLjAzYy0xLjA1OS0uMDI4LTEuNjExLjAwMi0yLjI2OC4xMS0xLjA2NC4xNzUtMi4wMzguNTc3LTMuMTQ3IDEuMzUyTDguMzQ1IDExLjAzYy0uMjg0LjE5NS0uNDk1LjMzNi0uNjguNDU1bC0uNTE1LjMyMi0uMzk3LjIzNC4zODUuMjMuNTMuMzM4Yy40NzYuMzE0IDEuMTcuNzk2IDIuNzAxIDEuODY2IDEuMTEuNzc1IDIuMDgzIDEuMTc3IDMuMTQ3IDEuMzUybC4zLjA0NWMuNjk0LjA5MSAxLjM3NS4wOTQgMi44MjUuMDMzbC4wMjItMi4xNTkgNy4yMiA0LjEwNXYuMDg3TDE2LjU4OSAyMmwuMDE0LTEuODYyLS42MzUuMDIyYy0xLjM4Ni4wNDItMi4xMzcuMDAyLTMuMTM4LS4xNjItMS42OTQtLjI4LTMuMjYtLjkyNi00Ljg4MS0yLjA1OWwtMi4xNTgtMS41YTIxLjk5NyAyMS45OTcgMCAwMC0uNzU1LS40OThsLS40NjctLjI4YTU1LjkyNyA1NS45MjcgMCAwMC0uNzYtLjQzQzIuOTA4IDE0LjczLjU2MyAxNC4xMTYgMCAxNC4xMTZWOS44ODhsLjE0LjAwNGMuNTY0LS4wMDcgMi45MS0uNjIyIDMuODA5LTEuMTI0bDEuMDE2LS41OC40MzgtLjI3NGMuNDI4LS4yOCAxLjA3Mi0uNzI2IDIuNjg2LTEuODUzIDEuNjIxLTEuMTMzIDMuMTg2LTEuNzggNC44ODEtMi4wNTkgMS4xNTItLjE5IDEuOTc0LS4yMTMgMy44MTQtLjEzOGwuMDItMS45MDd6Ij48L3BhdGg+PC9zdmc+Cg=="
+        },
+        "displayName": "OpenRouter Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 32,
+        "name": "Market Research"
+      },
+      {
+        "id": 48,
+        "name": "AI RAG"
+      }
+    ],
+    "image": [
+      {
+        "id": 6111,
+        "url": "https://n8niostorageaccount.blob.core.windows.net/n8nio-strapi-blobs-prod/assets/faa_e26a41e854.png"
+      }
+    ]
+  }
+}

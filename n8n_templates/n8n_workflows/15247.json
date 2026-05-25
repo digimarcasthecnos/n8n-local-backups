@@ -1,0 +1,1040 @@
+{
+  "workflow": {
+    "id": 15247,
+    "name": "Enrich new Airtable leads from LinkedIn using Bright Data, GPT-5-mini and Slack",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-22T20:10:26.964Z",
+    "description": "## What this workflow does\n\nAutomatically enriches every new LinkedIn lead added to your Airtable base\nwith AI-structured data and notifies your team in Slack.\n\n## How it works\n\n1. **Airtable Trigger** polls for new leads every minute\n2. **BrightData** scrapes the LinkedIn profile\n3. **OpenAI GPT-5-mini** extracts a clean structured schema\n4. **Airtable** is updated with all enrichment fields\n5. **Slack** gets a beautifully formatted notification\n\n## Prerequisites\n- Airtable base with a \"Leads\" table (field list included)\n- BrightData account with LinkedIn people profiles dataset\n- OpenAI API key\n- Slack workspace",
+    "workflow": {
+      "id": "qFFPoauu8ecC8Yuq",
+      "meta": {
+        "instanceId": "37f2bca2fd598f27b527ebfdf677c2c580406c639c66db1192a548310f5004fe",
+        "templateCredsSetupCompleted": true
+      },
+      "name": "Enrich new CRM Leads with LinkedIn Data via Bright Data",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "d1495a05-d870-46d7-a767-8372e353b9ff",
+          "name": "Scrape LinkedIn Profile",
+          "type": "@brightdata/n8n-nodes-brightdata.brightData",
+          "position": [
+            -496,
+            1280
+          ],
+          "parameters": {
+            "urls": "=[{\"url\": \"{{ $json.fields[\"LinkedIn URL\"] }}\"}]",
+            "resource": "webScrapper",
+            "dataset_id": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gd_l1viktl72bvl7bjuj0",
+              "cachedResultName": "LinkedIn people profiles"
+            },
+            "requestOptions": {}
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ca3c95e3-9a88-47ff-a011-81b899ca8f05",
+          "name": "Extract Structured Data",
+          "type": "@n8n/n8n-nodes-langchain.openAi",
+          "position": [
+            -176,
+            1520
+          ],
+          "parameters": {
+            "modelId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-5-mini",
+              "cachedResultName": "GPT-5-MINI"
+            },
+            "options": {
+              "textFormat": {
+                "textOptions": {
+                  "type": "json_object"
+                }
+              }
+            },
+            "responses": {
+              "values": [
+                {
+                  "role": "system",
+                  "content": "You are a LinkedIn profile data extractor. Extract structured data from the LinkedIn profile JSON provided and return ONLY a valid JSON object matching this exact schema. No prose, no commentary, no markdown fences.\n\nSchema:\n{\n  \"current_title\": \"string or null\",\n  \"current_company\": \"string or null\",\n  \"seniority_level\": \"IC | Manager | Director | VP | C-level | Founder | Unknown\",\n  \"years_experience_estimate\": \"number or null\",\n  \"industry\": \"string or null\",\n  \"location_city\": \"string or null\",\n  \"location_country\": \"string or null\",\n  \"tech_stack\": [\"array of technologies, tools, programming languages, or domain skills\"],\n  \"top_certifications\": [\"array of max 3 most relevant certifications\"],\n  \"one_line_summary\": \"string, 1 sentence professional summary\"\n}\n\nRules:\n- Infer seniority from title, experience, and position\n- Infer tech_stack from experience, activity posts, and about sections\n- Use country codes from country_code field or infer from city\n- If a field cannot be determined, return null or empty array\n- Return valid JSON only, no code blocks"
+                },
+                {
+                  "content": "=LinkedIn profile data:\n\n{{ JSON.stringify($json) }}"
+                }
+              ]
+            },
+            "builtInTools": {}
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "99e5dbfb-d992-4b72-893f-c0f90d20f2a8",
+          "name": "Update Airtable Record",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            304,
+            1696
+          ],
+          "parameters": {
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "YOUR_AIRTABLE_BASE_ID",
+              "cachedResultUrl": "",
+              "cachedResultName": "Lead Enrichment"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "YOUR_AIRTABLE_TABLE_ID",
+              "cachedResultUrl": "",
+              "cachedResultName": "Leads"
+            },
+            "columns": {
+              "value": {
+                "id": "={{ $('Airtable Trigger1').item.json.id }}",
+                "Status": "Enriched",
+                "Industry": "={{ $json.output[0].content[0].text.industry }}",
+                "Job Title": "={{ $json.output[0].content[0].text.current_title }}",
+                "AI Summary": "={{ $json.output[0].content[0].text.one_line_summary }}",
+                "Tech Stack": "={{ $json.output[0].content[0].text.tech_stack.join(\", \") }}",
+                "Enriched At": "={{ $now.toISO() }}",
+                "Location City": "={{ $json.output[0].content[0].text.location_city }}",
+                "Current Company": "={{ $json.output[0].content[0].text.current_company }}",
+                "Seniority Level": "={{ $json.output[0].content[0].text.seniority_level }}",
+                "Location Country": "={{ $json.output[0].content[0].text.location_country }}",
+                "Years Experience": "={{ Math.round($json.output[0].content[0].text.years_experience_estimate) }}",
+                "Top Certifications": "={{ $json.output[0].content[0].text.top_certifications.join(\", \") }}"
+              },
+              "schema": [
+                {
+                  "id": "id",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": true,
+                  "required": false,
+                  "displayName": "id",
+                  "defaultMatch": true
+                },
+                {
+                  "id": "Name",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Email",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Email",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "LinkedIn URL",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "LinkedIn URL",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Source",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Manual",
+                      "value": "Manual"
+                    },
+                    {
+                      "name": "Import",
+                      "value": "Import"
+                    },
+                    {
+                      "name": "Webform",
+                      "value": "Webform"
+                    },
+                    {
+                      "name": "API",
+                      "value": "API"
+                    },
+                    {
+                      "name": "Other",
+                      "value": "Other"
+                    },
+                    {
+                      "name": "LinkedIn",
+                      "value": "LinkedIn"
+                    },
+                    {
+                      "name": "Referral",
+                      "value": "Referral"
+                    },
+                    {
+                      "name": "Website",
+                      "value": "Website"
+                    },
+                    {
+                      "name": "Event",
+                      "value": "Event"
+                    }
+                  ],
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Source",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Status",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "To enrich",
+                      "value": "To enrich"
+                    },
+                    {
+                      "name": "Enriching",
+                      "value": "Enriching"
+                    },
+                    {
+                      "name": "Enriched",
+                      "value": "Enriched"
+                    },
+                    {
+                      "name": "Failed",
+                      "value": "Failed"
+                    },
+                    {
+                      "name": "Skipped",
+                      "value": "Skipped"
+                    },
+                    {
+                      "name": "Contacted",
+                      "value": "Contacted"
+                    },
+                    {
+                      "name": "New",
+                      "value": "New"
+                    },
+                    {
+                      "name": "Qualified",
+                      "value": "Qualified"
+                    }
+                  ],
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Job Title",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Job Title",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Current Company",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Current Company",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Seniority Level",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "IC",
+                      "value": "IC"
+                    },
+                    {
+                      "name": "Manager",
+                      "value": "Manager"
+                    },
+                    {
+                      "name": "Director",
+                      "value": "Director"
+                    },
+                    {
+                      "name": "VP",
+                      "value": "VP"
+                    },
+                    {
+                      "name": "C-level",
+                      "value": "C-level"
+                    },
+                    {
+                      "name": "Founder",
+                      "value": "Founder"
+                    },
+                    {
+                      "name": "Unknown",
+                      "value": "Unknown"
+                    },
+                    {
+                      "name": "Mid-level",
+                      "value": "Mid-level"
+                    },
+                    {
+                      "name": "Senior",
+                      "value": "Senior"
+                    },
+                    {
+                      "name": "Entry-level",
+                      "value": "Entry-level"
+                    }
+                  ],
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Seniority Level",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Years Experience",
+                  "type": "number",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Years Experience",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Industry",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Industry",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Location City",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Location City",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Location Country",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Location Country",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Tech Stack",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Tech Stack",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Top Certifications",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Top Certifications",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "AI Summary",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "AI Summary",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Enriched At",
+                  "type": "dateTime",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Enriched At",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Enrichment Error",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Enrichment Error",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [
+                "id"
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "update"
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "b3d02c84-889b-43b3-a9ff-a59b412bf7ee",
+          "name": "Notify Slack",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            672,
+            1808
+          ],
+          "webhookId": "1457fafb-5e20-402e-8f85-e1edb2b4ff1b",
+          "parameters": {
+            "text": "=:sparkles: *New enriched lead in Airtable*\n\n*{{ $('Airtable Trigger1').item.json.fields.Name }}*\n{{ $('Extract Structured Data').item.json.output[0].content[0].text.current_title }} at {{ $('Extract Structured Data').item.json.output[0].content[0].text.current_company }}\n\n*Seniority:* {{ $('Extract Structured Data').item.json.output[0].content[0].text.seniority_level }}\n*Location:* {{ $('Extract Structured Data').item.json.output[0].content[0].text.location_country }}\n*Industry:* {{ $('Extract Structured Data').item.json.output[0].content[0].text.industry }}\n*Tech stack:* {{ $('Extract Structured Data').item.json.output[0].content[0].text.tech_stack }}\n\n> {{ $('Extract Structured Data').item.json.output[0].content[0].text.one_line_summary }}\n\n<{{ $('Airtable Trigger1').item.json.fields[\"LinkedIn URL\"] }}|View LinkedIn profile>",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "YOUR_SLACK_CHANNEL_ID",
+              "cachedResultName": "leads"
+            },
+            "otherOptions": {},
+            "authentication": "oAuth2"
+          },
+          "typeVersion": 2.4
+        },
+        {
+          "id": "d4e1ab5f-7479-4417-8317-8679cd24b6f5",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1504,
+            272
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 460,
+            "height": 820,
+            "content": "## 🤖 AI Lead Enrichment with LinkedIn, BrightData, OpenAI & Slack\n\nAutomatically enrich every new LinkedIn lead with AI-structured data and notify your team in Slack.\n\n### What it does\n1. **Detects** new leads in your CRM\n2. **Scrapes** the LinkedIn profile via BrightData\n3. **Extracts** structured data (title, company, seniority, tech stack…) with GPT-5-mini\n4. **Updates** the CRM record with enriched fields\n5. **Notifies** your team in Slack with a beautiful summary\n\n### 🔄 CRM-agnostic\nThis template uses **Airtable** as a reference, but you can easily swap it for:\n- HubSpot, Salesforce, Pipedrive, Attio, Close\n- Notion, Google Sheets, Monday.com, ClickUp\n- Any database (Postgres, MySQL, MongoDB, Supabase…)\n\nJust replace the **Airtable Trigger** and **Update Airtable Record** nodes with the equivalent for your stack. The rest of the flow stays identical.\n\n### Prerequisites\n- A CRM or database with a \"Leads\" collection containing a `LinkedIn URL` field\n- A [BrightData](https://brightdata.com) account with the *LinkedIn people profiles* dataset enabled\n- An [OpenAI](https://platform.openai.com) API key (GPT-5-mini or any model)\n- A [Slack](https://slack.com) workspace with a channel for notifications\n\n### Setup\n1. Connect your **CRM**, **BrightData**, **OpenAI** and **Slack** credentials\n2. If using a different CRM: replace the trigger and update nodes\n3. Select your Slack **channel** in the notification node\n4. Activate the workflow"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f1b6c3a7-c497-4b8c-bebe-6c7e24cc7a39",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -976,
+            880
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 300,
+            "height": 212,
+            "content": "## 1️⃣ New Lead Trigger\nPolls **Airtable** every minute for new records via the `Created Time` field.\n\n🔄 **Swap for any CRM:** replace this node with a HubSpot, Salesforce, Notion, Pipedrive, Google Sheets… trigger. Just make sure the output contains a **LinkedIn URL** field."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "bdcfc13b-028f-4d4d-9719-861de2d48c2c",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -576,
+            1040
+          ],
+          "parameters": {
+            "color": 3,
+            "width": 284,
+            "height": 228,
+            "content": "## 2️⃣ Scrape LinkedIn\nCalls **BrightData**'s *LinkedIn people profiles* dataset with the lead's LinkedIn URL.\n\nReturns the full public profile as JSON:\n- experience, education, skills\n- about, activity, certifications\n- location & company info"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "1c91a8cf-dc3c-4c83-95ea-66f8ee057139",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -208,
+            1168
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 300,
+            "height": 324,
+            "content": "## 3️⃣ AI Structured Extraction\nUses **GPT-5-mini** to turn the raw profile JSON into a clean, structured schema:\n- title, company, seniority\n- years of experience\n- industry, location\n- tech stack & certifications\n- 1-line professional summary\n\nReturns strict JSON (no prose, no markdown). Feel free to swap for any LLM (Claude, Gemini, Mistral…)."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "06c40226-b39b-43e4-aef8-655635522b12",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            208,
+            1392
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 300,
+            "height": 284,
+            "content": "## 4️⃣ Update CRM Record\nWrites the enriched data back to **Airtable**:\n- sets **Status** = `Enriched`\n- fills all enrichment fields\n- stamps **Enriched At** with the current ISO date\n\n🔄 **Swap for any CRM:** replace with the HubSpot, Salesforce, Notion, Pipedrive… update node. The mapping stays the same."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9c301acc-cee2-4166-803e-62513457d503",
+          "name": "Sticky Note5",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            576,
+            1520
+          ],
+          "parameters": {
+            "color": 2,
+            "width": 300,
+            "height": 284,
+            "content": "## 5️⃣ Team Notification\nPosts a nicely formatted message in **Slack** with:\n- Name, title, company\n- Seniority, location, industry, tech stack\n- 1-line AI summary\n- Link to the LinkedIn profile\n\n🔄 **Swap for any channel:** Discord, Microsoft Teams, Telegram, email, SMS…"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "8dc419e0-5a6f-468f-abde-e756bd9b820c",
+          "name": "Airtable Trigger1",
+          "type": "n8n-nodes-base.airtableTrigger",
+          "position": [
+            -864,
+            1104
+          ],
+          "parameters": {
+            "baseId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_AIRTABLE_BASE_ID"
+            },
+            "tableId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_AIRTABLE_TABLE_ID"
+            },
+            "pollTimes": {
+              "item": [
+                {
+                  "mode": "everyMinute"
+                }
+              ]
+            },
+            "triggerField": "Created Time",
+            "authentication": "airtableTokenApi",
+            "additionalFields": {}
+          },
+          "typeVersion": 1
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "binaryMode": "separate",
+        "executionOrder": "v1"
+      },
+      "versionId": "c46f864d-f315-456b-a9c2-c9cb30c3b769",
+      "connections": {
+        "Airtable Trigger1": {
+          "main": [
+            [
+              {
+                "node": "Scrape LinkedIn Profile",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Update Airtable Record": {
+          "main": [
+            [
+              {
+                "node": "Notify Slack",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Extract Structured Data": {
+          "main": [
+            [
+              {
+                "node": "Update Airtable Record",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Scrape LinkedIn Profile": {
+          "main": [
+            [
+              {
+                "node": "Extract Structured Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 11,
+      "nodeTypes": {
+        "n8n-nodes-base.slack": {
+          "count": 1
+        },
+        "n8n-nodes-base.airtable": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.airtableTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.openAi": {
+          "count": 1
+        },
+        "@brightdata/n8n-nodes-brightdata.brightData": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "ToolMonsters",
+      "username": "toolmonsters",
+      "bio": "",
+      "verified": true,
+      "links": [],
+      "avatar": "https://gravatar.com/avatar/e617b7e785551b687481c9fb6a7979c61398b5bb010c4936a6b5250ebca6c984?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 2,
+        "icon": "file:airtable.svg",
+        "name": "n8n-nodes-base.airtable",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-goals-level-up-your-vocabulary-with-vonage-and-n8n/",
+                  "icon": "🎯",
+                  "label": "2021 Goals: Level Up Your Vocabulary With Vonage and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-sms-the-low-code-way-with-airtable-twilio-programmable-sms-and-n8n/",
+                  "icon": "📱",
+                  "label": "Sending SMS the Low-Code Way with Airtable, Twilio Programmable SMS, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automating-conference-organization-processes-with-n8n/",
+                  "icon": "🙋‍♀️",
+                  "label": "Automating Conference Organization Processes with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.airtable/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/airtable/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Airtable"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMDAgMTcwIj48cGF0aCBmaWxsPSIjZmNiNDAwIiBkPSJNODkgNC44IDE2LjIgMzQuOWMtNC4xIDEuNy00IDcuNC4xIDkuMWw3My4yIDI5YzYuNCAyLjYgMTMuNiAyLjYgMjAgMGw3My4yLTI5YzQuMS0xLjYgNC4xLTcuNC4xLTkuMWwtNzMtMzAuMUMxMDMuMiAyIDk1LjcgMiA4OSA0LjgiLz48cGF0aCBmaWxsPSIjMThiZmZmIiBkPSJNMTA1LjkgODguOXY3Mi41YzAgMy40IDMuNSA1LjggNi43IDQuNWw4MS42LTMxLjdjMS45LS43IDMuMS0yLjUgMy4xLTQuNVY1Ny4yYzAtMy40LTMuNS01LjgtNi43LTQuNUwxMDkgODQuM2MtMS45LjgtMy4xIDIuNi0zLjEgNC42Ii8+PHBhdGggZmlsbD0iI2Y4MmI2MCIgZD0ibTg2LjkgOTIuNi0yNC4yIDExLjctMi41IDEuMkw5LjEgMTMwYy0zLjIgMS42LTcuNC0uOC03LjQtNC40VjU3LjVjMC0xLjMuNy0yLjQgMS42LTMuM3EuNi0uNiAxLjItLjljMS4yLS43IDMtLjkgNC40LS4zbDc3LjUgMzAuN2M0IDEuNSA0LjMgNy4xLjUgOC45Ii8+PHBhdGggZmlsbD0iI2JhMWU0NSIgZD0ibTg2LjkgOTIuNi0yNC4yIDExLjctNTkuNC01MHEuNi0uNiAxLjItLjljMS4yLS43IDMtLjkgNC40LS4zbDc3LjUgMzAuN2M0IDEuNCA0LjMgNyAuNSA4LjgiLz48L3N2Zz4="
+        },
+        "displayName": "Airtable",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 408,
+        "icon": "file:airtable.svg",
+        "name": "n8n-nodes-base.airtableTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/trigger-nodes/n8n-nodes-base.airtabletrigger/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/airtable/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Airtable Trigger"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMDAgMTcwIj48cGF0aCBmaWxsPSIjZmNiNDAwIiBkPSJNODkgNC44IDE2LjIgMzQuOWMtNC4xIDEuNy00IDcuNC4xIDkuMWw3My4yIDI5YzYuNCAyLjYgMTMuNiAyLjYgMjAgMGw3My4yLTI5YzQuMS0xLjYgNC4xLTcuNC4xLTkuMWwtNzMtMzAuMUMxMDMuMiAyIDk1LjcgMiA4OSA0LjgiLz48cGF0aCBmaWxsPSIjMThiZmZmIiBkPSJNMTA1LjkgODguOXY3Mi41YzAgMy40IDMuNSA1LjggNi43IDQuNWw4MS42LTMxLjdjMS45LS43IDMuMS0yLjUgMy4xLTQuNVY1Ny4yYzAtMy40LTMuNS01LjgtNi43LTQuNUwxMDkgODQuM2MtMS45LjgtMy4xIDIuNi0zLjEgNC42Ii8+PHBhdGggZmlsbD0iI2Y4MmI2MCIgZD0ibTg2LjkgOTIuNi0yNC4yIDExLjctMi41IDEuMkw5LjEgMTMwYy0zLjIgMS42LTcuNC0uOC03LjQtNC40VjU3LjVjMC0xLjMuNy0yLjQgMS42LTMuM3EuNi0uNiAxLjItLjljMS4yLS43IDMtLjkgNC40LS4zbDc3LjUgMzAuN2M0IDEuNSA0LjMgNy4xLjUgOC45Ii8+PHBhdGggZmlsbD0iI2JhMWU0NSIgZD0ibTg2LjkgOTIuNi0yNC4yIDExLjctNTkuNC01MHEuNi0uNiAxLjItLjljMS4yLS43IDMtLjkgNC40LS4zbDc3LjUgMzAuN2M0IDEuNCA0LjMgNyAuNSA4LjgiLz48L3N2Zz4="
+        },
+        "displayName": "Airtable Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1250,
+        "icon": "file:openAi.svg",
+        "name": "@n8n/n8n-nodes-langchain.openAi",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "ChatGPT",
+              "Sora",
+              "DallE",
+              "whisper",
+              "audio",
+              "transcribe",
+              "tts",
+              "assistant"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-langchain.openai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Miscellaneous",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg1IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NiAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MSA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4K"
+        },
+        "displayName": "OpenAI",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 37,
+        "name": "Lead Generation"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

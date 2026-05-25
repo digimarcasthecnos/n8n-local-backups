@@ -1,0 +1,278 @@
+{
+  "id": 5816,
+  "name": "Discord AI Chatbot with GPT-4o-mini & Redis Memory Persistence",
+  "totalViews": 0,
+  "purchaseUrl": null,
+  "user": {
+    "id": 93298,
+    "name": "Dhruv Dalsaniya",
+    "username": "ddm21",
+    "bio": "IT Professional & Freelance Automation Consultant specializing in AI-driven automation and business process optimization",
+    "verified": true,
+    "links": "[\"https://in.linkedin.com/in/dhruvdalsaniya21\"]",
+    "avatar": "https://gravatar.com/avatar/367111bb2fd90204e1ce6f05ef666d8e9e6b73829748584483278f1843c02060?r=pg&d=retro&size=200"
+  },
+  "description": "Description:\nThis n8n workflow automates a Discord bot to fetch messages from a specified channel and send AI-generated responses in threads. It ensures smooth message processing and interaction, making it ideal for managing community discussions, customer support, or AI-based engagement. This workflow leverages Redis for memory persistence, ensuring that conversation history is maintained even if the workflow restarts, providing a seamless user experience.\n\nHow It Works\n\nThe bot listens for new messages in a specified Discord channel.\nIt sends the messages to an AI model for response generation.\nThe AI-generated reply is posted as a thread under the original message.\nThe bot runs on an Ubuntu server and is managed using PM2 for uptime stability.\nThe Discord bot (Python script) acts as the bridge, capturing messages from Discord and sending them to the n8n webhook. The n8n workflow then processes these messages, interacts with the AI model, and sends the AI's response back to Discord via the bot.\n\nPrerequisites to host Bot\nSign up on Pella, which is a managed hosting service for Discord Bots. (Easy Setup)\nA Redis instance for memory persistence. Redis is an in-memory data structure store, used here to store and retrieve conversation history, ensuring that the AI can maintain context across multiple interactions. This is crucial for coherent and continuous conversations.\n\nSet Up Steps\n\n1️⃣ Create a Discord Bot\n\nGo to the Discord Developer Portal.\nClick “New Application”, enter a name, and create it.\nNavigate to Bot &gt; Reset Token, then copy the Bot Token.\nEnable Privileged Gateway Intents (Presence, Server Members, Message Content).\nUnder OAuth2 &gt; URL Generator, select bot scope and required permissions.\nCopy the generated URL, open it in a browser, select your server, and click Authorize.\n\n2️⃣ Deploy the Bot on Pella\n\nCreate a new folder discord-bot and navigate into it:\n\nCreate and configure an .env file to store your bot token:\n\nCopy the code to .env: (You can copy the webhook URL from the n8n workflow)\n        TOKEN=your-bot-token-here\n    WEBHOOK_URL=https://your-domain.tld/webhook/getmessage \n    Create file main.py copy the below code and save it:\n\nCopy this Bot script to main.py:\n        import discord\n    import requests\n    import json\n    import os\n    from dotenv import load_dotenv\nLoad environment variables from .env file\n    load_dotenv()\n    TOKEN = os.getenv(\"TOKEN\")\n    WEBHOOK_URL = os.getenv(\"WEBHOOK_URL\")\nBot Configuration\n    LISTEN_CHANNELS = [\"YOUR_CHANNEL_ID_1\", \"YOUR_CHANNEL_ID_2\"]  # Replace with your target channel IDs\nIntents setup\n    intents = discord.Intents.default()\n    intents.messages = True  # Enable message event\n    intents.guilds = True\n    intents.message_content = True  # Required to read messages\n    \n    client = discord.Client(intents=intents)\n\n    @client.event\n    async def on_ready():\n        print(f'Logged in as {client.user}')\n    \n    @client.event\n    async def on_message(message):\n        if message.author == client.user:\n            return  # Ignore bot's own messages\n    \n        if str(message.channel.id) in LISTEN_CHANNELS:\n            try:\n                fetched_message = await message.channel.fetch_message(message.id)  # Ensure correct fetching\n                payload = {\n                    \"channel_id\": str(fetched_message.channel.id),  # Ensure it's string\n                    \"chat_message\": fetched_message.content,\n                    \"timestamp\": str(fetched_message.created_at),  # Ensure proper formatting\n                    \"message_id\": str(fetched_message.id),  # Ensure ID is a string\n                    \"user_id\": str(fetched_message.author.id)  # Ensure user ID is also string\n                }\n    \n                headers = {'Content-Type': 'application/json'}\n                response = requests.post(WEBHOOK_URL, data=json.dumps(payload), headers=headers)\n    \n                if response.status_code == 200:\n                    print(f\"Message sent successfully: {payload}\")\n                else:\n                    print(f\"Failed to send message: {response.status_code}, Response: {response.text}\")\n            except Exception as e:\n                print(f\"Error fetching message: {e}\")\n    \n    client.run(TOKEN)\n    \nCreate requirements.txt and copy:\n        discord\n    python-dotenv\n3️⃣ Follow the video to set up the bot which will run 24/7\n\nTutorial - https://www.youtube.com/watch?v=rNnK3XlUtYU\n\nNote: Free Plan will expire after 24 hours, so please opt for the Paid Plan in Pella to keep your bot running.\n\n4️⃣ n8n Workflow Configuration\n\nThe n8n workflow consists of the following nodes:\n\nGet Discord Messages (Webhook):** This node acts as the entry point for messages from the Discord bot. It receives the channel_id, chat_message, timestamp, message_id, and user_id from Discord when a new message is posted in the configured channel. Its webhook path is /getmessage and it expects a POST request.\nChat Agent (Langchain Agent):** This node processes the incoming Discord message (chat_message). It is configured as a conversational agent, integrating the language model and memory to generate an appropriate response. It also has a prompt to keep the reply concise, under 1800 characters.\nOpenAI -4o-mini (Langchain Language Model):** This node connects to the OpenAI API and uses the gpt-4o-mini-2024-07-18 model for generating AI responses. It is the core AI component of the workflow.\nMessage History (Redis Chat Memory):** This node manages the conversation history using Redis. It stores and retrieves chat messages, ensuring the Chat Agent maintains context for each user based on their user_id. This is critical for coherent multi-turn conversations.\nCalculator (Langchain Tool):** This node provides a calculator tool that the AI agent can utilize if a mathematical calculation is required within the conversation. This expands the capabilities of the AI beyond just text generation.\nResponse fromAI (Discord):** This node sends the AI-generated response back to the Discord channel. It uses the Discord Bot API credentials and replies in a thread under the original message (message_id) in the specified channel_id.\nSticky Note1, Sticky Note2, Sticky Note3, Sticky Note4, Sticky Note5, Sticky Note:** These are informational nodes within the workflow providing instructions, code snippets for the Discord bot, and setup guidance for the user. These notes guide the user on setting up the .env file, requirements.txt, the Python bot code, and general recommendations for channel configuration and adding tools.\n\n5️⃣ Setting up Redis\n\nChoose a Redis Hosting Provider: You can use a cloud provider like Redis Labs, Aiven, or set up your own Redis instance on a VPS.\nObtain Redis Connection Details: Once your Redis instance is set up, you will need the host, port, and password (if applicable).\nConfigure n8n Redis Nodes: In your n8n workflow, configure the \"Message History\" node with your Redis connection details. Ensure the Redis credential ✅ redis-for-n8n is properly set up with your Redis instance details (host, port, password).\n\n6️⃣ Customizing the Template\n\nAI Model:** You can easily swap out the \"OpenAI -4o-mini\" node with any other AI service supported by n8n (e.g., Cohere, Hugging Face) to use a different language model. Ensure the new language model node is connected to the ai_languageModel input of the \"Chat Agent\" node.\nAgent Prompt:** Modify the text parameter in the \"Chat Agent\" node to change the AI's persona, provide specific instructions, or adjust the response length.\nAdditional Tools:** The \"Calculator\" node is an example of an AI tool. You can add more Langchain tool nodes (e.g., search, data lookup) and connect them to the ai_tool input of the \"Chat Agent\" node to extend the AI's capabilities. Refer to the \"Sticky Note5\" in the workflow for a reminder.\nChannel Filtering:** Adjust the LISTEN_CHANNELS list in the main.py file of your Discord bot to include or exclude specific Discord channel IDs where the bot should listen for messages.\nThread Management:** The \"Response fromAI\" node can be modified to change how threads are created or managed, or to send responses directly to the channel instead of a thread. The current setup links the response to the original message ID (message_reference).\n\n7️⃣ Testing Instructions\n\nStart the Discord Bot: Ensure your main.py script is running on Pella.\nActivate the n8n Workflow: Make sure your n8n workflow is active and listening for webhooks.\nSend a Message in Discord: Go to one of the LISTEN_CHANNELS in your Discord server and send a message.\nVerify Response: The bot should capture the message, send it to n8n, receive an AI-generated response, and post it as a thread under your original message.\nCheck Redis: Verify that the conversation history is being stored and updated correctly in your Redis instance. Look for keys related to user IDs.\n\n✅ Now your bot is running in the background! 🚀",
+  "createdAt": "2025-07-09T10:01:50.431Z",
+  "nodes": [
+    {
+      "id": 60,
+      "icon": "file:discord.svg",
+      "name": "n8n-nodes-base.discord",
+      "codex": {
+        "data": {
+          "alias": [
+            "human",
+            "form",
+            "wait",
+            "hitl",
+            "approval"
+          ],
+          "resources": {
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.discord/"
+              }
+            ],
+            "credentialDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/credentials/discord/"
+              }
+            ]
+          },
+          "categories": [
+            "Communication",
+            "HITL"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0",
+          "subcategories": {
+            "HITL": [
+              "Human in the Loop"
+            ]
+          }
+        }
+      },
+      "group": "[\"output\"]",
+      "defaults": {
+        "name": "Discord"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTk5IiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzU4NjVGMiIgZD0iTTIxNi44NTYgMTYuNTk3QTIwOC41IDIwOC41IDAgMCAwIDE2NC4wNDIgMGMtMi4yNzUgNC4xMTMtNC45MzMgOS42NDUtNi43NjYgMTQuMDQ2cS0yOS41MzgtNC40NDItNTguNTMzIDBjLTEuODMyLTQuNC00LjU1LTkuOTMzLTYuODQ2LTE0LjA0NmEyMDcuOCAyMDcuOCAwIDAgMC01Mi44NTUgMTYuNjM4QzUuNjE4IDY3LjE0Ny0zLjQ0MyAxMTYuNCAxLjA4NyAxNjQuOTU2YzIyLjE2OSAxNi41NTUgNDMuNjUzIDI2LjYxMiA2NC43NzUgMzMuMTkzQTE2MSAxNjEgMCAwIDAgNzkuNzM1IDE3NS4zYTEzNi40IDEzNi40IDAgMCAxLTIxLjg0Ni0xMC42MzIgMTA5IDEwOSAwIDAgMCA1LjM1Ni00LjIzN2M0Mi4xMjIgMTkuNzAyIDg3Ljg5IDE5LjcwMiAxMjkuNTEgMGExMzIgMTMyIDAgMCAwIDUuMzU1IDQuMjM3IDEzNiAxMzYgMCAwIDEtMjEuODg2IDEwLjY1M2M0LjAwNiA4LjAyIDguNjM4IDE1LjY3IDEzLjg3MyAyMi44NDggMjEuMTQyLTYuNTggNDIuNjQ2LTE2LjYzNyA2NC44MTUtMzMuMjEzIDUuMzE2LTU2LjI4OC05LjA4LTEwNS4wOS0zOC4wNTYtMTQ4LjM2TTg1LjQ3NCAxMzUuMDk1Yy0xMi42NDUgMC0yMy4wMTUtMTEuODA1LTIzLjAxNS0yNi4xOHMxMC4xNDktMjYuMiAyMy4wMTUtMjYuMiAyMy4yMzYgMTEuODA0IDIzLjAxNSAyNi4yYy4wMiAxNC4zNzUtMTAuMTQ4IDI2LjE4LTIzLjAxNSAyNi4xOG04NS4wNTEgMGMtMTIuNjQ1IDAtMjMuMDE0LTExLjgwNS0yMy4wMTQtMjYuMThzMTAuMTQ4LTI2LjIgMjMuMDE0LTI2LjJjMTIuODY3IDAgMjMuMjM2IDExLjgwNCAyMy4wMTUgMjYuMiAwIDE0LjM3NS0xMC4xNDggMjYuMTgtMjMuMDE1IDI2LjE4Ii8+PC9zdmc+"
+      },
+      "displayName": "Discord",
+      "typeVersion": 2,
+      "nodeCategories": [
+        {
+          "id": 6,
+          "name": "Communication"
+        },
+        {
+          "id": 28,
+          "name": "HITL"
+        }
+      ]
+    },
+    {
+      "id": 1119,
+      "icon": "fa:robot",
+      "name": "@n8n/n8n-nodes-langchain.agent",
+      "codex": {
+        "data": {
+          "alias": [
+            "LangChain",
+            "Chat",
+            "Conversational",
+            "Plan and Execute",
+            "ReAct",
+            "Tools"
+          ],
+          "resources": {
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+              }
+            ]
+          },
+          "categories": [
+            "AI",
+            "Langchain"
+          ],
+          "subcategories": {
+            "AI": [
+              "Agents",
+              "Root Nodes"
+            ]
+          }
+        }
+      },
+      "group": "[\"transform\"]",
+      "defaults": {
+        "name": "AI Agent",
+        "color": "#404040"
+      },
+      "iconData": {
+        "icon": "robot",
+        "type": "icon"
+      },
+      "displayName": "AI Agent",
+      "typeVersion": 3,
+      "nodeCategories": [
+        {
+          "id": 25,
+          "name": "AI"
+        },
+        {
+          "id": 26,
+          "name": "Langchain"
+        }
+      ]
+    },
+    {
+      "id": 1153,
+      "icon": "file:openAiLight.svg",
+      "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "codex": {
+        "data": {
+          "resources": {
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+              }
+            ]
+          },
+          "categories": [
+            "AI",
+            "Langchain"
+          ],
+          "subcategories": {
+            "AI": [
+              "Language Models",
+              "Root Nodes"
+            ],
+            "Language Models": [
+              "Chat Models (Recommended)"
+            ]
+          }
+        }
+      },
+      "group": "[\"transform\"]",
+      "defaults": {
+        "name": "OpenAI Chat Model"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+      },
+      "displayName": "OpenAI Chat Model",
+      "typeVersion": 1,
+      "nodeCategories": [
+        {
+          "id": 25,
+          "name": "AI"
+        },
+        {
+          "id": 26,
+          "name": "Langchain"
+        }
+      ]
+    },
+    {
+      "id": 1167,
+      "icon": "file:redis.svg",
+      "name": "@n8n/n8n-nodes-langchain.memoryRedisChat",
+      "codex": {
+        "data": {
+          "resources": {
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.memoryredischat/"
+              }
+            ]
+          },
+          "categories": [
+            "AI",
+            "Langchain"
+          ],
+          "subcategories": {
+            "AI": [
+              "Memory"
+            ],
+            "Memory": [
+              "Other memories"
+            ]
+          }
+        }
+      },
+      "group": "[\"transform\"]",
+      "defaults": {
+        "name": "Redis Chat Memory"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiNBNDFFMTEiIGQ9Ik01Ny42NTYgNDMuOTljLTMuMjAxIDEuNjgzLTE5Ljc4NyA4LjU2MS0yMy4zMTggMTAuNDE3cy01LjQ5NCAxLjgzOC04LjI4My40OTRjLTIuNzktMS4zNDMtMjAuNDQ5LTguNTM1LTIzLjYyOS0xMC4wNjdDLjgzNCA0NC4wNjYuMDAyIDQzLjQyMi4wMDIgNDIuODExdi02LjExN3MyMi45OC01LjA0NSAyNi42OS02LjM4OCA0Ljk5NS0xLjM5IDguMTU0LS4yMjVjMy4xNiAxLjE2NSAyMi4wMzUgNC42MDMgMjUuMTU0IDUuNzU2djYuMDMyYzAgLjYwNS0uNzIgMS4yODMtMi4zNSAyLjEyNHoiLz48cGF0aCBmaWxsPSIjRDgyQzIwIiBkPSJNNTcuNjU2IDM3Ljg3MmMtMy4yMDEgMS42ODUtMTkuNzg3IDguNTYtMjMuMzE4IDEwLjQxN3MtNS40OTQgMS44MzgtOC4yODMuNDk0Yy0yLjc5LTEuMzQzLTIwLjQ0OS04LjUzNC0yMy42My0xMC4wNjhzLTMuMjQzLTIuNTg4LS4xMjItMy44MmwyNC4zODgtOS41MmMzLjcxLTEuMzQgNC45OTQtMS4zOSA4LjE1My0uMjI1czE5LjY0MyA3Ljc4IDIyLjc0NyA4Ljk1MWMzLjEwMyAxLjE3IDMuMjQgMi4wODYuMDM3IDMuNzg2eiIvPjxwYXRoIGZpbGw9IiNBNDFFMTEiIGQ9Ik01Ny42NTYgMzQuMDE1Yy0zLjIwMSAxLjY4My0xOS43ODcgOC41NjEtMjMuMzE4IDEwLjQxN3MtNS40OTQgMS44MzgtOC4yODMuNDk1Yy0yLjc5LTEuMzQ0LTIwLjQ0OS04LjUzNi0yMy42MjktMTAuMDY3Qy44MzQgMzQuMDkyLjAwMiAzMy40NDcuMDAyIDMyLjgzNlYyNi43MnMyMi45OC01LjA0NSAyNi42OS02LjM4N2MzLjcxMS0xLjM0MyA0Ljk5NS0xLjM5IDguMTU0LS4yMjUgMy4xNiAxLjE2NSAyMi4wMzUgNC42MDIgMjUuMTU0IDUuNzU2djYuMDMyYzAgLjYwNS0uNzIgMS4yODMtMi4zNSAyLjEyM3oiLz48cGF0aCBmaWxsPSIjRDgyQzIwIiBkPSJNNTcuNjU2IDI3Ljg5OGMtMy4yMDEgMS42ODUtMTkuNzg3IDguNTYxLTIzLjMxOCAxMC40MTdzLTUuNDk0IDEuODM4LTguMjgzLjQ5NWMtMi43OS0xLjM0NC0yMC40NDktOC41MzQtMjMuNjMtMTAuMDY3LTMuMTgtMS41MzQtMy4yNDMtMi41ODgtLjEyMi0zLjgybDI0LjM4OC05LjUyYzMuNzEtMS4zNDMgNC45OTQtMS4zOSA4LjE1My0uMjI1IDMuMTYgMS4xNjYgMTkuNjQ0IDcuNzg1IDIyLjc2NSA4LjkzNXMzLjI0IDIuMDg1LjAzOCAzLjc4NXoiLz48cGF0aCBmaWxsPSIjQTQxRTExIiBkPSJNNTcuNjU2IDIzLjY3MWMtMy4yMDEgMS42ODMtMTkuNzg3IDguNTYxLTIzLjMxOCAxMC40MTlzLTUuNDk0IDEuODM4LTguMjgzLjQ5NWMtMi43OS0xLjM0NC0yMC40NDktOC41MzUtMjMuNjI5LTEwLjA2OS0xLjU5Mi0uNzY1LTIuNDI0LTEuNDExLTIuNDI0LTIuMDJ2LTYuMTFzMjIuOTgtNS4wNDUgMjYuNjktNi4zODggNC45OTUtMS4zOSA4LjE1NC0uMjI1YzMuMTYgMS4xNjUgMjIuMDM1IDQuNTkxIDI1LjE1NCA1Ljc0NXY2LjAzMmMwIC42MDUtLjcyIDEuMjgzLTIuMzUgMi4xMjN6Ii8+PHBhdGggZmlsbD0iI0Q4MkMyMCIgZD0iTTU3LjY1NiAxNy41NTNjLTMuMjAxIDEuNjg1LTE5Ljc4NyA4LjU2MS0yMy4zMTggMTAuNDE3cy01LjQ5NCAxLjgzOC04LjI4My40OTVjLTIuNzktMS4zNDQtMjAuNDQ5LTguNTM0LTIzLjYzLTEwLjA2OHMtMy4yNDMtMi41ODctLjEyMi0zLjgybDI0LjM4OC05LjUyYzMuNzEtMS4zNDMgNC45OTQtMS4zOSA4LjE1My0uMjI2IDMuMTYgMS4xNjUgMTkuNjQzIDcuNzg1IDIyLjc2NSA4LjkzNnMzLjI0IDIuMDg1LjAzOCAzLjc4NXoiLz48cGF0aCBmaWxsPSIjRkZGIiBkPSJtMzEuNDk3IDE1LjAzMi0xLjg4LTMuMTUzLTYuMDAyLS41NDUgNC40OC0xLjYzTDI2Ljc1IDcuMmw0LjE5MiAxLjY1MyAzLjk1NS0xLjMwNS0xLjA3IDIuNTg2IDQuMDMyIDEuNTI0LTUuMTk4LjU0NnptLTEwLjAxNCA2LjI3NSAxMy45MDMtMi4xNTMtNC4yIDYuMjExem0tMTEuMTctNS4xNjdjMC0xLjYxIDMuMzE0LTIuOTA2IDcuNDMxLTIuOTA2IDQuMTE4IDAgNy40MzIgMS4yOTYgNy40MzIgMi45MDZzLTMuMzE0IDIuOTA1LTcuNDMyIDIuOTA1Yy00LjExNyAwLTcuNDMxLTEuMjk1LTcuNDMxLTIuOTA1Ii8+PHBhdGggZmlsbD0iIzdBMEMwMCIgZD0ibTUyLjIzMyAxNS43MTQtOC4yMjQgMy4yNzYtLjAwNy02LjU1NnoiLz48cGF0aCBmaWxsPSIjQUQyMTE1IiBkPSJtNDQuMDEgMTguOTkxLS44OS4zNTMtOC4yMTctMy4yNzYgOS4wOTQtMy42M3oiLz48L2c+PC9zdmc+"
+      },
+      "displayName": "Redis Chat Memory",
+      "typeVersion": 2,
+      "nodeCategories": [
+        {
+          "id": 25,
+          "name": "AI"
+        },
+        {
+          "id": 26,
+          "name": "Langchain"
+        }
+      ]
+    },
+    {
+      "id": 1195,
+      "icon": "fa:calculator",
+      "name": "@n8n/n8n-nodes-langchain.toolCalculator",
+      "codex": {
+        "data": {
+          "resources": {
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.toolcalculator/"
+              }
+            ]
+          },
+          "categories": [
+            "AI",
+            "Langchain"
+          ],
+          "subcategories": {
+            "AI": [
+              "Tools"
+            ],
+            "Tools": [
+              "Other Tools"
+            ]
+          }
+        }
+      },
+      "group": "[\"transform\"]",
+      "defaults": {
+        "name": "Calculator"
+      },
+      "iconData": {
+        "icon": "calculator",
+        "type": "icon"
+      },
+      "displayName": "Calculator",
+      "typeVersion": 1,
+      "nodeCategories": [
+        {
+          "id": 25,
+          "name": "AI"
+        },
+        {
+          "id": 26,
+          "name": "Langchain"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1334 @@
+{
+  "workflow": {
+    "id": 15493,
+    "name": "Turn webinars into a 5-day email course using WayinVideo, GPT-4o-mini, and Google Sheets",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-05-05T11:35:15.303Z",
+    "description": "### Description\n\nSubmit any webinar recording URL using a simple form along with your course name, target audience, brand name, and preferred email tone and the workflow builds a complete 5-day drip email course automatically. [WayinVideo](https://wayin.ai/api/) AI Clipping extracts the top 5 most engaging teaching moments from the recording, ranked by engagement score so the best content becomes Day 1. GPT-4o-mini then writes a complete email lesson for each clip — with subject line, preview text, email body, key takeaway, CTA text, and a CTA URL placeholder — where Day 1 is welcoming, the final day wraps up, and middle days flow naturally between them. All 5 emails are saved to Google Sheets as a ready-to-use drip course with Status set to Draft. Built for course creators, coaches, educators, and marketing teams who want to turn any webinar into a ready-to-send email sequence without writing a single word manually.\n\n---\n\n## What This Workflow Does\n\n- **Extracts the top 5 teaching moments by engagement score** — WayinVideo AI Clipping ranks moments by engagement and the workflow sorts them highest first so your best content always becomes Day 1\n- **Assigns each clip to a day number automatically** — Clips are sorted and labeled Day 1 through Day 5 so the email sequence has a logical flow based on content quality\n- **Writes a complete email lesson per day** — Each email includes a subject line, preview text, 200–300 word body, key takeaway, CTA text, and a CTA URL placeholder\n- **Adapts the tone per day position** — Day 1 is welcoming and introduces the course, the final day concludes and points to next steps, middle days continue naturally\n- **Applies ten email writing rules per lesson** — Subject line length, preview text length, paragraph style, CTA format, and day position awareness are all enforced in the prompt\n- **Saves all 5 email rows to Google Sheets** — Each row includes webinar title, course name, day number, all six email fields, word count, clip metadata, and Status set to Draft\n- **Polls automatically until clips are ready** — Waits 90 seconds then checks every 30 seconds until WayinVideo finishes extracting the teaching moments\n\n---\n\n## Setup Requirements\n\n### Tools Needed\n- n8n instance (self-hosted or cloud)\n- WayinVideo account with API access\n- OpenAI account with GPT-4o-mini API access\n- Google Sheets (one sheet with a tab named **Drip Email Course**)\n\n### Credentials Required\n- WayinVideo API key (pasted into **2. WayinVideo — Submit AI Clipping** and **4. WayinVideo — Get Clip Results**)\n- OpenAI API key\n- Google Sheets OAuth2\n\n&gt; ⚠️ **WayinVideo API key appears in 2 steps** — replace `YOUR_WAYINVIDEO_API_KEY` in both **2. WayinVideo — Submit AI Clipping** and **4. WayinVideo — Get Clip Results**. Missing either one will cause the workflow to fail.\n\n**Estimated Setup Time: 15–20 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Import the workflow** — Open n8n → Workflows → Import from JSON → paste the workflow JSON → click Import\n\n2. **Get your WayinVideo API key** — Log in to your WayinVideo account → go to Account Settings → copy your API key\n\n3. **Add your WayinVideo API key to node 2** — Open node **2. WayinVideo — Submit AI Clipping** → find the `Authorization` header value `Bearer YOUR_WAYINVIDEO_API_KEY` → replace `YOUR_WAYINVIDEO_API_KEY` with your actual key\n\n4. **Add your WayinVideo API key to node 4** — Open node **4. WayinVideo — Get Clip Results** → find the same `Authorization` header → replace `YOUR_WAYINVIDEO_API_KEY` with the same key\n\n5. **Connect OpenAI** — Open node **9. OpenAI — GPT-4o-mini Model** → click the credential dropdown → add your OpenAI API key → test the connection\n\n6. **Create your Google Sheet tab** — Open your Google Sheet → add a tab named exactly **Drip Email Course** → add these 16 column headers in row 1: `Webinar Title`, `Course Name`, `Day Number`, `Email Subject`, `Preview Text`, `Email Body`, `Key Takeaway`, `CTA Text`, `CTA URL Placeholder`, `Word Count`, `Clip Title`, `Clip Score`, `Clip Timestamp`, `Webinar URL`, `Generated On`, `Status`\n\n7. **Get your Google Sheet ID** — Open your Google Sheet in a browser → copy the string between `/d/` and `/edit` in the URL — this is your Sheet ID\n\n8. **Connect Google Sheets** — Open node **11. Google Sheets — Save Email Course** → click the document field → replace `YOUR_GOOGLE_SHEET_ID` by selecting your spreadsheet from the dropdown or entering the Sheet ID manually → click the credential dropdown → add Google Sheets OAuth2 → authorize access\n\n9. **Activate the workflow** — Toggle the workflow to Active → copy the Form URL from node **1. Form — Webinar URL + Course Details** → open it in a browser to submit your first webinar\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Form: Webinar URL + Course Details**\nYou open the form URL in a browser and fill in six fields: the webinar recording URL (YouTube, Zoom, Vimeo, or any direct link), the webinar or course title, the mini-course name (what your subscribers will see), the target audience, your brand or sender name, and the email tone (e.g. \"Professional and educational\" or \"Casual and friendly\"). Submitting the form starts the workflow.\n\n**Step 2 — HTTP: WayinVideo — Submit AI Clipping**\nThe webinar URL is sent to WayinVideo's AI Clipping API. The request asks for clips between 60 and 90 seconds long, limited to 5 clips, with export disabled since you only need the metadata and descriptions for writing emails. A project name is auto-generated from your mini-course name. WayinVideo returns a task ID confirming the job has started.\n\n**Step 3 — Wait: 90 Seconds**\nThe workflow pauses for 90 seconds before the first status check, giving WayinVideo time to identify and extract the best teaching moments from the recording.\n\n**Step 4 — HTTP: WayinVideo — Get Clip Results**\nA GET request checks the clipping results endpoint using the task ID from step 2. It returns the current processing status and, once complete, the full clips array with title, description, engagement score, timestamp, and tags for each extracted moment.\n\n**Step 5 — IF: Clipping Complete?**\nThis is the polling gate. If the status equals `SUCCEEDED` (YES path), the clips are ready and the workflow moves forward to extraction. If still processing (NO path), the workflow routes to **6. Wait — 30 Seconds Retry** which pauses 30 seconds then loops back to step 4 to check again. This repeats until SUCCEEDED.\n\n**Step 6 — Wait: 30 Seconds Retry**\nWhen clips are not yet ready, the workflow waits 30 seconds then returns to step 4 for another check. The loop continues automatically.\n\n**Step 7 — Code: Extract Clips + Assign Days**\nThe clips array is sorted by engagement score from highest to lowest. The top 5 clips are kept and assigned Day 1 through Day 5 in order — Day 1 gets the highest-scoring clip. Millisecond timestamps are converted to MM:SS format. All six form inputs are merged into each clip row so every email lesson has full course context.\n\n**Step 8 — AI Agent: Write Email Lesson**\nGPT-4o-mini receives the clip description as the main input and a system prompt with the full course context: webinar title, course name, target audience, brand name, tone, day number, total days, clip title, engagement score, clip tags, and timestamp. Ten email writing rules are enforced: content only from the clip, tone consistency, day-position awareness (welcoming on Day 1, concluding on Day 5, continuing in middle days), subject line 40–55 characters, preview text 85–100 characters, body 200–300 words in short paragraphs, and a single action-oriented CTA. The output uses six labeled sections.\n\n**Step 9 — OpenAI: GPT-4o-mini Model**\nThis is the language model powering the email writing. It runs with default settings for consistent, readable email copy.\n\n**Step 10 — Code: Parse Email Output**\nAll six labeled sections are extracted from the AI output using regex: SUBJECT_LINE, PREVIEW_TEXT, EMAIL_BODY, KEY_TAKEAWAY, CTA_TEXT, and CTA_URL_PLACEHOLDER. The word count of the email body is also calculated. If the subject line or email body are missing, the step throws a clear error. All clip metadata and course details are packaged for the sheet row.\n\n**Step 11 — Google Sheets: Save Email Course**\nOne row is appended to your Drip Email Course tab with all 16 columns populated: webinar title, course name, day number, subject line, preview text, email body, key takeaway, CTA text, CTA URL placeholder, word count, clip title, clip engagement score, timestamp range, webinar URL, generation timestamp, and Status set to Draft. All five email days are saved as five separate rows in the same sheet.\n\n---\n\n## Key Features\n\n✅ **Best clip becomes Day 1 automatically** — Clips are sorted by engagement score before day assignment — your most engaging teaching moment always leads the course\n✅ **Day-position awareness in every email** — GPT knows whether it is writing Day 1, a middle day, or the final day and adjusts the tone and structure accordingly — without any extra prompt logic needed\n✅ **Six email components per lesson** — Subject line, preview text, body, key takeaway, CTA text, and CTA URL placeholder are all generated separately so you can copy each field directly into your email platform\n✅ **CTA URL placeholder included** — Every email ends with a clearly labeled placeholder (e.g. `YOUR_COURSE_LINK`) so you know exactly where to paste your own link before sending\n✅ **Word count per email logged** — The sheet records the word count of each email body so you can quickly verify length without opening every email\n✅ **Tone applied consistently across all 5 days** — Your chosen tone from the form is passed to every email's GPT prompt so the entire course sounds like one consistent voice\n✅ **Draft status for every row** — All five emails are saved with Status set to Draft so you have a clear review stage before loading them into your email platform\n\n---\n\n## Customisation Options\n\n**Change the clip duration range** — In node **2. WayinVideo — Submit AI Clipping**, change `\"target_duration\": \"DURATION_60_90\"` to `\"DURATION_30_60\"` for shorter clips or `\"DURATION_90_120\"` for longer ones — matching the email length you want to write from.\n\n**Add a retry limit to stop infinite polling** — Before node **6. Wait — 30 Seconds Retry**, add a Set step that increments a poll counter, then add a second IF check to stop after 15 polls and send a Gmail error notification instead of looping indefinitely.\n\n**Send the completed course to Gmail for review** — After node **11. Google Sheets — Save Email Course** (on Day 5 row), add a Gmail step that sends all 5 subject lines, preview texts, and a link to the Drip Email Course sheet so you get a complete course digest in your inbox when it is ready.\n\n**Add a Slack notification when the course is generated** — After the Day 5 row is saved, add a Slack step that posts the course name, webinar title, and a link to the Google Sheet to a `#content-team` channel so your team knows a new email course is ready to review.\n\n**Extend to a 7-day course** — In node **2. WayinVideo — Submit AI Clipping**, change `\"limit\": 5` to `7` to extract 7 clips — the day assignment logic in node **7. Code — Extract Clips + Assign Days** automatically adapts to however many clips are returned.\n\n---\n\n## Troubleshooting\n\n**Form submission not starting the workflow:**\n- Confirm the workflow is Active — inactive workflows do not receive form submissions\n- Copy the Form URL fresh from node **1. Form — Webinar URL + Course Details** after activating — URLs copied before activation will not work\n- Make sure all six form fields are filled in — all are marked required\n\n**WayinVideo returning an error on submission:**\n- Confirm `YOUR_WAYINVIDEO_API_KEY` in node **2. WayinVideo — Submit AI Clipping** is replaced with your actual API key — not the placeholder\n- Confirm the same replacement was made in node **4. WayinVideo — Get Clip Results** — both steps require the key\n- Check the execution log of node 2 for the raw error — a 401 means wrong key, a 422 means the URL or request format is invalid\n\n**Workflow stuck in the polling loop:**\n- Check that the webinar URL is publicly accessible — private YouTube videos, unlisted videos requiring login, or expired Zoom links will not be processed\n- Open the execution log of node **4. WayinVideo — Get Clip Results** and check the raw response — WayinVideo may have returned FAILED with a specific reason\n- If the loop runs indefinitely, deactivate the workflow, fix the URL, and resubmit\n\n**GPT not generating all six email sections:**\n- Confirm the API key is connected in node **9. OpenAI — GPT-4o-mini Model** and your account has available credits\n- Check the execution log of node **8. AI Agent — Write Email Lesson** for the raw GPT output — if any labeled sections are missing, the regex in node **10. Code — Parse Email Output** returns empty strings\n- If the subject line or email body are empty, node 10 throws an error — check the raw output for formatting issues\n\n**Google Sheets not logging all 5 rows:**\n- Confirm `YOUR_GOOGLE_SHEET_ID` in node **11. Google Sheets — Save Email Course** is replaced with your actual sheet ID from the URL\n- Confirm the tab is named **Drip Email Course** exactly and all 16 column headers in row 1 match exactly\n- Check that the Google Sheets OAuth2 credential is connected and not expired — re-authorize if needed\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email: [info@incrementors.com](info@incrementors.com)\n🌐 Website: [https://www.incrementors.com/](https://www.incrementors.com/)",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "e56bf8e3-16cb-4791-b44a-14efe667f8a7",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -880,
+            -400
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 492,
+            "height": 1060,
+            "content": "## Webinar Recording to 5-Day Drip Email Course Creator — WayinVideo AI Clipping + GPT-4o-mini + Google Sheets\n\nFor course creators, coaches, educators, and marketing teams who run webinars and want to automatically repurpose them into a 5-day email mini-course. Submit any webinar recording URL via the form. WayinVideo AI Clipping API extracts the top 5 most engaging teaching moments ranked by engagement score — sorted highest first so the best content becomes Day 1. GPT-4o-mini writes a complete standalone email lesson for each clip — Day 1 is welcoming and introduces the course, the final day wraps up and points to next steps, middle days continue naturally. Each email includes a subject line (40–55 chars), preview text (85–100 chars), email body (200–300 words), key takeaway, CTA text, and a CTA URL placeholder. All 5 email lessons are saved to Google Sheets as a ready-to-use drip course with Draft status.\n\n## How it works\n- **1. Form — Webinar URL + Course Details** collects the recording URL, webinar title, mini-course name, target audience, brand name, and email tone\n- **2. WayinVideo — Submit AI Clipping** submits the URL for AI clipping with 60–90 second target clip duration, limit 5, export disabled\n- **3. Wait — 90 Seconds** gives the API initial processing time\n- **4. WayinVideo — Get Clip Results** polls the clips results endpoint\n- **5. IF — Clipping Complete?** checks for SUCCEEDED — if not, retries via 30-second wait\n- **7. Code — Extract Clips + Assign Days** sorts clips by score descending, assigns Day 1–5, and returns one item per clip\n- **8. AI Agent — Write Email Lesson** uses GPT-4o-mini with 10 email writing rules to produce 6 labeled output sections per day\n- **10. Code — Parse Email Output** extracts all 6 sections via regex and computes word count\n- **11. Google Sheets — Save Email Course** appends one row per day with all 16 fields and Status set to Draft\n\n## Set up steps\n1. In **2. WayinVideo — Submit AI Clipping** and **4. WayinVideo — Get Clip Results** — replace `YOUR_WAYINVIDEO_API_KEY`\n2. In **9. OpenAI — GPT-4o-mini Model** — connect your OpenAI credential\n3. In **11. Google Sheets — Save Email Course** — connect your Google Sheets OAuth2 credential and replace `YOUR_GOOGLE_SHEET_ID`\n4. Create a Google Sheet tab named Drip Email Course with columns: Webinar Title, Course Name, Day Number, Email Subject, Preview Text, Email Body, Key Takeaway, CTA Text, CTA URL Placeholder, Word Count, Clip Title, Clip Score, Clip Timestamp, Webinar URL, Generated On, Status"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "c4b220b8-eabc-4119-8239-7df05b628186",
+          "name": "Section — Form Input",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -368,
+            -272
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 324,
+            "height": 388,
+            "content": "## Form Input\nUser submits webinar recording URL, webinar title, mini-course name, target audience, brand name, and email tone. All six fields feed into clip extraction and the AI email writing prompt."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "98957452-0dc2-477a-bfef-9a46b52f3ac7",
+          "name": "Section — WayinVideo AI Clipping Submit and Poll",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -16,
+            -320
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 660,
+            "height": 468,
+            "content": "## WayinVideo AI Clipping Submit and Poll\nSubmits the webinar URL for AI clipping — 60–90 second clips, limit 5, export disabled. Waits 90 seconds for initial processing. Polls the clips results endpoint until status equals SUCCEEDED."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "aea56429-c57a-437b-893c-96fc730658f9",
+          "name": "Section — Clipping Status Check and Retry Loop",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            672,
+            -384
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 404,
+            "height": 772,
+            "content": "## Clipping Status Check and Retry Loop\nIF checks for SUCCEEDED status. TRUE proceeds to clip extraction. FALSE waits 30 seconds and polls again. Loop continues until clips are ready."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "58eddf42-6940-45dc-b7c7-a083f58cef0f",
+          "name": "Section — Clip Extraction and AI Email Lesson Writing",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1136,
+            -304
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 612,
+            "height": 628,
+            "content": "## Clip Extraction and AI Email Lesson Writing\nSorts clips by engagement score descending and assigns Day 1–5. GPT-4o-mini writes a complete email lesson per clip — Day 1 is welcoming, last day is a conclusion, middle days continue naturally."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "d5a2bb01-ed24-47dc-aabe-5ddb6d79d391",
+          "name": "Section — Email Parse and Google Sheets Save",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1840,
+            -272
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 532,
+            "height": 404,
+            "content": "## Email Parse and Google Sheets Save\nRegex extracts 6 labeled sections and computes word count. Google Sheets appends one row per day with all 16 fields including CTA URL placeholder and Status set to Draft."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "6ac2645e-376a-4fa5-ace3-84bc8e22660d",
+          "name": "1. Form — Webinar URL + Course Details",
+          "type": "n8n-nodes-base.formTrigger",
+          "position": [
+            -272,
+            -112
+          ],
+          "webhookId": "6fbba14f-19c1-4f78-b8a7-788626e26429",
+          "parameters": {
+            "options": {},
+            "formTitle": "Webinar to 5-Day Drip Email Course Creator",
+            "formFields": {
+              "values": [
+                {
+                  "fieldLabel": "Webinar Recording URL",
+                  "placeholder": "https://www.youtube.com/watch?v=xxxxxxx or Zoom/Vimeo link",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Webinar / Course Title",
+                  "placeholder": "e.g. Mastering SEO in 2025 — Full Webinar",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Mini-Course Name",
+                  "placeholder": "e.g. 5-Day SEO Crash Course, Your Free Marketing Masterclass",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Target Audience",
+                  "placeholder": "e.g. Small business owners, digital marketers, freelancers",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Brand / Sender Name",
+                  "placeholder": "e.g. Incrementors, John Smith, The Marketing Lab",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Email Tone",
+                  "placeholder": "e.g. Professional and educational / Casual and friendly / Motivational",
+                  "requiredField": true
+                }
+              ]
+            },
+            "formDescription": "Paste your webinar recording URL. AI will extract the top 5 teaching moments and write a complete 5-day email mini-course ready to send to your audience."
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "e0cf4ae2-be44-49f7-a406-82a4220fe35b",
+          "name": "2. WayinVideo — Submit AI Clipping",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            32,
+            -112
+          ],
+          "parameters": {
+            "url": "https://wayinvideo-api.wayin.ai/api/v2/clips",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"video_url\": \"{{ $json['Webinar Recording URL'] }}\",\n  \"project_name\": \"Drip Course — {{ $json['Mini-Course Name'] }}\",\n  \"target_duration\": \"DURATION_60_90\",\n  \"limit\": 5,\n  \"enable_export\": false,\n  \"target_lang\": \"en\"\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer YOUR_TOKEN_HERE"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "197abd47-dee3-481d-b182-ca85bdd6172d",
+          "name": "3. Wait — 90 Seconds",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            272,
+            -112
+          ],
+          "webhookId": "wait-drip-clipping-90s",
+          "parameters": {
+            "amount": 90
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "e9bb960a-3582-4e35-89ae-ba22cb565407",
+          "name": "4. WayinVideo — Get Clip Results",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            512,
+            -112
+          ],
+          "parameters": {
+            "url": "=https://wayinvideo-api.wayin.ai/api/v2/clips/results/{{ $('2. WayinVideo — Submit AI Clipping').item.json.data.id }}",
+            "options": {},
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer YOUR_TOKEN_HERE"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "7b6adaf7-d2aa-489c-bd9f-3abe9feb226b",
+          "name": "5. IF — Clipping Complete?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            784,
+            -112
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "status-check",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ $json.data.status }}",
+                  "rightValue": "SUCCEEDED"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "e2b5d9d4-f649-4361-984b-04be84745e54",
+          "name": "6. Wait — 30 Seconds Retry",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            800,
+            128
+          ],
+          "webhookId": "wait-drip-retry-30s",
+          "parameters": {
+            "amount": 30
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "8acd0759-839a-4955-a92a-413393887511",
+          "name": "7. Code — Extract Clips + Assign Days",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1184,
+            -128
+          ],
+          "parameters": {
+            "jsCode": "// Extract clips from WayinVideo results\nconst clips = $('4. WayinVideo — Get Clip Results').item.json.data?.clips || [];\n\nif (clips.length === 0) {\n  throw new Error('No clips returned from WayinVideo — check if the video URL is valid and publicly accessible.');\n}\n\n// Get form data\nconst webinarTitle = $('1. Form — Webinar URL + Course Details').item.json['Webinar / Course Title'];\nconst courseName = $('1. Form — Webinar URL + Course Details').item.json['Mini-Course Name'];\nconst targetAudience = $('1. Form — Webinar URL + Course Details').item.json['Target Audience'];\nconst brandName = $('1. Form — Webinar URL + Course Details').item.json['Brand / Sender Name'];\nconst emailTone = $('1. Form — Webinar URL + Course Details').item.json['Email Tone'];\nconst webinarUrl = $('1. Form — Webinar URL + Course Details').item.json['Webinar Recording URL'];\n\n// Sort clips by score descending — best clips first\nconst sortedClips = clips.sort((a, b) => (b.score || 0) - (a.score || 0));\n\n// Take top 5 — one per day\nconst topClips = sortedClips.slice(0, 5);\n\n// Return one item per clip — each becomes one email day\nreturn topClips.map((clip, index) => ({\n  json: {\n    dayNumber: index + 1,\n    totalDays: topClips.length,\n    clipTitle: clip.title || `Day ${index + 1} Lesson`,\n    clipDescription: clip.desc || '',\n    clipScore: clip.score || 0,\n    clipTags: Array.isArray(clip.tags) ? clip.tags.join(', ') : '',\n    beginMs: clip.begin_ms || 0,\n    endMs: clip.end_ms || 0,\n    timestampStart: `${Math.floor((clip.begin_ms || 0) / 60000)}:${String(Math.floor(((clip.begin_ms || 0) % 60000) / 1000)).padStart(2, '0')}`,\n    timestampEnd: `${Math.floor((clip.end_ms || 0) / 60000)}:${String(Math.floor(((clip.end_ms || 0) % 60000) / 1000)).padStart(2, '00')}`,\n    webinarTitle,\n    courseName,\n    targetAudience,\n    brandName,\n    emailTone,\n    webinarUrl\n  }\n}));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "361eb8d7-9c46-4880-87d4-a2c7a36a1212",
+          "name": "8. AI Agent — Write Email Lesson",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            1424,
+            -128
+          ],
+          "parameters": {
+            "text": "={{ $json.clipDescription }}",
+            "options": {
+              "systemMessage": "=You are an expert email copywriter who specializes in writing high-converting educational email courses from video content.\n\nA webinar has been automatically clipped into key teaching moments. Your job is to write a complete standalone email lesson for Day {{ $json.dayNumber }} of a {{ $json.totalDays }}-day mini email course — based on this specific clip.\n\n---\n\n## COURSE CONTEXT\n- Webinar Title: {{ $json.webinarTitle }}\n- Mini-Course Name: {{ $json.courseName }}\n- Target Audience: {{ $json.targetAudience }}\n- Brand / Sender: {{ $json.brandName }}\n- Email Tone: {{ $json.emailTone }}\n- Day: {{ $json.dayNumber }} of {{ $json.totalDays }}\n\n## THIS CLIP (Day {{ $json.dayNumber }} Lesson)\n- Clip Title: {{ $json.clipTitle }}\n- Description: {{ $json.clipDescription }}\n- Engagement Score: {{ $json.clipScore }}/100\n- Tags: {{ $json.clipTags }}\n- Timestamp in Recording: {{ $json.timestampStart }} — {{ $json.timestampEnd }}\n\n---\n\n## EMAIL WRITING RULES\n1. Write based ONLY on the clip content provided — no invented information\n2. Match the tone specified — keep it consistent throughout\n3. Day 1 email should feel welcoming — introduce the course briefly before the lesson\n4. Final day email should feel like a conclusion — celebrate completion and point to next step\n5. Middle days should feel like natural continuation\n6. Subject line: 40-55 characters — curiosity or benefit driven — no clickbait\n7. Preview text: 85-100 characters — complements subject, not a repeat\n8. Email body: 200-300 words — short, punchy paragraphs, easy to read\n9. One clear CTA at the end — action-oriented\n10. Key takeaway: one sentence — the single most important thing to remember\n\n---\n\n## OUTPUT FORMAT\nReturn in this exact structure:\n\nSUBJECT_LINE:\n[Write subject line here — 40-55 characters]\n\nPREVIEW_TEXT:\n[Write preview text here — 85-100 characters]\n\nEMAIL_BODY:\n[Write full email body here — 200-300 words — short paragraphs — conversational]\n\nKEY_TAKEAWAY:\n[Write one sentence takeaway here]\n\nCTA_TEXT:\n[Write the CTA button text — 3-6 words — action oriented]\n\nCTA_URL_PLACEHOLDER:\n[Write a placeholder for the CTA URL — e.g. YOUR_COURSE_LINK or YOUR_WEBSITE_LINK]\n\n---\n\nNow write the Day {{ $json.dayNumber }} email lesson:"
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "3433e652-265e-472b-b9a4-ac84d4267749",
+          "name": "9. OpenAI — GPT-4o-mini Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            1424,
+            64
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini"
+            },
+            "options": {},
+            "builtInTools": {}
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "85080ab7-6638-45c1-8760-9cafe4cdef84",
+          "name": "10. Code — Parse Email Output",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1904,
+            -128
+          ],
+          "parameters": {
+            "jsCode": "// Parse AI email output into structured fields\nconst output = $input.first().json.output || '';\n\n// Extract each section\nconst subjectMatch = output.match(/SUBJECT_LINE:\\s*([\\s\\S]*?)(?=\\nPREVIEW_TEXT:|$)/);\nconst previewMatch = output.match(/PREVIEW_TEXT:\\s*([\\s\\S]*?)(?=\\nEMAIL_BODY:|$)/);\nconst bodyMatch = output.match(/EMAIL_BODY:\\s*([\\s\\S]*?)(?=\\nKEY_TAKEAWAY:|$)/);\nconst takeawayMatch = output.match(/KEY_TAKEAWAY:\\s*([\\s\\S]*?)(?=\\nCTA_TEXT:|$)/);\nconst ctaTextMatch = output.match(/CTA_TEXT:\\s*([\\s\\S]*?)(?=\\nCTA_URL_PLACEHOLDER:|$)/);\nconst ctaUrlMatch = output.match(/CTA_URL_PLACEHOLDER:\\s*([\\s\\S]*)$/);\n\nconst subjectLine = subjectMatch ? subjectMatch[1].trim() : '';\nconst previewText = previewMatch ? previewMatch[1].trim() : '';\nconst emailBody = bodyMatch ? bodyMatch[1].trim() : '';\nconst keyTakeaway = takeawayMatch ? takeawayMatch[1].trim() : '';\nconst ctaText = ctaTextMatch ? ctaTextMatch[1].trim() : '';\nconst ctaUrl = ctaUrlMatch ? ctaUrlMatch[1].trim() : 'YOUR_LINK_HERE';\n\nif (!subjectLine || !emailBody) {\n  throw new Error('Could not parse email from AI output. Check the prompt output format.');\n}\n\n// Get clip data from step 7\nconst clipData = $('7. Code — Extract Clips + Assign Days').item.json;\n\nreturn [{\n  json: {\n    dayNumber: clipData.dayNumber,\n    subjectLine,\n    previewText,\n    emailBody,\n    keyTakeaway,\n    ctaText,\n    ctaUrl,\n    wordCount: emailBody.split(/\\s+/).length,\n    clipTitle: clipData.clipTitle,\n    clipScore: clipData.clipScore,\n    timestamp: `${clipData.timestampStart} — ${clipData.timestampEnd}`,\n    webinarTitle: clipData.webinarTitle,\n    courseName: clipData.courseName,\n    targetAudience: clipData.targetAudience,\n    brandName: clipData.brandName,\n    webinarUrl: clipData.webinarUrl\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "1bd428f3-2632-43d1-9c3f-354390ea047e",
+          "name": "11. Google Sheets — Save Email Course",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            2144,
+            -128
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "Status": "Draft",
+                "CTA Text": "={{ $json.ctaText }}",
+                "Clip Score": "={{ $json.clipScore }}",
+                "Clip Title": "={{ $json.clipTitle }}",
+                "Day Number": "={{ $json.dayNumber }}",
+                "Email Body": "={{ $json.emailBody }}",
+                "Word Count": "={{ $json.wordCount }}",
+                "Course Name": "={{ $json.courseName }}",
+                "Webinar URL": "={{ $json.webinarUrl }}",
+                "Generated On": "={{ $now.toFormat('dd MMMM yyyy HH:mm') }}",
+                "Key Takeaway": "={{ $json.keyTakeaway }}",
+                "Preview Text": "={{ $json.previewText }}",
+                "Email Subject": "={{ $json.subjectLine }}",
+                "Webinar Title": "={{ $json.webinarTitle }}",
+                "Clip Timestamp": "={{ $json.timestamp }}",
+                "CTA URL Placeholder": "={{ $json.ctaUrl }}"
+              },
+              "schema": [],
+              "mappingMode": "defineBelow",
+              "matchingColumns": []
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Drip Email Course"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_GOOGLE_SHEET_ID"
+            }
+          },
+          "typeVersion": 4.5
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "3. Wait — 90 Seconds": {
+          "main": [
+            [
+              {
+                "node": "4. WayinVideo — Get Clip Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. IF — Clipping Complete?": {
+          "main": [
+            [
+              {
+                "node": "7. Code — Extract Clips + Assign Days",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "6. Wait — 30 Seconds Retry",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. Wait — 30 Seconds Retry": {
+          "main": [
+            [
+              {
+                "node": "4. WayinVideo — Get Clip Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "10. Code — Parse Email Output": {
+          "main": [
+            [
+              {
+                "node": "11. Google Sheets — Save Email Course",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "9. OpenAI — GPT-4o-mini Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "8. AI Agent — Write Email Lesson",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "4. WayinVideo — Get Clip Results": {
+          "main": [
+            [
+              {
+                "node": "5. IF — Clipping Complete?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. AI Agent — Write Email Lesson": {
+          "main": [
+            [
+              {
+                "node": "10. Code — Parse Email Output",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "2. WayinVideo — Submit AI Clipping": {
+          "main": [
+            [
+              {
+                "node": "3. Wait — 90 Seconds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. Code — Extract Clips + Assign Days": {
+          "main": [
+            [
+              {
+                "node": "8. AI Agent — Write Email Lesson",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Form — Webinar URL + Course Details": {
+          "main": [
+            [
+              {
+                "node": "2. WayinVideo — Submit AI Clipping",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 17,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 2
+        },
+        "n8n-nodes-base.wait": {
+          "count": 2
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.formTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 2
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Incrementors",
+      "username": "incrementors",
+      "bio": "",
+      "verified": true,
+      "links": [
+        "https://www.incrementors.com/"
+      ],
+      "avatar": "https://gravatar.com/avatar/e09b4b6a8c5a00f886a9eedf3be23a4af5a50cc216cd6b2aee2a12c2dfba99dd?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1225,
+        "icon": "file:form.svg",
+        "name": "n8n-nodes-base.formTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "table",
+              "submit",
+              "post"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.formtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Other Trigger Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "On form submission"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NiIgaGVpZ2h0PSI0MCIgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iIzAwQjdCQyIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMzQuOTc4IDM3LjczMmExLjU2IDEuNTYgMCAwIDEtMS41NjIgMS41NjNINi4yNmExLjU2IDEuNTYgMCAwIDEtMS41NjMtMS41NjNWOS42MDdjMC0uNDA1LjE1Ny0uNzk0LjQzOC0xLjA4Nmw2LjMwNC02LjUzMXY1LjM0NEg4LjIxM2ExLjE3MiAxLjE3MiAwIDEgMCAwIDIuMzQzaDQuNDNhMS4xNyAxLjE3IDAgMCAwIDEuMTcxLTEuMTcxVi4yMzJoMTkuNjAyYTEuNTYgMS41NiAwIDAgMSAxLjU2MiAxLjU2M3YxMC4zMjdsLTIuODYgMi44Ni04LjI1MiA4LjI3NmE0MTMuMDA2IDQxMy4wMDYgMCAwIDEtMS42NTQgMS42NjJsLS4zMzcuMzM3YTIgMiAwIDAgMC0uNTU3IDEuMDhMMjAuMyAzMS45MjJjLS4xMDguNjM4LS4yMTUgMS4wNzkuMjExIDEuNDE4LjQwMy4zMi45LjE3NCAxLjU0LjA2Nmw1LjQwOC0uOTI4YTIgMiAwIDAgMCAxLjA4LS41NTZsNi40NC02LjQyOXptLTI0LjAzLTIxLjI2NWExLjE4IDEuMTggMCAwIDAgMS4xNzEgMS4xNzJoMTMuMTYzYTEuMTcyIDEuMTcyIDAgMSAwIDAtMi4zNDRIMTIuMTE5YTEuMTcgMS4xNyAwIDAgMC0xLjE3MiAxLjE3Mm03LjI5NCAxNC43NjZhMS4xNyAxLjE3IDAgMCAwLTEuMTcyLTEuMTcySDEyLjEyYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNC45NTFhMS4xNyAxLjE3IDAgMCAwIDEuMTcyLTEuMTcybS44Ni03LjM5MWExLjE3IDEuMTcgMCAwIDAtMS4xNzItMS4xNzJoLTUuODExYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNS44MWExLjE2NCAxLjE2NCAwIDAgMCAxLjE3My0xLjE3MSIgY2xpcC1ydWxlPSJldmVub2RkIi8+PHBhdGggZmlsbD0iIzAwQjdCQyIgZD0ibTMzLjUzMiAxNi4zOTcgNC4yODktNC4yODkgMy43NTggMy43MSAxLjYxNy0xLjYxNiAyLjI1OCAyLjI1N2MuMjE4LjIxOC4zNC41MTMuMzQzLjgyLS4wMDIuMzExLS4xMjUuNjA4LS4zNDQuODNsLTYuODA0IDYuNzk2YTEuMTMgMS4xMyAwIDAgMS0uODI4LjM0MyAxLjE1IDEuMTUgMCAwIDEtLjgyOC0uMzQzIDEuMTggMS4xOCAwIDAgMSAwLTEuNjU3bDUuOTc2LTUuOTY4LTEuMzEyLTEuMzEzLTEuMzgzIDEuNDE0LTEzLjE0OSAxMy4xMjUtNC42MTcuNzgyLjc4Mi00LjYxNy4zMzYtLjMzNyAyLjU2MiAyLjU1NWExLjEgMS4xIDAgMCAwIC44MjguMzQ0Yy4zMTIuMDA1LjYxMi0uMTIuODI4LS4zNDRhMS4xOCAxLjE4IDAgMCAwIDAtMS42NTZsLTIuNTYyLTIuNTYyek00NC43MzYgMTIuMjRjMCAuNDE0LS4xNjMuODEtLjQ1NCAxLjEwMmwtLjkyMi45MTQtMy44NTItMy44MjguOTMtLjkzYTEuNTYzIDEuNTYzIDAgMCAxIDIuMjAzIDBsMS42NCAxLjY0MWMuMjkxLjI5My40NTUuNjkuNDU1IDEuMTAyIi8+PC9zdmc+"
+        },
+        "displayName": "n8n Form Trigger",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 31,
+        "name": "Content Creation"
+      },
+      {
+        "id": 51,
+        "name": "Multimodal AI"
+      }
+    ],
+    "image": []
+  }
+}

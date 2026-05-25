@@ -1,0 +1,2776 @@
+{
+  "workflow": {
+    "id": 15377,
+    "name": "Intelligent Support Triage & Auto-Response Engine with Jotform, Airtable, Gemini",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-29T07:15:24.009Z",
+    "description": "## AI-Driven Support Triage and Auto-Response Engine\n\nThis n8n workflow establishes a sophisticated, multi-stage support system. It automatically validates user identity, analyzes ticket severity and sentiment, and attempts to resolve lower-priority issues using an AI agent connected to a knowledge base (Pinecone). It ensures high-priority or complex issues are immediately escalated to the team via Slack.\n\n### Phase 1: Intake and User Validation\n\nThe workflow triggers whenever a new support ticket is submitted, ensuring that only registered users receive automated assistance.\n\n1.  **Jotform Trigger:** The process begins when a customer submits a support request via your designated Jotform.\n2.  **Airtable User Check:** The workflow immediately searches your **Airtable \"Users\" table** to verify if the provided email matches an existing account.\n3.  **Validation Logic (If Node):** * **If User Found:** The workflow proceeds to Phase 2 for analysis.\n    * **If User Not Found:** It sends an automated **Gmail message** asking the user for the correct account email and updates the Airtable ticket status to \"Need User Input\"\n\n### Phase 2: AI Triage and Severity Analysis\n\nOnce validated, the issue is analyzed by a Senior Support AI to determine how it should be handled.\n\n1.  **AI Agent (Triage):** Powered by **Google Gemini**, this agent analyzes the \"Issue Type\" and \"Description.\" It uses a **Structured Output Parser** to categorize the ticket by:\n    * **Severity:** High, Medium, or Low.\n    * **Sentiment:** Frustrated or Normal.\n2.  **Airtable Logging:** The analysis (Severity/Sentiment) is immediately appended to the support record in Airtable.\n3.  **Escalation Path (If High Severity):** If the issue is flagged as \"High,\" the workflow bypasses automated response attempts and triggers a **Slack alert** to the team for immediate manual intervention.\n\n### Phase 3: Automated Resolution and Escalation\n\nFor non-critical issues, the system attempts to solve the problem using your internal documentation.\n\n1.  **AI Agent (Resolution):** This agent is equipped with a **Pinecone Vector Store** (containing your Support FAQs) and **Gmail Tools**.\n2.  **Vector Search:** The agent searches the FAQ database for a solution.\n    * **Success (&gt;90% confidence):** The agent automatically drafts and sends a polite solution via **Gmail** and updates the Airtable status to \"Responded.\"\n    * **Failure (No solution found):** The agent returns \"MANUAL_REVIEW_REQUIRED,\" which triggers a **Slack notification** to the support channel, including deep links to the Airtable record and specific user details (Plan type, Start date).\n\n### Phase 4: Verification Loop (Email Reply Detection)\n\nThe workflow also includes a secondary logic branch to handle incoming replies from users who were previously asked for identity verification.\n\n1.  **Gmail Trigger (Polling):** Monitors for new unread replies from users with correct emails.\n2.  **Verification Check:** Searches Airtable for tickets currently in \"Require User Input\" status.\n3.  **Status Restoration:** Once the user replies, it notifies the team via **Slack** that a ticket has been \"Verified\" and moves the status back to \"Pending\" for regular processing.\n\n---\n\n## Requirements\n\n### 1. Automation & AI Platforms\n* **n8n Instance:** Cloud or self-hosted.\n* **Google Gemini API:** Required for the Triage and Resolution AI agents.\n* **Pinecone:** A vector database containing your FAQ embeddings for AI retrieval.\n\n### 2. Service Credentials\n* **Airtable Personal Access Token:** To search users and update support entries.\n* **Gmail OAuth2:** To send automated resolutions and monitor for user replies.\n* **Slack OAuth2:** To send real-time alerts and escalation blocks to the team.\n* **Jotform API Key:** To trigger the workflow upon form submission.\n\n### 3. External Configurations\n* **Airtable Schema:** Two tables are required:\n    * `Users`: Containing `Email`, `First Name`, `Last Name`, and `Current Plan`.\n    * `Support Entries`: Containing `Submission ID`, `Status`, `Severity`, `Sentiment`, and `Message id`.\n* **Pinecone Index:** An index named `support-faqs` populated with relevant documentation embeddings.",
+    "workflow": {
+      "nodes": [
+        {
+          "id": "62cbb602-3659-4736-a2b5-f3586a921e21",
+          "name": "Jotform Trigger",
+          "type": "n8n-nodes-base.jotFormTrigger",
+          "position": [
+            112,
+            144
+          ],
+          "webhookId": "74f753fe-cc0c-4f8c-a30f-d07b88a46bad",
+          "parameters": {
+            "form": "261150644563050",
+            "onlyAnswers": false
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "68dde4b2-80ca-40a7-b253-b4c843bf98d2",
+          "name": "AI Agent",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            880,
+            -80
+          ],
+          "parameters": {
+            "text": "=Issue Type: {{ $('Jotform Trigger').item.json.rawRequest['Issue Type'] }}\nIssue Description: {{ $('Jotform Trigger').item.json.rawRequest['Issue Description'] }}\n",
+            "options": {
+              "systemMessage": "You are an expert Support Operations Specialist. Your task is to analyze incoming support requests and assign a Severity Level based on the provided impact and urgency. And Sentiment.\n\nSeverity Definitions\nHigh: Core functionality is down for all users. Security breach or data loss in progress. No workaround exists.\n\nHigh: Major feature is broken or performance is severely degraded. Workaround is difficult or inefficient.\n\nMedium: Minor feature issue, or UI/UX bug. A viable workaround exists.\n\nLow: General inquiries, feature requests, or cosmetic \"nice-to-have\" fixes. No impact on current workflow.\n\nInstructions\nAnalyze the \"Issue Type\" and \"Description\" provided by the user.\n\nDetermine the Severity Level (high–Medium-Low) and Sentiment (Frustrated-Normal).\n\n\nOutput Should be in JSON:\n{\n \"Severity\": \"\",\n \"Sentiment\": \"\",\n}"
+            },
+            "promptType": "define",
+            "hasOutputParser": true
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "c7aa0467-16cd-4fdb-a13e-954a4b9949cb",
+          "name": "Google Gemini Chat Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+          "position": [
+            928,
+            128
+          ],
+          "parameters": {
+            "options": {},
+            "modelName": "models/gemini-flash-latest"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "2cf6dae8-3dab-4a22-b56c-b7f30462842a",
+          "name": "Structured Output Parser",
+          "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+          "position": [
+            1088,
+            128
+          ],
+          "parameters": {
+            "jsonSchemaExample": "{\n \"Severity\": \"High/Medium/Low\",\n \"Sentiment\": \"Frustrated/Normal\"\n}"
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "4d07b5b2-422b-42f6-ab1a-f6adcdb22073",
+          "name": "Search records",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            336,
+            144
+          ],
+          "parameters": {
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "app5gdNa4CMviCW2u",
+              "cachedResultUrl": "https://airtable.com/app5gdNa4CMviCW2u",
+              "cachedResultName": "Support"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tbl8zRM7iRAquA1tW",
+              "cachedResultUrl": "https://airtable.com/app5gdNa4CMviCW2u/tbl8zRM7iRAquA1tW",
+              "cachedResultName": "Users"
+            },
+            "options": {},
+            "operation": "search",
+            "filterByFormula": "={Email} = \"{{ $json.rawRequest['Email Address'] }}\""
+          },
+          "typeVersion": 2.1,
+          "alwaysOutputData": true
+        },
+        {
+          "id": "85ca0366-0088-4d83-889b-5d4e1f0ec7f8",
+          "name": "Update record",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            1312,
+            -16
+          ],
+          "parameters": {
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "app5gdNa4CMviCW2u",
+              "cachedResultUrl": "https://airtable.com/app5gdNa4CMviCW2u",
+              "cachedResultName": "Support"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tblUDDQDOuzJtwlDq",
+              "cachedResultUrl": "https://airtable.com/app5gdNa4CMviCW2u/tblUDDQDOuzJtwlDq",
+              "cachedResultName": "Support Entries"
+            },
+            "columns": {
+              "value": {
+                "Severity": "={{ $json.output.Severity }}",
+                "Sentiment": "={{ $json.output.Sentiment }}",
+                "Submission ID": "={{ $('Jotform Trigger').item.json.submissionID }}"
+              },
+              "schema": [
+                {
+                  "id": "id",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": true,
+                  "required": false,
+                  "displayName": "id",
+                  "defaultMatch": true
+                },
+                {
+                  "id": "Submission ID",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Submission ID",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "First Name",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "First Name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Last Name",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Last Name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Email",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Email",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Issue Type",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Bug",
+                      "value": "Bug"
+                    },
+                    {
+                      "name": "Feature Request",
+                      "value": "Feature Request"
+                    },
+                    {
+                      "name": "Complaint",
+                      "value": "Complaint"
+                    },
+                    {
+                      "name": "Other",
+                      "value": "Other"
+                    },
+                    {
+                      "name": "Technical Problem",
+                      "value": "Technical Problem"
+                    }
+                  ],
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Issue Type",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Issue Description",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Issue Description",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "File Attachment",
+                  "type": "array",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "File Attachment",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Severity",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "High",
+                      "value": "High"
+                    },
+                    {
+                      "name": "Medium",
+                      "value": "Medium"
+                    },
+                    {
+                      "name": "Low",
+                      "value": "Low"
+                    }
+                  ],
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Severity",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Sentiment",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Frustrated",
+                      "value": "Frustrated"
+                    },
+                    {
+                      "name": "Normal",
+                      "value": "Normal"
+                    }
+                  ],
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Sentiment",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Status",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Pending",
+                      "value": "Pending"
+                    },
+                    {
+                      "name": "Responded",
+                      "value": "Responded"
+                    },
+                    {
+                      "name": "Require User Input",
+                      "value": "Require User Input"
+                    },
+                    {
+                      "name": "Resolved",
+                      "value": "Resolved"
+                    }
+                  ],
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [
+                "Submission ID"
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "update"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "5e70579b-8e2a-40b0-93ba-586dc31b17f1",
+          "name": "If",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            544,
+            144
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "d69bcb53-a348-47ed-8394-1837b0337c37",
+                  "operator": {
+                    "type": "string",
+                    "operation": "exists",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json.id }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "adcc9517-ca96-49de-a206-574d48fdbcbf",
+          "name": "Send a message",
+          "type": "n8n-nodes-base.gmail",
+          "position": [
+            880,
+            400
+          ],
+          "webhookId": "0f8abc92-f537-4538-bffa-d882ec5470bb",
+          "parameters": {
+            "sendTo": "={{ $('Jotform Trigger').item.json.rawRequest['Email Address'] }}",
+            "message": "=Hi  {{ $('Jotform Trigger').item.json.rawRequest['First Name'] }},\n\nWe have got your support request, but to properly identify the issue we need your acctual email which you are using in the app. Asap soon as we receive that from you we will start working on it.\n\nThanks\n",
+            "options": {
+              "appendAttribution": false
+            },
+            "subject": "=Need Correct Email to Resolve the Issue",
+            "emailType": "text"
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "a3513fda-b6d3-40aa-be39-4e4ae7f1806d",
+          "name": "Pinecone Vector Store",
+          "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+          "position": [
+            1952,
+            288
+          ],
+          "parameters": {
+            "mode": "retrieve-as-tool",
+            "topK": 1,
+            "options": {},
+            "pineconeIndex": {
+              "__rl": true,
+              "mode": "list",
+              "value": "support-faqs",
+              "cachedResultName": "support-faqs"
+            },
+            "toolDescription": "Your job is to find the most relevant content of the issue mentioned below. If there's nothing simply don't provide anything, and also no issue to generate anything."
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "f83df14b-436e-4b3a-b2de-df9678524bc9",
+          "name": "Google Gemini Chat Model1",
+          "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+          "position": [
+            1824,
+            288
+          ],
+          "parameters": {
+            "options": {},
+            "modelName": "models/gemini-2.5-flash-lite"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "a54073b1-9e22-4458-936a-29ffec773655",
+          "name": "Send a message in Gmail",
+          "type": "n8n-nodes-base.gmailTool",
+          "position": [
+            2240,
+            288
+          ],
+          "webhookId": "cb9e57a9-70d5-422c-8bf1-a19a74b7b3fe",
+          "parameters": {
+            "sendTo": "={{ $node[\"Jotform Trigger\"].json.rawRequest[\"Email Address\"] }}",
+            "message": "={{ $fromAI('Message', ``, 'string') }}",
+            "options": {
+              "appendAttribution": false
+            },
+            "subject": "=Re: Your Support Ticket",
+            "emailType": "text"
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "3bc9d928-5557-4ae0-9a20-573faa76e432",
+          "name": "AI Agent - Respond",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            1968,
+            64
+          ],
+          "parameters": {
+            "text": "=INPUT DATA:\n- User Email: {{ $('Jotform Trigger').item.json.rawRequest['Email Address'] }}\n- Issue: {{ $('Jotform Trigger').item.json.rawRequest['Issue Description'] }}\n",
+            "options": {
+              "systemMessage": "=CRITICAL: You are an API-calling engine. You communicate ONLY through the \"Send a message in Gmail\" tool.\n\nDIRECTIONS:\n1. Search \"Pinecone Vector Store\" for a solution.\n2. If a solution is found:\n   - You MUST call \"Send a message in Gmail\".\n   - You MUST provide a \"Message\" argument containing the solution.\n   - Do not leave the Message blank.\n   - The tool will handle the recipient email automatically.\n   - CALL \"Update record in Airtable\".\n   - After the tool confirms success, output: SENT.\n3. If no solution is found:\n   - Output: MANUAL_REVIEW_REQUIRED.\n\nIMPORTANT: If you call the Gmail tool without providing a draft in the 'Message' parameter, the system will crash. You MUST provide the text solution to the tool."
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "faf9ca96-76a2-46b3-90e0-0711d0d2a20c",
+          "name": "Embeddings Google Gemini Plus",
+          "type": "n8n-nodes-gemini-embedding-plus.embeddingsGoogleGeminiPlus",
+          "position": [
+            2048,
+            464
+          ],
+          "parameters": {
+            "options": {
+              "dimensions": 512
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "077b720d-d741-4161-aa49-3681d09879f8",
+          "name": "If High Severity",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            1600,
+            -16
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "f62a264b-8791-473a-becc-1c0c13cda6e5",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ $('AI Agent').item.json.output.Severity }}",
+                  "rightValue": "High"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "a6f86c43-187f-4936-9d07-e95f05b4e3f1",
+          "name": "Send a message to team",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            2656,
+            -32
+          ],
+          "webhookId": "f12539a0-eb55-4776-b7d2-086f8835796b",
+          "parameters": {
+            "text": "=🚨 New Support Ticket: {{ $('AI Agent').item.json.output.Severity }} Severity from {{ $('Jotform Trigger').item.json.rawRequest['Email Address'] }}",
+            "user": {
+              "__rl": true,
+              "mode": "list",
+              "value": "U02CL8STLLB",
+              "cachedResultName": "rkhabeer84"
+            },
+            "select": "user",
+            "blocksUi": "={\n\t\"blocks\": [\n\t\t{\n\t\t\t\"type\": \"header\",\n\t\t\t\"text\": {\n\t\t\t\t\"type\": \"plain_text\",\n\t\t\t\t\"text\": \"🚨 New Support Ticket: {{ $('AI Agent').item.json.output.Severity }} Severity\",\n\t\t\t\t\"emoji\": true\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"type\": \"section\",\n\t\t\t\"text\": {\n\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\"text\": \"*From:* {{ $('Jotform Trigger').item.json.rawRequest['Email Address'] }}\\n*Submission ID:* `{{ $('Jotform Trigger').item.json.submissionID }}`\"\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"type\": \"divider\"\n\t\t},\n\t\t{\n\t\t\t\"type\": \"section\",\n\t\t\t\"fields\": [\n\t\t\t\t{\n\t\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\t\"text\": \"*Issue Type:*\\n{{ $('Jotform Trigger').item.json.rawRequest['Issue Type'] }}\"\n\t\t\t\t},\n\t\t\t\t{\n\t\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\t\"text\": \"*Sentiment:*\\n{{ $('AI Agent').item.json.output.Sentiment }}\"\n\t\t\t\t}\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"type\": \"section\",\n\t\t\t\"text\": {\n\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\"text\": \"*Description:*\\n{{ $('Jotform Trigger').item.json.rawRequest['Issue Description'] }}\"\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"type\": \"divider\"\n\t\t},\n\t\t{\n\t\t\t\"type\": \"section\",\n\t\t\t\"text\": {\n\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\"text\": \"*User Details*\"\n\t\t\t},\n\t\t\t\"fields\": [\n\t\t\t\t{\n\t\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\t\"text\": \"*Name:*\\n{{ $('Search records').item.json['First Name'] }} {{ $('Search records').item.json['Last Name'] }}\"\n\t\t\t\t},\n\t\t\t\t{\n\t\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\t\"text\": \"*Current Plan:*\\n{{ $('Search records').item.json['Current Plan'] }}\"\n\t\t\t\t},\n\t\t\t\t{\n\t\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\t\"text\": \"*Start Date:*\\n{{ $('Search records').item.json['Start Date'] }}\"\n\t\t\t\t}\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"type\": \"actions\",\n\t\t\t\"elements\": [\n\t\t\t\t{\n\t\t\t\t\t\"type\": \"button\",\n\t\t\t\t\t\"text\": {\n\t\t\t\t\t\t\"type\": \"plain_text\",\n\t\t\t\t\t\t\"text\": \"Update in Airtable\",\n\t\t\t\t\t\t\"emoji\": true\n\t\t\t\t\t},\n\t\t\t\t\t\"url\": \"https://airtable.com/app5gdNa4CMviCW2u/tblUDDQDOuzJtwlDq/viwX5ntewfZHMKTFM/{{ $('Update record').item.json.id }}?blocks=hide\",\n\t\t\t\t\t\"action_id\": \"update_status\",\n\t\t\t\t\t\"style\": \"primary\"\n\t\t\t\t}\n\t\t\t]\n\t\t}\n\t]\n}",
+            "messageType": "block",
+            "otherOptions": {
+              "includeLinkToWorkflow": false
+            },
+            "authentication": "oAuth2"
+          },
+          "typeVersion": 2.4
+        },
+        {
+          "id": "a776424a-df4c-4a03-99e3-f93dc3e8d5bd",
+          "name": "If not replied",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            2304,
+            64
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "3188ca47-9388-40e7-9916-e4aaa5409774",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ $json.output }}",
+                  "rightValue": "MANUAL_REVIEW_REQUIRED"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "2fe6780c-bc04-427d-bd24-70aadb014823",
+          "name": "Gmail Trigger",
+          "type": "n8n-nodes-base.gmailTrigger",
+          "position": [
+            128,
+            848
+          ],
+          "parameters": {
+            "simple": false,
+            "filters": {
+              "readStatus": "unread"
+            },
+            "options": {},
+            "pollTimes": {
+              "item": [
+                {
+                  "mode": "everyMinute"
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "0707de8f-97e4-4c28-9fa4-2358a6c386aa",
+          "name": "Update Status to User Input Required",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            1296,
+            400
+          ],
+          "parameters": {
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "app5gdNa4CMviCW2u",
+              "cachedResultUrl": "https://airtable.com/app5gdNa4CMviCW2u",
+              "cachedResultName": "Support"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tblUDDQDOuzJtwlDq",
+              "cachedResultUrl": "https://airtable.com/app5gdNa4CMviCW2u/tblUDDQDOuzJtwlDq",
+              "cachedResultName": "Support Entries"
+            },
+            "columns": {
+              "value": {
+                "Status": "Require User Input",
+                "Message id": "={{ $json.messageId }}",
+                "Submission ID": "={{ $('Jotform Trigger').item.json.submissionID }}"
+              },
+              "schema": [
+                {
+                  "id": "id",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": true,
+                  "required": false,
+                  "displayName": "id",
+                  "defaultMatch": true
+                },
+                {
+                  "id": "Submission ID",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Submission ID",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "First Name",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "First Name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Last Name",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Last Name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Email",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Email",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Issue Type",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Bug",
+                      "value": "Bug"
+                    },
+                    {
+                      "name": "Feature Request",
+                      "value": "Feature Request"
+                    },
+                    {
+                      "name": "Complaint",
+                      "value": "Complaint"
+                    },
+                    {
+                      "name": "Other",
+                      "value": "Other"
+                    },
+                    {
+                      "name": "Technical Problem",
+                      "value": "Technical Problem"
+                    }
+                  ],
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Issue Type",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Issue Description",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Issue Description",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "File Attachment",
+                  "type": "array",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "File Attachment",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Severity",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "High",
+                      "value": "High"
+                    },
+                    {
+                      "name": "Medium",
+                      "value": "Medium"
+                    },
+                    {
+                      "name": "Low",
+                      "value": "Low"
+                    }
+                  ],
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Severity",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Sentiment",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Frustrated",
+                      "value": "Frustrated"
+                    },
+                    {
+                      "name": "Normal",
+                      "value": "Normal"
+                    }
+                  ],
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Sentiment",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Status",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Pending",
+                      "value": "Pending"
+                    },
+                    {
+                      "name": "Responded",
+                      "value": "Responded"
+                    },
+                    {
+                      "name": "Require User Input",
+                      "value": "Require User Input"
+                    },
+                    {
+                      "name": "Resolved",
+                      "value": "Resolved"
+                    },
+                    {
+                      "name": "Waiting for correct email",
+                      "value": "Waiting for correct email"
+                    }
+                  ],
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Note for the user",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Note for the user",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Message id",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Message id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [
+                "Submission ID"
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "update"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "2879f0d5-02c8-4783-a592-7c62a79e331c",
+          "name": "Filter",
+          "type": "n8n-nodes-base.filter",
+          "position": [
+            320,
+            848
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "3e4f6d09-76a5-41fa-914f-bcfd8059ae55",
+                  "operator": {
+                    "type": "string",
+                    "operation": "exists",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json.inReplyTo }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "3e8ef3e1-6c93-4f6c-8e9c-0b922b8c8258",
+          "name": "Get a message",
+          "type": "n8n-nodes-base.gmail",
+          "position": [
+            1088,
+            400
+          ],
+          "webhookId": "77a3cf1c-ec95-493f-9f82-fdffabb11dad",
+          "parameters": {
+            "simple": false,
+            "options": {},
+            "messageId": "={{ $json.id }}",
+            "operation": "get"
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "be291515-751a-4fa1-980e-9ec9b647991f",
+          "name": "Search record waiting for response",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            576,
+            848
+          ],
+          "parameters": {
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "app5gdNa4CMviCW2u",
+              "cachedResultUrl": "https://airtable.com/app5gdNa4CMviCW2u",
+              "cachedResultName": "Support"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tblUDDQDOuzJtwlDq",
+              "cachedResultUrl": "https://airtable.com/app5gdNa4CMviCW2u/tblUDDQDOuzJtwlDq",
+              "cachedResultName": "Support Entries"
+            },
+            "options": {},
+            "operation": "search",
+            "filterByFormula": "=AND(Status = \"Require User Input\", {Message id} = \"<CAK7iZF8qOzkiiisTV=wQPiMOo-sWB_T5aj7W2u3k_=yHL=qtKw@mail.gmail.com>\")"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "5136c448-ba20-4a89-8384-96076d0d0745",
+          "name": "Send a message to team to check",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            800,
+            848
+          ],
+          "webhookId": "f12539a0-eb55-4776-b7d2-086f8835796b",
+          "parameters": {
+            "text": "=🚨 New Support Ticket Email Verified:",
+            "user": {
+              "__rl": true,
+              "mode": "list",
+              "value": "U02CL8STLLB",
+              "cachedResultName": "rkhabeer84"
+            },
+            "select": "user",
+            "blocksUi": "={\n\t\"blocks\": [\n\t\t{\n\t\t\t\"type\": \"header\",\n\t\t\t\"text\": {\n\t\t\t\t\"type\": \"plain_text\",\n\t\t\t\t\"text\": \"🚨 New Support Ticket Email Verified: \",\n\t\t\t\t\"emoji\": true\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"type\": \"section\",\n\t\t\t\"text\": {\n\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\"text\": \"*From Client:* {{ $('Gmail Trigger').item.json.text }}\\n*Submission ID:* `{{ $json['Submission ID'] }}`\"\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"type\": \"divider\"\n\t\t},\n\t\t{\n\t\t\t\"type\": \"section\",\n\t\t\t\"fields\": [\n\t\t\t\t{\n\t\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\t\"text\": \"*Issue Type:*\\n{{ $json['Issue Type'] }}\"\n\t\t\t\t}\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"type\": \"section\",\n\t\t\t\"text\": {\n\t\t\t\t\"type\": \"mrkdwn\",\n\t\t\t\t\"text\": \"*Description:*\\n{{ $json['Issue Description'] }}\"\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"type\": \"divider\"\n\t\t},\n\t\t{\n\t\t\t\"type\": \"actions\",\n\t\t\t\"elements\": [\n\t\t\t\t{\n\t\t\t\t\t\"type\": \"button\",\n\t\t\t\t\t\"text\": {\n\t\t\t\t\t\t\"type\": \"plain_text\",\n\t\t\t\t\t\t\"text\": \"Update in Airtable\",\n\t\t\t\t\t\t\"emoji\": true\n\t\t\t\t\t},\n\t\t\t\t\t\"url\": \"https://airtable.com/app5gdNa4CMviCW2u/tblUDDQDOuzJtwlDq/viwX5ntewfZHMKTFM/{{ $json.id }}?blocks=hide\",\n\t\t\t\t\t\"action_id\": \"update_status\",\n\t\t\t\t\t\"style\": \"primary\"\n\t\t\t\t}\n\t\t\t]\n\t\t}\n\t]\n}",
+            "messageType": "block",
+            "otherOptions": {
+              "includeLinkToWorkflow": false
+            },
+            "authentication": "oAuth2"
+          },
+          "typeVersion": 2.4
+        },
+        {
+          "id": "f32d416c-9b2a-4392-b5d6-9694e07d7a09",
+          "name": "Update Status back to pending",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            1008,
+            848
+          ],
+          "parameters": {
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "app5gdNa4CMviCW2u",
+              "cachedResultUrl": "https://airtable.com/app5gdNa4CMviCW2u",
+              "cachedResultName": "Support"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tblUDDQDOuzJtwlDq",
+              "cachedResultUrl": "https://airtable.com/app5gdNa4CMviCW2u/tblUDDQDOuzJtwlDq",
+              "cachedResultName": "Support Entries"
+            },
+            "columns": {
+              "value": {
+                "Status": "Pending",
+                "Submission ID": "={{ $('Search record waiting for response').item.json['Submission ID'] }}"
+              },
+              "schema": [
+                {
+                  "id": "id",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": true,
+                  "required": false,
+                  "displayName": "id",
+                  "defaultMatch": true
+                },
+                {
+                  "id": "Submission ID",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Submission ID",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "First Name",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "First Name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Last Name",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Last Name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Email",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Email",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Issue Type",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Bug",
+                      "value": "Bug"
+                    },
+                    {
+                      "name": "Feature Request",
+                      "value": "Feature Request"
+                    },
+                    {
+                      "name": "Complaint",
+                      "value": "Complaint"
+                    },
+                    {
+                      "name": "Other",
+                      "value": "Other"
+                    },
+                    {
+                      "name": "Technical Problem",
+                      "value": "Technical Problem"
+                    }
+                  ],
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Issue Type",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Issue Description",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Issue Description",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "File Attachment",
+                  "type": "array",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "File Attachment",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Severity",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "High",
+                      "value": "High"
+                    },
+                    {
+                      "name": "Medium",
+                      "value": "Medium"
+                    },
+                    {
+                      "name": "Low",
+                      "value": "Low"
+                    }
+                  ],
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Severity",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Sentiment",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Frustrated",
+                      "value": "Frustrated"
+                    },
+                    {
+                      "name": "Normal",
+                      "value": "Normal"
+                    }
+                  ],
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Sentiment",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Status",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Pending",
+                      "value": "Pending"
+                    },
+                    {
+                      "name": "Responded",
+                      "value": "Responded"
+                    },
+                    {
+                      "name": "Require User Input",
+                      "value": "Require User Input"
+                    },
+                    {
+                      "name": "Resolved",
+                      "value": "Resolved"
+                    },
+                    {
+                      "name": "Waiting for correct email",
+                      "value": "Waiting for correct email"
+                    }
+                  ],
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Note for the user",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Note for the user",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Message id",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Message id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [
+                "Submission ID"
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "update"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "e951217c-32b0-4970-9d44-7871f0662006",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            48,
+            -160
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 656,
+            "height": 768,
+            "content": "## Phase 1: Intake and User Validation"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "89df09db-e1a0-4e36-93c9-e96f7b6697b4",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            720,
+            288
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 800,
+            "height": 320,
+            "content": "## Send an email to the user asking for the correct email"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "18681d88-fc96-456e-98b0-23a08a1d6cd7",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            720,
+            -160
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 800,
+            "height": 432,
+            "content": "## Phase 2: AI Triage and Severity Analysis"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "069d5c50-e20d-4acf-a420-36db7698ef5b",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1536,
+            -160
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 992,
+            "height": 768,
+            "content": "## Phase 3: Automated Resolution and Escalation"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "19071e02-abe7-43c7-b860-69788c1b5f30",
+          "name": "Update record in Airtable",
+          "type": "n8n-nodes-base.airtableTool",
+          "position": [
+            2384,
+            288
+          ],
+          "parameters": {
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "app5gdNa4CMviCW2u",
+              "cachedResultUrl": "https://airtable.com/app5gdNa4CMviCW2u",
+              "cachedResultName": "Support"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tblUDDQDOuzJtwlDq",
+              "cachedResultUrl": "https://airtable.com/app5gdNa4CMviCW2u/tblUDDQDOuzJtwlDq",
+              "cachedResultName": "Support Entries"
+            },
+            "columns": {
+              "value": {
+                "Status": "Responded",
+                "Submission ID": "={{ $node[\"Update Record\"].json.fields[\"Submission ID\"] }}"
+              },
+              "schema": [
+                {
+                  "id": "id",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": true,
+                  "required": false,
+                  "displayName": "id",
+                  "defaultMatch": true
+                },
+                {
+                  "id": "Submission ID",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Submission ID",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "First Name",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "First Name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Last Name",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Last Name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Email",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Email",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Issue Type",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Bug",
+                      "value": "Bug"
+                    },
+                    {
+                      "name": "Feature Request",
+                      "value": "Feature Request"
+                    },
+                    {
+                      "name": "Complaint",
+                      "value": "Complaint"
+                    },
+                    {
+                      "name": "Other",
+                      "value": "Other"
+                    },
+                    {
+                      "name": "Technical Problem",
+                      "value": "Technical Problem"
+                    },
+                    {
+                      "name": "Billing Issue",
+                      "value": "Billing Issue"
+                    }
+                  ],
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Issue Type",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Issue Description",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Issue Description",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "File Attachment",
+                  "type": "array",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "File Attachment",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Severity",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "High",
+                      "value": "High"
+                    },
+                    {
+                      "name": "Medium",
+                      "value": "Medium"
+                    },
+                    {
+                      "name": "Low",
+                      "value": "Low"
+                    }
+                  ],
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Severity",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Sentiment",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Frustrated",
+                      "value": "Frustrated"
+                    },
+                    {
+                      "name": "Normal",
+                      "value": "Normal"
+                    }
+                  ],
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Sentiment",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Status",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Pending",
+                      "value": "Pending"
+                    },
+                    {
+                      "name": "Responded",
+                      "value": "Responded"
+                    },
+                    {
+                      "name": "Require User Input",
+                      "value": "Require User Input"
+                    },
+                    {
+                      "name": "Resolved",
+                      "value": "Resolved"
+                    },
+                    {
+                      "name": "Waiting for correct email",
+                      "value": "Waiting for correct email"
+                    }
+                  ],
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Status",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Note for the user",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Note for the user",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Message id",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Message id",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [
+                "Submission ID"
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "update"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "eac266da-d92f-4564-a4d0-08c758b2ddc4",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2544,
+            -160
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 320,
+            "height": 768,
+            "content": "## Send to team"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ebfd0220-a37c-4007-9db4-5c9ad446600b",
+          "name": "Sticky Note5",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            48,
+            688
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 416,
+            "height": 368,
+            "content": "## Check for email replies"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "76683e29-59e5-4bc6-a516-8abc3d8e5e43",
+          "name": "Sticky Note6",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            480,
+            688
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 704,
+            "height": 368,
+            "content": "## Sent to the team and updated in the airtable"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "e68ca7ae-5a2d-4536-8882-d4c719223cd9",
+          "name": "Sticky Note7",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -752,
+            -160
+          ],
+          "parameters": {
+            "width": 768,
+            "height": 1216,
+            "content": "## AI Support Triage & Auto-Response Engine\n\nThis n8n workflow automates support by validating users, analyzing ticket urgency, and resolving queries via an AI-powered knowledge base. High-priority issues are immediately escalated to Slack.\n\n---\n\n### Phase 1: Intake & Validation\n* **Jotform Trigger:** Captures new support submissions.\n* **User Verification:** Checks **Airtable** for a matching email.\n\n### Phase 2: AI Triage\n* **Sentiment Analysis:** **Google Gemini** categorizes tickets by severity (High/Med/Low) and sentiment (Frustrated/Normal).\n* **Data Logging:** Analysis results are synced to the **Airtable** record.\n* **High-Priority Bypass:** \"High\" severity tickets trigger an immediate **Slack** alert for manual intervention.\n\n### Phase 3: Automated Resolution\n* **Knowledge Retrieval:** AI Agent queries **Pinecone** vector store for relevant FAQs.\n* **Resolution:** If confidence is high, sends a solution via **Gmail** and marks Airtable as \"Responded.\"\n* **Escalation:** If no solution is found, notifies **Slack** with deep links for team review.\n\n### Phase 4: Verification Loop\n* **Reply Detection:** Monitors **Gmail** for responses to \"Need User Input\" requests.\n* **Status Update:** Matches replies to Airtable, notifies the team via **Slack**, and moves the ticket back to \"Pending.\"\n\n---\n\n## Requirements\n\n### Tools & APIs\n* **n8n:** Workflow orchestration.\n* **Google Gemini:** Triage and response generation.\n* **Pinecone:** Vector database for FAQ embeddings.\n\n### Credentials\n* **Airtable:** Personal Access Token for database management.\n* **Gmail & Slack:** OAuth2 for communication and alerts.\n* **Jotform:** API Key for submission triggers.\n\n### Data Schema\n* **Airtable:** `Users` table (profiles) and `Support Entries` table (ticket tracking).\n* **Pinecone:** Index named `support-faqs` populated with documentation."
+          },
+          "typeVersion": 1
+        }
+      ],
+      "connections": {
+        "If": {
+          "main": [
+            [
+              {
+                "node": "AI Agent",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Send a message",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Filter": {
+          "main": [
+            [
+              {
+                "node": "Search record waiting for response",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "AI Agent": {
+          "main": [
+            [
+              {
+                "node": "Update record",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Get a message": {
+          "main": [
+            [
+              {
+                "node": "Update Status to User Input Required",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Gmail Trigger": {
+          "main": [
+            [
+              {
+                "node": "Filter",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Update record": {
+          "main": [
+            [
+              {
+                "node": "If High Severity",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "If not replied": {
+          "main": [
+            [
+              {
+                "node": "Send a message to team",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            []
+          ]
+        },
+        "Search records": {
+          "main": [
+            [
+              {
+                "node": "If",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Send a message": {
+          "main": [
+            [
+              {
+                "node": "Get a message",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Jotform Trigger": {
+          "main": [
+            [
+              {
+                "node": "Search records",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "If High Severity": {
+          "main": [
+            [
+              {
+                "node": "Send a message to team",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "AI Agent - Respond",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "AI Agent - Respond": {
+          "main": [
+            [
+              {
+                "node": "If not replied",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Pinecone Vector Store": {
+          "ai_tool": [
+            [
+              {
+                "node": "AI Agent - Respond",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Send a message in Gmail": {
+          "ai_tool": [
+            [
+              {
+                "node": "AI Agent - Respond",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Google Gemini Chat Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "AI Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Structured Output Parser": {
+          "ai_outputParser": [
+            [
+              {
+                "node": "AI Agent",
+                "type": "ai_outputParser",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Google Gemini Chat Model1": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "AI Agent - Respond",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Update record in Airtable": {
+          "ai_tool": [
+            [
+              {
+                "node": "AI Agent - Respond",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Embeddings Google Gemini Plus": {
+          "ai_embedding": [
+            [
+              {
+                "node": "Pinecone Vector Store",
+                "type": "ai_embedding",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Send a message to team to check": {
+          "main": [
+            [
+              {
+                "node": "Update Status back to pending",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Search record waiting for response": {
+          "main": [
+            [
+              {
+                "node": "Send a message to team to check",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 51,
+    "workflowInfo": {
+      "nodeCount": 32,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 3
+        },
+        "n8n-nodes-base.gmail": {
+          "count": 2
+        },
+        "n8n-nodes-base.slack": {
+          "count": 2
+        },
+        "n8n-nodes-base.filter": {
+          "count": 1
+        },
+        "n8n-nodes-base.airtable": {
+          "count": 5
+        },
+        "n8n-nodes-base.gmailTool": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 8
+        },
+        "n8n-nodes-base.airtableTool": {
+          "count": 1
+        },
+        "n8n-nodes-base.gmailTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.jotFormTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.lmChatGoogleGemini": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.vectorStorePinecone": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.outputParserStructured": {
+          "count": 1
+        },
+        "n8n-nodes-gemini-embedding-plus.embeddingsGoogleGeminiPlus": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Zain Khan",
+      "username": "zain",
+      "bio": "I partner with businesses to streamline processes and accelerate growth through intelligent AI automation and Web/mobile Development. Leveraging deep expertise in GPT-4, LangChain, and n8n, I develop AI-powered agents and sophisticated LLM pipelines. ",
+      "verified": true,
+      "links": [
+        "https://www.linkedin.com/in/zainurrehman/"
+      ],
+      "avatar": "https://gravatar.com/avatar/a246de8c8d46a388c7dd7df0506f420ee1019c0f3528549fac01c82c1f948176?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 2,
+        "icon": "file:airtable.svg",
+        "name": "n8n-nodes-base.airtable",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-goals-level-up-your-vocabulary-with-vonage-and-n8n/",
+                  "icon": "🎯",
+                  "label": "2021 Goals: Level Up Your Vocabulary With Vonage and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-sms-the-low-code-way-with-airtable-twilio-programmable-sms-and-n8n/",
+                  "icon": "📱",
+                  "label": "Sending SMS the Low-Code Way with Airtable, Twilio Programmable SMS, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automating-conference-organization-processes-with-n8n/",
+                  "icon": "🙋‍♀️",
+                  "label": "Automating Conference Organization Processes with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.airtable/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/airtable/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Airtable"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMDAgMTcwIj48cGF0aCBmaWxsPSIjZmNiNDAwIiBkPSJNODkgNC44IDE2LjIgMzQuOWMtNC4xIDEuNy00IDcuNC4xIDkuMWw3My4yIDI5YzYuNCAyLjYgMTMuNiAyLjYgMjAgMGw3My4yLTI5YzQuMS0xLjYgNC4xLTcuNC4xLTkuMWwtNzMtMzAuMUMxMDMuMiAyIDk1LjcgMiA4OSA0LjgiLz48cGF0aCBmaWxsPSIjMThiZmZmIiBkPSJNMTA1LjkgODguOXY3Mi41YzAgMy40IDMuNSA1LjggNi43IDQuNWw4MS42LTMxLjdjMS45LS43IDMuMS0yLjUgMy4xLTQuNVY1Ny4yYzAtMy40LTMuNS01LjgtNi43LTQuNUwxMDkgODQuM2MtMS45LjgtMy4xIDIuNi0zLjEgNC42Ii8+PHBhdGggZmlsbD0iI2Y4MmI2MCIgZD0ibTg2LjkgOTIuNi0yNC4yIDExLjctMi41IDEuMkw5LjEgMTMwYy0zLjIgMS42LTcuNC0uOC03LjQtNC40VjU3LjVjMC0xLjMuNy0yLjQgMS42LTMuM3EuNi0uNiAxLjItLjljMS4yLS43IDMtLjkgNC40LS4zbDc3LjUgMzAuN2M0IDEuNSA0LjMgNy4xLjUgOC45Ii8+PHBhdGggZmlsbD0iI2JhMWU0NSIgZD0ibTg2LjkgOTIuNi0yNC4yIDExLjctNTkuNC01MHEuNi0uNiAxLjItLjljMS4yLS43IDMtLjkgNC40LS4zbDc3LjUgMzAuN2M0IDEuNCA0LjMgNyAuNSA4LjgiLz48L3N2Zz4="
+        },
+        "displayName": "Airtable",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 227,
+        "icon": "file:jotform.svg",
+        "name": "n8n-nodes-base.jotFormTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/trigger-nodes/n8n-nodes-base.jotformtrigger/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/jotform/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Jotform Trigger"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHZpZXdCb3g9IjAgMCAyNSAyOCI+PHBhdGggaWQ9ImpvdGZvcm0tbG9nb21hcmstZmlyc3QiIGZpbGw9IiNGRjYxMDAiIGQ9Ik0xOS4yOTQgMy45MzRhMy4zNDEgMy4zNDEgMCAwIDEgNC43MjcgMCAzLjM0NCAzLjM0NCAwIDAgMSAwIDQuNzI4bC0xMS44MTcgMTEuODJhMy4zNDEgMy4zNDEgMCAwIDEtNC43MjYgMCAzLjM0NCAzLjM0NCAwIDAgMSAwLTQuNzI3bDExLjgxNi0xMS44MloiPjwvcGF0aD48cGF0aCBpZD0iam90Zm9ybS1sb2dvbWFyay1zZWNvbmQiIGZpbGw9IiMwMDk5RkYiIGQ9Ik05LjI1Ljk4YTMuMzQ0IDMuMzQ0IDAgMCAxIDQuNzI3IDQuNzI4bC04LjI3MSA4LjI3NGEzLjM0MiAzLjM0MiAwIDAgMS00LjcyNyAwIDMuMzQ0IDMuMzQ0IDAgMCAxIDAtNC43MjlMOS4yNS45OFoiPjwvcGF0aD48cGF0aCBpZD0iam90Zm9ybS1sb2dvbWFyay10aGlyZCIgZmlsbD0iI0ZGQjYyOSIgZD0iTTE4LjcwNCAxNy41MjdhMy4zNDQgMy4zNDQgMCAwIDEgNC43MjYgNC43MjhsLTQuNzI2IDQuNzI5YTMuMzQyIDMuMzQyIDAgMSAxLTQuNzI3LTQuNzI4bDQuNzI3LTQuNzI5WiI+PC9wYXRoPjxwYXRoIGlkPSJqb3Rmb3JtLWxvZ29tYXJrLWZvdXJ0aCIgZmlsbD0iIzBBMTU1MSIgZD0iTTEuNjcxIDI4aDQuNjY3Yy43NDUgMCAxLjExOC0uOS41OTEtMS40MjdMMS40MjYgMjEuMDdDLjkgMjAuNTQyIDAgMjAuOTE1IDAgMjEuNjU5djQuNjdDMCAyNy4yNTEuNzQ4IDI4IDEuNjcxIDI4WiI+PC9wYXRoPjwvc3ZnPg=="
+        },
+        "displayName": "Jotform Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          }
+        ]
+      },
+      {
+        "id": 356,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmail",
+        "codex": {
+          "data": {
+            "alias": [
+              "email",
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.gmail/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Gmail"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 824,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmailTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/trigger-nodes/n8n-nodes-base.gmailtrigger/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Gmail Trigger"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          }
+        ]
+      },
+      {
+        "id": 844,
+        "icon": "fa:filter",
+        "name": "n8n-nodes-base.filter",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The Filter node can be used to filter items based on a condition. If the condition is met, the item will be passed on to the next node. If the condition is not met, the item will be omitted. Conditions can be combined together by AND(meet all conditions), or OR(meet at least one condition).",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.filter/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Filter",
+          "color": "#229eff"
+        },
+        "iconData": {
+          "icon": "filter",
+          "type": "icon"
+        },
+        "displayName": "Filter",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1179,
+        "icon": "fa:code",
+        "name": "@n8n/n8n-nodes-langchain.outputParserStructured",
+        "codex": {
+          "data": {
+            "alias": [
+              "json",
+              "zod"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.outputparserstructured/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Output Parsers"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Structured Output Parser"
+        },
+        "iconData": {
+          "icon": "code",
+          "type": "icon"
+        },
+        "displayName": "Structured Output Parser",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1230,
+        "icon": "file:pinecone.svg",
+        "name": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.vectorstorepinecone/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Vector Stores",
+                "Tools",
+                "Root Nodes"
+              ],
+              "Tools": [
+                "Other Tools"
+              ],
+              "Vector Stores": [
+                "Other Vector Stores"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Pinecone Vector Store"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzUiIHZpZXdCb3g9IjAgMCAzMiAzNSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEzLjg1NTUgMzQuMjk2MkMxNC45MzI1IDM0LjI5NjIgMTUuODA1NSAzMy40NDUxIDE1LjgwNTUgMzIuMzk1NEMxNS44MDU1IDMxLjM0NTYgMTQuOTMyNSAzMC40OTQ2IDEzLjg1NTUgMzAuNDk0NkMxMi43Nzg2IDMwLjQ5NDYgMTEuOTA1NSAzMS4zNDU2IDExLjkwNTUgMzIuMzk1NEMxMS45MDU1IDMzLjQ0NTEgMTIuNzc4NiAzNC4yOTYyIDEzLjg1NTUgMzQuMjk2MloiIGZpbGw9ImJsYWNrIi8+CjxwYXRoIGQ9Ik0xOC40MTM4IDcuMTk2NzVMMTkuMjUxMiAyLjY2MDA1IiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjIuMTE3ODYiIHN0cm9rZS1saW5lY2FwPSJzcXVhcmUiLz4KPHBhdGggZD0iTTIyLjI2NTYgNS41ODU1TDE5LjM0NjYgMi4xMTA5OUwxNS4zNzQ4IDQuMzcyOTIiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMi4xMTc4NiIgc3Ryb2tlLWxpbmVjYXA9InNxdWFyZSIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgo8cGF0aCBkPSJNMTQuOTIwMiAyNi41NTI4TDE1LjczMzcgMjIuMDE2OSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyLjExNzg2IiBzdHJva2UtbGluZWNhcD0ic3F1YXJlIi8+CjxwYXRoIGQ9Ik0xOC43NzI5IDI0LjkzMDRMMTUuODMgMjEuNDY3MUwxMS44NzAxIDIzLjc0MSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyLjExNzg2IiBzdHJva2UtbGluZWNhcD0ic3F1YXJlIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CjxwYXRoIGQ9Ik0xNi42MDc3IDE3LjE5OTZMMTcuNDIxMiAxMi42NjMzIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjIuMTE3ODYiIHN0cm9rZS1saW5lY2FwPSJzcXVhcmUiLz4KPHBhdGggZD0iTTIwLjQ1ODcgMTUuNThMMTcuNTI3NyAxMi4xMjhMMTMuNTY3OSAxNC4zOTA0IiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjIuMTE3ODYiIHN0cm9rZS1saW5lY2FwPSJzcXVhcmUiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KPHBhdGggZD0iTTguMzI4NzEgMjYuMTU1NEw0Ljc1MTcxIDI4LjU4MTUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMi4wMTAxNyIgc3Ryb2tlLWxpbmVjYXA9InNxdWFyZSIvPgo8cGF0aCBkPSJNOC41NDM4MyAzMC4wODY1TDQuMzIwOCAyOC44NzM4TDQuNjMxODUgMjQuNTk0NCIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyLjAxMDE3IiBzdHJva2UtbGluZWNhcD0ic3F1YXJlIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CjxwYXRoIGQ9Ik0yMS4zMjEzIDI4LjQyOTlMMjMuODA5NiAzMS45MjgyIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjIuMDEwMTciIHN0cm9rZS1saW5lY2FwPSJzcXVhcmUiLz4KPHBhdGggZD0iTTE5LjcxOCAzMi4wNDVMMjQuMTA4NSAzMi4zMzY1TDI1LjM1MjcgMjguMjQzOCIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyLjAxMDE3IiBzdHJva2UtbGluZWNhcD0ic3F1YXJlIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CjxwYXRoIGQ9Ik0yNS4zOTk5IDIxLjMyOTFMMjkuNzc4NCAyMi4wOTk2IiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjIuMDU4MDQiIHN0cm9rZS1saW5lY2FwPSJzcXVhcmUiLz4KPHBhdGggZD0iTTI2LjkwNzIgMjUuMDcyTDMwLjMwNDggMjIuMTkxOUwyOC4xNjM0IDE4LjM1NTciIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMi4wNTgwNCIgc3Ryb2tlLWxpbmVjYXA9InNxdWFyZSIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgo8cGF0aCBkPSJNMjQuMTE5NiAxMi44NjE1TDI4LjAxOTcgMTAuNzYzIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjIuMDU4MDQiIHN0cm9rZS1saW5lY2FwPSJzcXVhcmUiLz4KPHBhdGggZD0iTTI0LjMzNTcgOC44Mzk2NUwyOC40ODY5IDEwLjUxODhMMjcuNzA5MyAxNC44MjE2IiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjIuMDU4MDQiIHN0cm9rZS1saW5lY2FwPSJzcXVhcmUiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KPHBhdGggZD0iTTYuOTE2MzkgMTguMTU3MkwyLjUyNTg4IDE3LjQxMDEiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMi4wNTgwNCIgc3Ryb2tlLWxpbmVjYXA9InNxdWFyZSIvPgo8cGF0aCBkPSJNNC4xNzczMSAyMS4xNjQ1TDIgMTcuMzI4TDUuMzYxNjcgMTQuNDM2IiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjIuMDU4MDQiIHN0cm9rZS1saW5lY2FwPSJzcXVhcmUiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KPHBhdGggZD0iTTExLjA3OTkgMTAuNjEyOUw4LjE0ODkzIDcuMzQ3NjkiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMi4wNTgwNCIgc3Ryb2tlLWxpbmVjYXA9InNxdWFyZSIvPgo8cGF0aCBkPSJNMTIuMjg5NyA2Ljc3NDk2TDcuODAzNDkgNi45NjE1Nkw3LjAxMzkyIDExLjI2NDkiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMi4wNTgwNCIgc3Ryb2tlLWxpbmVjYXA9InNxdWFyZSIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgo8L3N2Zz4K"
+        },
+        "displayName": "Pinecone Vector Store",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1262,
+        "icon": "file:google.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatgooglegemini/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Google Gemini Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB2aWV3Qm94PSIwIDAgNDggNDgiPjxkZWZzPjxwYXRoIGlkPSJhIiBkPSJNNDQuNSAyMEgyNHY4LjVoMTEuOEMzNC43IDMzLjkgMzAuMSAzNyAyNCAzN2MtNy4yIDAtMTMtNS44LTEzLTEzczUuOC0xMyAxMy0xM2MzLjEgMCA1LjkgMS4xIDguMSAyLjlsNi40LTYuNEMzNC42IDQuMSAyOS42IDIgMjQgMiAxMS44IDIgMiAxMS44IDIgMjRzOS44IDIyIDIyIDIyYzExIDAgMjEtOCAyMS0yMiAwLTEuMy0uMi0yLjctLjUtNCIvPjwvZGVmcz48Y2xpcFBhdGggaWQ9ImIiPjx1c2UgeGxpbms6aHJlZj0iI2EiIG92ZXJmbG93PSJ2aXNpYmxlIi8+PC9jbGlwUGF0aD48cGF0aCBmaWxsPSIjRkJCQzA1IiBkPSJNMCAzN1YxMWwxNyAxM3oiIGNsaXAtcGF0aD0idXJsKCNiKSIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im0wIDExIDE3IDEzIDctNi4xTDQ4IDE0VjBIMHoiIGNsaXAtcGF0aD0idXJsKCNiKSIvPjxwYXRoIGZpbGw9IiMzNEE4NTMiIGQ9Im0wIDM3IDMwLTIzIDcuOSAxTDQ4IDB2NDhIMHoiIGNsaXAtcGF0aD0idXJsKCNiKSIvPjxwYXRoIGZpbGw9IiM0Mjg1RjQiIGQ9Ik00OCA0OCAxNyAyNGwtNC0zIDM1LTEweiIgY2xpcC1wYXRoPSJ1cmwoI2IpIi8+PC9zdmc+"
+        },
+        "displayName": "Google Gemini Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 41,
+        "name": "Ticket Management"
+      },
+      {
+        "id": 48,
+        "name": "AI RAG"
+      }
+    ],
+    "image": []
+  }
+}

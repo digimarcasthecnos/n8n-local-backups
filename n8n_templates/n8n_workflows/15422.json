@@ -1,0 +1,1189 @@
+{
+  "workflow": {
+    "id": 15422,
+    "name": "Track sales call objections with GPT-4o-mini coaching using WayinVideo and Airtable",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-05-01T11:34:19.956Z",
+    "description": "### Description\n\nSubmit a sales call recording URL and describe the objection type you want to find — such as \"pricing too expensive\" or \"competitor comparison\" — and the workflow scans the recording automatically. [WayinVideo's](https://wayin.ai/api/) Find Moments API locates up to 5 exact moments in the recording that match your search, returning each one with a title, description, timestamp, and relevance score. GPT-4o-mini then analyzes each moment and writes a structured coaching note — objection category, what happened, rep response assessment, specific coaching advice, and a first-person suggested reframe ready to use on the next call. Every moment is saved as a separate Airtable record with Status set to Needs Review. Built for sales managers and revenue teams who want to track objection patterns across their team's calls without manually reviewing every recording.\n\n---\n\n## What This Workflow Does\n\n- **Finds exact objection moments in the recording** — WayinVideo's Find Moments API scans the full call and returns up to 5 timestamped moments that match your specific objection search query\n- **Returns relevance scores per moment** — Each matching moment comes with a relevance score out of 100 so you know which instances are the strongest matches\n- **Generates a coaching note per moment** — GPT-4o-mini writes a structured 5-section analysis for each moment including what happened, how the rep likely handled it, and specific coaching advice\n- **Writes a first-person suggested reframe** — Every coaching note includes an exact alternative response the rep can use next time the same objection comes up — in first person, ready to say out loud\n- **Categorizes each objection automatically** — GPT assigns every moment to one of eight objection categories: Pricing, Competitor, Timing, Feature Gap, Trust, Authority, Need, or Other\n- **Creates one Airtable record per moment** — Each of the up to 5 moments becomes its own record with all 16 fields and Status set to Needs Review for the manager to review\n- **Polls automatically until results are ready** — Waits 90 seconds then checks every 30 seconds until WayinVideo finishes scanning the recording\n\n---\n\n## Setup Requirements\n\n### Tools Needed\n- n8n instance (self-hosted or cloud)\n- WayinVideo account with API access\n- OpenAI account with GPT-4o-mini API access\n- Airtable account with a base and table set up\n\n### Credentials Required\n- WayinVideo API key (pasted into **2. WayinVideo — Submit Find Moments** and **4. WayinVideo — Get Moments Results**)\n- OpenAI API key\n- Airtable Personal Access Token (pasted into **11. HTTP — Save to Airtable**)\n\n&gt; ⚠️ **WayinVideo API key appears in 2 steps** — replace `YOUR_WAYINVIDEO_API_KEY` in both **2. WayinVideo — Submit Find Moments** and **4. WayinVideo — Get Moments Results**. Missing either one will cause the workflow to fail.\n\n**Estimated Setup Time: 20–25 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Import the workflow** — Open n8n → Workflows → Import from JSON → paste the workflow JSON → click Import\n\n2. **Get your WayinVideo API key** — Log in to your WayinVideo account → go to Account Settings → copy your API key\n\n3. **Add your WayinVideo API key to node 2** — Open node **2. WayinVideo — Submit Find Moments** → find the `Authorization` header value `Bearer YOUR_WAYINVIDEO_API_KEY` → replace `YOUR_WAYINVIDEO_API_KEY` with your actual key\n\n4. **Add your WayinVideo API key to node 4** — Open node **4. WayinVideo — Get Moments Results** → find the same `Authorization` header → replace `YOUR_WAYINVIDEO_API_KEY` with the same key\n\n5. **Connect OpenAI** — Open node **9. OpenAI — GPT-4o-mini Model** → click the credential dropdown → add your OpenAI API key → test the connection\n\n6. **Create your Airtable table** — In Airtable, open your base → create a table named **Sales Objections** → add these 16 fields: `Call Date`, `Rep Name`, `Contact Name`, `Company`, `Call Purpose`, `Objection Type`, `Objection Category`, `Moment Title`, `Objection Description`, `Timestamp in Recording`, `Relevance Score` (Number), `Rep Response Assessment`, `Coaching Note`, `Suggested Reframe`, `Recording URL`, `Status`\n\n7. **Get your Airtable Base ID** — Open your Airtable base in a browser → the Base ID is in the URL — it starts with `app` and looks like `appXXXXXXXXXXXXX`\n\n8. **Get your Airtable Personal Access Token** — Go to airtable.com/create/tokens → click Create new token → give it a name → add scope `data.records:write` → add your base under Access → click Create token → copy the token\n\n9. **Add your Airtable credentials to node 11** — Open node **11. HTTP — Save to Airtable** → in the URL, replace `YOUR_AIRTABLE_BASE_ID` with your actual Base ID and `YOUR_AIRTABLE_TABLE_NAME` with `Sales%20Objections` (URL-encoded with %20 for the space) → in the `Authorization` header, replace `YOUR_AIRTABLE_API_KEY` with your Personal Access Token\n\n10. **Activate the workflow** — Toggle the workflow to Active → copy the Form URL from node **1. Form — Call Recording + Details** → open it in a browser to submit your first call\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Form: Call Recording + Details**\nYou open the form URL in a browser and fill in seven fields: the call recording URL, the sales rep name, the contact name, the company name, the call purpose (e.g. Discovery Call, Demo, Pricing Call), the call date, and the objection type you want to search for (e.g. \"pricing too expensive\", \"competitor comparison\", \"missing feature\"). The objection search query is the most important field — the more specific and descriptive it is, the better WayinVideo's results will be.\n\n**Step 2 — HTTP: WayinVideo — Submit Find Moments**\nThe recording URL and your search query are sent to WayinVideo's Find Moments API. The request asks for up to 5 matching moments with export disabled (since you only need the metadata, not video downloads). A project name is auto-generated from the contact name and company. WayinVideo accepts the job and returns a task ID.\n\n**Step 3 — Wait: 90 Seconds**\nThe workflow pauses for 90 seconds before the first status check, giving WayinVideo time to scan the full recording.\n\n**Step 4 — HTTP: WayinVideo — Get Moments Results**\nA GET request checks the WayinVideo find-moments results endpoint using the task ID from step 2. It returns the current processing status and, once complete, the full clips array with title, description, timestamp, relevance score, and tags for each matched moment.\n\n**Step 5 — IF: Find Moments Complete?**\nThis is the polling gate. If the status equals `SUCCEEDED` (YES path), the moments are ready and the workflow moves forward to clip extraction. If still processing (NO path), the workflow routes to **6. Wait — 30 Seconds Retry** which pauses 30 seconds then loops back to step 4 to check again. This repeats until SUCCEEDED.\n\n**Step 6 — Wait: 30 Seconds Retry**\nWhen results are not yet ready, the workflow waits 30 seconds then returns to step 4 for another check. The loop continues automatically.\n\n**Step 7 — Code: Extract Objection Clips**\nThe clips array from WayinVideo is read and split into individual rows — one per matching moment. If no clips are returned, the step throws a clear error with a suggestion to try a different query. For each clip, the millisecond timestamps are converted to MM:SS format. All seven form inputs are carried forward alongside each clip's data so every Airtable record has full context.\n\n**Step 8 — AI Agent: Generate Coaching Note**\nGPT-4o-mini receives the call context and the specific moment's metadata: its title, description, timestamp range, relevance score, and tags. It writes a structured 5-section coaching analysis. The prompt instructs GPT to base everything on the moment description provided — not to invent content. The output uses five labeled sections: OBJECTION_CATEGORY, WHAT_HAPPENED, REP_RESPONSE_ASSESSMENT, COACHING_NOTE, and SUGGESTED_REFRAME.\n\n**Step 9 — OpenAI: GPT-4o-mini Model**\nThis is the language model powering the coaching analysis. It runs with default settings for consistent structured output.\n\n**Step 10 — Code: Parse Coaching Output**\nAll five labeled sections are extracted from the AI output using regex. The objection description field combines GPT's \"what happened\" analysis with WayinVideo's original clip description for maximum context. All 16 Airtable field values are assembled and packaged ready for the API call.\n\n**Step 11 — HTTP: Save to Airtable**\nA POST request creates one Airtable record in your Sales Objections table with all 16 fields populated. Status is set to `Needs Review` on every record so managers can filter the table to see only records awaiting their attention. Airtable returns the new record ID on success.\n\nThe final result is up to 5 Airtable records — one per objection moment found — each containing the full coaching analysis, timestamp, relevance score, and a first-person suggested reframe ready for the rep to practice.\n\n---\n\n## Key Features\n\n✅ **Find Moments API — no transcription needed** — This workflow uses WayinVideo's semantic search to find moments directly, which is faster than transcribing and then searching through text\n✅ **Relevance score per moment** — Every match comes with a score out of 100 so you can instantly see which moments are the strongest matches for your search query\n✅ **Eight objection categories — auto-assigned** — GPT categorizes each objection into Pricing, Competitor, Timing, Feature Gap, Trust, Authority, Need, or Other — making your Airtable filterable by category across all calls\n✅ **First-person suggested reframe** — The coaching note ends with an exact alternative response the rep can rehearse — not generic advice, but specific language ready to use\n✅ **One Airtable record per moment** — Each moment gets its own record so managers can review, comment on, and track each objection instance independently\n✅ **Status set to Needs Review automatically** — Every new record starts in a review queue — managers see exactly what requires their attention without any manual tagging\n✅ **Timestamped moments linked to recording URL** — Every record includes both the timestamp range and the full recording URL so the manager can jump straight to that moment in the call\n\n---\n\n## Customisation Options\n\n**Increase the number of moments returned** — In node **2. WayinVideo — Submit Find Moments**, change `\"limit\": 5` to a higher number such as `10` to find more matching moments per call — useful for longer recordings or broader search queries.\n\n**Add a Slack notification to the sales manager** — After node **11. HTTP — Save to Airtable**, add a Slack step that posts the rep name, objection category, and a direct Airtable link to a `#sales-coaching` channel so managers are notified immediately without checking Airtable.\n\n**Add a retry limit to stop infinite polling** — Before node **6. Wait — 30 Seconds Retry**, add a Set step that increments a poll counter, then add a second IF check to stop after 15 polls and send a Gmail error notification instead of looping indefinitely.\n\n**Search for multiple objection types in one run** — In node **1. Form — Call Recording + Details**, allow comma-separated queries in the Objection Type field, then add a code step after the form that splits them and runs the Find Moments submission once per query type.\n\n**Auto-assign Airtable records to a specific reviewer** — In node **11. HTTP — Save to Airtable**, add an `\"Assigned To\"` field to the JSON body using the Sales Rep Name to route each rep's records to their specific manager — requires an Airtable Collaborator field type.\n\n---\n\n## Troubleshooting\n\n**WayinVideo returning an error on submission:**\n- Confirm `YOUR_WAYINVIDEO_API_KEY` in node **2. WayinVideo — Submit Find Moments** is replaced with your actual API key — not the placeholder\n- Confirm the same replacement was made in node **4. WayinVideo — Get Moments Results** — both steps require the key\n- Check the execution log of node 2 for the raw error — a 401 means wrong key, a 422 means the URL format or query format is invalid\n\n**No moments found (empty clips array):**\n- The objection search query may be too short or too vague — WayinVideo's Find Moments needs descriptive phrases; try \"prospect says price is too high\" instead of just \"price\"\n- The recording may have low audio quality or heavy background noise — WayinVideo needs clear spoken audio to find moments\n- Check that the recording URL is publicly accessible without login — password-protected Zoom links will not be processed\n\n**Workflow stuck in the polling loop:**\n- Check that the recording URL is valid and accessible — expired Zoom links or private recordings will cause WayinVideo to fail silently\n- Open the execution log of node **4. WayinVideo — Get Moments Results** and inspect the raw response — WayinVideo may have returned FAILED with a specific error message\n- If the loop runs indefinitely, deactivate the workflow, fix the URL or query, and resubmit\n\n**Airtable records not being created:**\n- Confirm `YOUR_AIRTABLE_BASE_ID` in the URL of node **11. HTTP — Save to Airtable** is replaced with your actual Base ID starting with `app`\n- Confirm `YOUR_AIRTABLE_TABLE_NAME` is replaced — if your table name has a space, encode it as `%20` in the URL (e.g. `Sales%20Objections`)\n- Confirm `YOUR_AIRTABLE_API_KEY` in the Authorization header is replaced with a valid Personal Access Token with `data.records:write` scope enabled for your base\n- Check the execution log of node 11 for the Airtable API error — a 403 means wrong token or missing scope, a 422 means a field name in the JSON body does not match your actual Airtable column name\n\n**GPT not generating coaching sections:**\n- Confirm the API key is connected in node **9. OpenAI — GPT-4o-mini Model** and your account has available credits\n- Check the execution log of node **8. AI Agent — Generate Coaching Note** for the raw GPT output — if any labeled sections are missing, the regex in node 10 will return empty strings for those fields\n- If the clip description from WayinVideo is very short (under 10 words), GPT may produce a minimal analysis — this is expected behavior for low-relevance-score matches\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email: [info@incrementors.com](info@incrementors.com)\n🌐 Website: [https://www.incrementors.com/](https://www.incrementors.com/)",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "34ee3c1a-3fbf-4214-8a7b-5346c32da571",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2176,
+            -400
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 428,
+            "height": 1156,
+            "content": "## Sales Call Objection Extractor to Airtable Tracker — WayinVideo Find Moments + GPT-4o-mini + Airtable\n\nFor sales managers and revenue teams who want to automatically track objection patterns across their team's sales calls without manually reviewing every recording. This workflow uses the WayinVideo Find Moments API — not transcription — to scan the recording and find exact moments matching your search query, returning timestamps, descriptions, and relevance scores for each match. Submit a call recording URL and your objection search query via the form. WayinVideo finds up to 5 matching moments. GPT-4o-mini analyzes each moment and generates a structured coaching note — objection category, what happened, rep response assessment, coaching advice, and a suggested reframe in first person ready to use. Each moment is saved as a separate Airtable record with Status set to Needs Review.\n\n## How it works\n- **1. Form — Call Recording + Details** collects the recording URL, rep name, contact name, company, call purpose, date, and the objection search query\n- **2. WayinVideo — Submit Find Moments** submits the URL and query to the Find Moments API — up to 5 matching moments returned\n- **3. Wait — 90 Seconds** gives the API initial processing time\n- **4. WayinVideo — Get Moments Results** polls the find-moments results endpoint\n- **5. IF — Find Moments Complete?** checks for SUCCEEDED — if not, retries via 30-second wait\n- **7. Code — Extract Objection Clips** reads the clips array, converts millisecond timestamps to MM:SS, and returns one item per clip\n- **8. AI Agent — Generate Coaching Note** uses GPT-4o-mini to analyze each clip's metadata and write a 5-section coaching analysis\n- **10. Code — Parse Coaching Output** extracts all 5 coaching sections via regex and assembles the Airtable record\n- **11. HTTP — Save to Airtable** creates one record per objection moment with all 16 fields and Status set to Needs Review\n\n## Set up steps\n1. In **2. WayinVideo — Submit Find Moments** and **4. WayinVideo — Get Moments Results** — replace YOUR_WAYINVIDEO_API_KEY\n2. In **9. OpenAI — GPT-4o-mini Model** — connect your OpenAI credential\n3. In **11. HTTP — Save to Airtable** — replace YOUR_AIRTABLE_API_KEY (Personal Access Token from airtable.com/create/tokens with data.records:write scope), YOUR_AIRTABLE_BASE_ID, and YOUR_AIRTABLE_TABLE_NAME\n4. Create an Airtable table named Sales Objections with fields: Call Date, Rep Name, Contact Name, Company, Call Purpose, Objection Type, Objection Category, Moment Title, Objection Description, Timestamp in Recording, Relevance Score, Rep Response Assessment, Coaching Note, Suggested Reframe, Recording URL, Status"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "cbd36f74-afe3-45ff-a96b-43f4d2e10108",
+          "name": "Section — Form Input",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1728,
+            -208
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 292,
+            "height": 516,
+            "content": "## Form Input\nSales rep or manager submits recording URL, rep name, contact name, company, call purpose, call date, and the objection search query. The query directly drives which moments WayinVideo finds — be specific for better results."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "48a4db2e-10d4-401b-b2fe-89af578faf47",
+          "name": "Section — Find Moments Submit and Poll",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1408,
+            -144
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 708,
+            "height": 452,
+            "content": "## WayinVideo Find Moments Submit and Poll\nSubmits the recording URL and search query to the Find Moments API — returning up to 5 matching moments with titles, descriptions, timestamps, and relevance scores. Waits 90 seconds then polls until SUCCEEDED."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ab7f652a-0f7c-4a8d-a0c8-838802f2f03d",
+          "name": "Section — Status Check and Retry Loop",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -640,
+            -144
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 260,
+            "height": 612,
+            "content": "## Find Moments Status Check and Retry Loop\nIF checks for SUCCEEDED status. TRUE proceeds to clip extraction. FALSE waits 30 seconds and polls again. Loop continues until results are ready."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9b1423ac-0bd3-4302-9475-32de2abceafb",
+          "name": "Section — Clip Extraction and AI Coaching Analysis",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -336,
+            -208
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 516,
+            "height": 708,
+            "content": "## Clip Extraction and AI Coaching Analysis\nSplits the clips array into one item per moment. GPT-4o-mini analyzes each clip using its title, description, and relevance score — generating objection category, what happened, rep response assessment, coaching note, and a first-person suggested reframe."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "83d7d843-5145-4dff-9777-37c22c6a6415",
+          "name": "Section — Coaching Parse and Airtable Save",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            240,
+            -112
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 548,
+            "height": 356,
+            "content": "## Coaching Parse and Airtable Save\nRegex extracts all 5 coaching sections and assembles the full Airtable record. One record created per objection moment with Status set to Needs Review for manager review."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "d73590d7-83f8-4bec-bb06-cd6e405c6e60",
+          "name": "1. Form — Call Recording + Details",
+          "type": "n8n-nodes-base.formTrigger",
+          "position": [
+            -1632,
+            32
+          ],
+          "webhookId": "32077d2b-1e10-42e3-b7ce-d91fef4c8c19",
+          "parameters": {
+            "options": {},
+            "formTitle": "Sales Objection Extractor",
+            "formFields": {
+              "values": [
+                {
+                  "fieldLabel": "Call Recording URL",
+                  "placeholder": "https://zoom.us/rec/xxxxxxx or Loom/Google Meet link",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Sales Rep Name",
+                  "placeholder": "e.g. Sarah Johnson",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Contact Name",
+                  "placeholder": "e.g. John Smith",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Company Name",
+                  "placeholder": "e.g. Acme Corp",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Call Purpose",
+                  "placeholder": "e.g. Discovery Call, Demo, Pricing Call, Follow-up",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Call Date",
+                  "placeholder": "e.g. 2025-04-29",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Objection Type to Search",
+                  "placeholder": "e.g. pricing too expensive / competitor comparison / missing feature / timing not right",
+                  "requiredField": true
+                }
+              ]
+            },
+            "formDescription": "Paste your sales call recording URL. AI will find every objection moment, analyze how it was handled, and log a coaching note to Airtable."
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "a68ec47f-7810-4a5e-8556-a1298f7c3b50",
+          "name": "2. WayinVideo — Submit Find Moments",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -1344,
+            32
+          ],
+          "parameters": {
+            "url": "https://wayinvideo-api.wayin.ai/api/v2/clips/find-moments",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"video_url\": \"{{ $json['Call Recording URL'] }}\",\n  \"query\": \"{{ $json['Objection Type to Search'] }}\",\n  \"project_name\": \"Objection — {{ $json['Contact Name'] }} | {{ $json['Company Name'] }}\",\n  \"limit\": 5,\n  \"enable_export\": false,\n  \"target_lang\": \"en\"\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer YOUR_TOKEN_HERE"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "50c5e721-1b88-4adc-884b-3cd21c99c43e",
+          "name": "3. Wait — 90 Seconds",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            -1072,
+            32
+          ],
+          "webhookId": "wait-objection-90s",
+          "parameters": {
+            "amount": 90
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "7afff640-07d3-4330-b0f4-c0e9e99f0ecd",
+          "name": "4. WayinVideo — Get Moments Results",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -832,
+            32
+          ],
+          "parameters": {
+            "url": "=https://wayinvideo-api.wayin.ai/api/v2/clips/find-moments/results/{{ $('2. WayinVideo — Submit Find Moments').item.json.data.id }}",
+            "options": {},
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer YOUR_TOKEN_HERE"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "061ecb9b-a3bc-4ef9-bde5-e4bf0fc94cf7",
+          "name": "5. IF — Find Moments Complete?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -592,
+            32
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "status-check",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ $json.data.status }}",
+                  "rightValue": "SUCCEEDED"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "baba7e5c-6d05-4ca3-b9fe-4ae559a88563",
+          "name": "6. Wait — 30 Seconds Retry",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            -592,
+            224
+          ],
+          "webhookId": "wait-objection-retry-30s",
+          "parameters": {
+            "amount": 30
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "2ea43199-b48b-4311-a782-7acf0ba7c301",
+          "name": "7. Code — Extract Objection Clips",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -288,
+            16
+          ],
+          "parameters": {
+            "jsCode": "// Extract objection clips from WayinVideo Find Moments results\nconst clips = $('4. WayinVideo — Get Moments Results').item.json.data?.clips || [];\n\nif (clips.length === 0) {\n  throw new Error('No objection moments found in this recording. Try a different search query or check if the recording has audio.');\n}\n\n// Get form data\nconst repName = $('1. Form — Call Recording + Details').item.json['Sales Rep Name'];\nconst contactName = $('1. Form — Call Recording + Details').item.json['Contact Name'];\nconst companyName = $('1. Form — Call Recording + Details').item.json['Company Name'];\nconst callPurpose = $('1. Form — Call Recording + Details').item.json['Call Purpose'];\nconst callDate = $('1. Form — Call Recording + Details').item.json['Call Date'];\nconst objectionType = $('1. Form — Call Recording + Details').item.json['Objection Type to Search'];\nconst recordingUrl = $('1. Form — Call Recording + Details').item.json['Call Recording URL'];\n\n// Split into individual items — one per objection moment\nreturn clips.map((clip, index) => ({\n  json: {\n    clipIndex: index + 1,\n    clipTitle: clip.title || `Objection Moment ${index + 1}`,\n    clipDescription: clip.desc || '',\n    clipScore: clip.score || 0,\n    clipTags: Array.isArray(clip.tags) ? clip.tags.join(', ') : '',\n    beginMs: clip.begin_ms || 0,\n    endMs: clip.end_ms || 0,\n    timestampStart: `${Math.floor((clip.begin_ms || 0) / 60000)}:${String(Math.floor(((clip.begin_ms || 0) % 60000) / 1000)).padStart(2, '0')}`,\n    timestampEnd: `${Math.floor((clip.end_ms || 0) / 60000)}:${String(Math.floor(((clip.end_ms || 0) % 60000) / 1000)).padStart(2, '00')}`,\n    repName,\n    contactName,\n    companyName,\n    callPurpose,\n    callDate,\n    objectionType,\n    recordingUrl\n  }\n}));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "c5312a38-85cc-4226-b708-391e11aa0ebc",
+          "name": "8. AI Agent — Generate Coaching Note",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            -96,
+            16
+          ],
+          "parameters": {
+            "text": "=You are an expert sales coach analyzing a specific objection moment from a sales call recording.\n\nA video AI tool has already identified and extracted this exact moment from the recording. Your job is to analyze it and provide structured coaching for the sales manager.\n\n---\n\n## CALL CONTEXT\n- Sales Rep: {{ $json.repName }}\n- Contact: {{ $json.contactName }} at {{ $json.companyName }}\n- Call Type: {{ $json.callPurpose }}\n- Call Date: {{ $json.callDate }}\n- Objection Search Query Used: {{ $json.objectionType }}\n\n## MOMENT FOUND BY WAYINVIDEO\n- Moment Title: {{ $json.clipTitle }}\n- Description: {{ $json.clipDescription }}\n- Timestamp in Recording: {{ $json.timestampStart }} — {{ $json.timestampEnd }}\n- Relevance Score: {{ $json.clipScore }}/100\n- Tags: {{ $json.clipTags }}\n\n---\n\n## YOUR TASK\nBased on the moment description and context above, provide a structured coaching analysis.\n\n## RULES\n1. Base your analysis ONLY on the moment description provided — do not invent details\n2. Be specific and actionable — not generic sales advice\n3. Suggested reframe must be a specific alternative response the rep could use next time\n4. Keep each section concise — 2-3 sentences maximum\n\n---\n\n## OUTPUT FORMAT\nReturn your response in this exact structure:\n\nOBJECTION_CATEGORY:\n[Choose one: Pricing / Competitor / Timing / Feature Gap / Trust / Authority / Need / Other]\n\nWHAT_HAPPENED:\n[1-2 sentences describing the objection based on the moment description]\n\nREP_RESPONSE_ASSESSMENT:\n[1-2 sentences assessing how the rep likely handled it based on context — or 'Unable to assess — review recording at timestamp']\n\nCOACHING_NOTE:\n[2-3 sentences of specific coaching advice for the sales manager to share with the rep]\n\nSUGGESTED_REFRAME:\n[Write the exact alternative response the rep could say next time this objection comes up — in first person, ready to use]",
+            "options": {},
+            "promptType": "define"
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "59ee5497-bf24-43e0-b9fe-79d08f31b76c",
+          "name": "9. OpenAI — GPT-4o-mini Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            -96,
+            240
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini"
+            },
+            "options": {},
+            "builtInTools": {}
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "96def239-b9fd-4d85-ac2d-c2b90ee6e055",
+          "name": "10. Code — Parse Coaching Output",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            304,
+            16
+          ],
+          "parameters": {
+            "jsCode": "// Parse AI coaching output\nconst output = $input.first().json.output || '';\n\n// Extract each section\nconst categoryMatch = output.match(/OBJECTION_CATEGORY:\\s*([\\s\\S]*?)(?=\\nWHAT_HAPPENED:|$)/);\nconst whatHappenedMatch = output.match(/WHAT_HAPPENED:\\s*([\\s\\S]*?)(?=\\nREP_RESPONSE_ASSESSMENT:|$)/);\nconst repResponseMatch = output.match(/REP_RESPONSE_ASSESSMENT:\\s*([\\s\\S]*?)(?=\\nCOACHING_NOTE:|$)/);\nconst coachingNoteMatch = output.match(/COACHING_NOTE:\\s*([\\s\\S]*?)(?=\\nSUGGESTED_REFRAME:|$)/);\nconst reframeMatch = output.match(/SUGGESTED_REFRAME:\\s*([\\s\\S]*)$/);\n\nconst objectionCategory = categoryMatch ? categoryMatch[1].trim() : 'Other';\nconst whatHappened = whatHappenedMatch ? whatHappenedMatch[1].trim() : '';\nconst repResponseAssessment = repResponseMatch ? repResponseMatch[1].trim() : '';\nconst coachingNote = coachingNoteMatch ? coachingNoteMatch[1].trim() : '';\nconst suggestedReframe = reframeMatch ? reframeMatch[1].trim() : '';\n\n// Get clip data from previous node\nconst clipData = $('7. Code — Extract Objection Clips').item.json;\n\nreturn [{\n  json: {\n    // Airtable fields\n    callDate: clipData.callDate,\n    repName: clipData.repName,\n    contactName: clipData.contactName,\n    companyName: clipData.companyName,\n    callPurpose: clipData.callPurpose,\n    objectionType: clipData.objectionType,\n    objectionCategory,\n    momentTitle: clipData.clipTitle,\n    objectionDescription: `${whatHappened}\\n\\n${clipData.clipDescription}`,\n    timestamp: `${clipData.timestampStart} — ${clipData.timestampEnd}`,\n    relevanceScore: clipData.clipScore,\n    repResponseAssessment,\n    coachingNote,\n    suggestedReframe,\n    recordingUrl: clipData.recordingUrl,\n    clipIndex: clipData.clipIndex\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "e7a4b334-758a-4e57-aafd-15fcfc180fdb",
+          "name": "11. HTTP — Save to Airtable",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            544,
+            16
+          ],
+          "parameters": {
+            "url": "=https://api.airtable.com/v0/YOUR_AIRTABLE_BASE_ID/YOUR_AIRTABLE_TABLE_NAME",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"fields\": {\n    \"Call Date\": \"{{ $json.callDate }}\",\n    \"Rep Name\": \"{{ $json.repName }}\",\n    \"Contact Name\": \"{{ $json.contactName }}\",\n    \"Company\": \"{{ $json.companyName }}\",\n    \"Call Purpose\": \"{{ $json.callPurpose }}\",\n    \"Objection Type\": \"{{ $json.objectionType }}\",\n    \"Objection Category\": \"{{ $json.objectionCategory }}\",\n    \"Moment Title\": \"{{ $json.momentTitle }}\",\n    \"Objection Description\": \"{{ $json.objectionDescription }}\",\n    \"Timestamp in Recording\": \"{{ $json.timestamp }}\",\n    \"Relevance Score\": {{ $json.relevanceScore }},\n    \"Rep Response Assessment\": \"{{ $json.repResponseAssessment }}\",\n    \"Coaching Note\": \"{{ $json.coachingNote }}\",\n    \"Suggested Reframe\": \"{{ $json.suggestedReframe }}\",\n    \"Recording URL\": \"{{ $json.recordingUrl }}\",\n    \"Status\": \"Needs Review\"\n  }\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer YOUR_TOKEN_HERE"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "3. Wait — 90 Seconds": {
+          "main": [
+            [
+              {
+                "node": "4. WayinVideo — Get Moments Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. Wait — 30 Seconds Retry": {
+          "main": [
+            [
+              {
+                "node": "4. WayinVideo — Get Moments Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "9. OpenAI — GPT-4o-mini Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "8. AI Agent — Generate Coaching Note",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. IF — Find Moments Complete?": {
+          "main": [
+            [
+              {
+                "node": "7. Code — Extract Objection Clips",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "6. Wait — 30 Seconds Retry",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "10. Code — Parse Coaching Output": {
+          "main": [
+            [
+              {
+                "node": "11. HTTP — Save to Airtable",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. Code — Extract Objection Clips": {
+          "main": [
+            [
+              {
+                "node": "8. AI Agent — Generate Coaching Note",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Form — Call Recording + Details": {
+          "main": [
+            [
+              {
+                "node": "2. WayinVideo — Submit Find Moments",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "2. WayinVideo — Submit Find Moments": {
+          "main": [
+            [
+              {
+                "node": "3. Wait — 90 Seconds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "4. WayinVideo — Get Moments Results": {
+          "main": [
+            [
+              {
+                "node": "5. IF — Find Moments Complete?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. AI Agent — Generate Coaching Note": {
+          "main": [
+            [
+              {
+                "node": "10. Code — Parse Coaching Output",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 17,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 2
+        },
+        "n8n-nodes-base.wait": {
+          "count": 2
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.formTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 3
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Incrementors",
+      "username": "incrementors",
+      "bio": "",
+      "verified": true,
+      "links": [
+        "https://www.incrementors.com/"
+      ],
+      "avatar": "https://gravatar.com/avatar/e09b4b6a8c5a00f886a9eedf3be23a4af5a50cc216cd6b2aee2a12c2dfba99dd?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1225,
+        "icon": "file:form.svg",
+        "name": "n8n-nodes-base.formTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "table",
+              "submit",
+              "post"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.formtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Other Trigger Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "On form submission"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NiIgaGVpZ2h0PSI0MCIgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iIzAwQjdCQyIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMzQuOTc4IDM3LjczMmExLjU2IDEuNTYgMCAwIDEtMS41NjIgMS41NjNINi4yNmExLjU2IDEuNTYgMCAwIDEtMS41NjMtMS41NjNWOS42MDdjMC0uNDA1LjE1Ny0uNzk0LjQzOC0xLjA4Nmw2LjMwNC02LjUzMXY1LjM0NEg4LjIxM2ExLjE3MiAxLjE3MiAwIDEgMCAwIDIuMzQzaDQuNDNhMS4xNyAxLjE3IDAgMCAwIDEuMTcxLTEuMTcxVi4yMzJoMTkuNjAyYTEuNTYgMS41NiAwIDAgMSAxLjU2MiAxLjU2M3YxMC4zMjdsLTIuODYgMi44Ni04LjI1MiA4LjI3NmE0MTMuMDA2IDQxMy4wMDYgMCAwIDEtMS42NTQgMS42NjJsLS4zMzcuMzM3YTIgMiAwIDAgMC0uNTU3IDEuMDhMMjAuMyAzMS45MjJjLS4xMDguNjM4LS4yMTUgMS4wNzkuMjExIDEuNDE4LjQwMy4zMi45LjE3NCAxLjU0LjA2Nmw1LjQwOC0uOTI4YTIgMiAwIDAgMCAxLjA4LS41NTZsNi40NC02LjQyOXptLTI0LjAzLTIxLjI2NWExLjE4IDEuMTggMCAwIDAgMS4xNzEgMS4xNzJoMTMuMTYzYTEuMTcyIDEuMTcyIDAgMSAwIDAtMi4zNDRIMTIuMTE5YTEuMTcgMS4xNyAwIDAgMC0xLjE3MiAxLjE3Mm03LjI5NCAxNC43NjZhMS4xNyAxLjE3IDAgMCAwLTEuMTcyLTEuMTcySDEyLjEyYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNC45NTFhMS4xNyAxLjE3IDAgMCAwIDEuMTcyLTEuMTcybS44Ni03LjM5MWExLjE3IDEuMTcgMCAwIDAtMS4xNzItMS4xNzJoLTUuODExYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNS44MWExLjE2NCAxLjE2NCAwIDAgMCAxLjE3My0xLjE3MSIgY2xpcC1ydWxlPSJldmVub2RkIi8+PHBhdGggZmlsbD0iIzAwQjdCQyIgZD0ibTMzLjUzMiAxNi4zOTcgNC4yODktNC4yODkgMy43NTggMy43MSAxLjYxNy0xLjYxNiAyLjI1OCAyLjI1N2MuMjE4LjIxOC4zNC41MTMuMzQzLjgyLS4wMDIuMzExLS4xMjUuNjA4LS4zNDQuODNsLTYuODA0IDYuNzk2YTEuMTMgMS4xMyAwIDAgMS0uODI4LjM0MyAxLjE1IDEuMTUgMCAwIDEtLjgyOC0uMzQzIDEuMTggMS4xOCAwIDAgMSAwLTEuNjU3bDUuOTc2LTUuOTY4LTEuMzEyLTEuMzEzLTEuMzgzIDEuNDE0LTEzLjE0OSAxMy4xMjUtNC42MTcuNzgyLjc4Mi00LjYxNy4zMzYtLjMzNyAyLjU2MiAyLjU1NWExLjEgMS4xIDAgMCAwIC44MjguMzQ0Yy4zMTIuMDA1LjYxMi0uMTIuODI4LS4zNDRhMS4xOCAxLjE4IDAgMCAwIDAtMS42NTZsLTIuNTYyLTIuNTYyek00NC43MzYgMTIuMjRjMCAuNDE0LS4xNjMuODEtLjQ1NCAxLjEwMmwtLjkyMi45MTQtMy44NTItMy44MjguOTMtLjkzYTEuNTYzIDEuNTYzIDAgMCAxIDIuMjAzIDBsMS42NCAxLjY0MWMuMjkxLjI5My40NTUuNjkuNDU1IDEuMTAyIi8+PC9zdmc+"
+        },
+        "displayName": "n8n Form Trigger",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 39,
+        "name": "CRM"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

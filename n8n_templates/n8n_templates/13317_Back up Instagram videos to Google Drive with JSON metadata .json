@@ -1,0 +1,307 @@
+{
+  "id": 13317,
+  "name": "Back up Instagram videos to Google Drive with JSON metadata catalog",
+  "totalViews": 0,
+  "price": 0,
+  "purchaseUrl": null,
+  "user": {
+    "id": 99494,
+    "name": "Lucio",
+    "username": "misterfunable",
+    "bio": "SuperCloudDevSecGalaxyOpsx10Sunshine worker.",
+    "verified": true,
+    "links": "[\"https://x.com/MisterFunable\"]",
+    "avatar": "https://gravatar.com/avatar/c4f7c8ec4ca53ace683b1c638a51eba75a424a9b56632a08a2fc3f2685dc9583?r=pg&d=retro&size=200"
+  },
+  "description": "Instagram Video Backup to Google Drive\n\nAutomatically backup all your Instagram videos to Google Drive with a searchable metadata catalog in JSON format.\n\nWhat It Does\n\nThis workflow provides a complete backup solution for your Instagram video content with intelligent caption parsing:\n\nFetches your Instagram account ID and videos (VIDEO and REELS types)\nParses captions into structured fields:\n   Title: Everything before the first hashtag\n   Description: Everything after the first hashtag (includes all tags)\n   Tag List: All hashtags extracted as an array\n   Description Full: Complete original caption text\nDownloads videos in maximum available quality from Instagram\nUploads videos to a designated Google Drive folder\nCreates/updates a JSON metadata file with all video details\nPrevents duplicates using n8n Data Tables with account-level filtering\n\nKey Features\n\nAccount-Level Tracking: The Data Table includes accountId so you can use the same table across multiple Instagram accounts. Each account's videos are tracked separately.\n\nSmart Caption Parsing: Automatically splits Instagram captions into title (before first #) and description (all hashtags and text after), with full text preserved in descriptionFull.\n\nPortable Catalog: The JSON file is stored in Google Drive alongside your videos, making it accessible anywhere without needing n8n.\n\nMaximum Quality: Uses Instagram Graph API's media_url field for highest available quality.\n\nHashtag Extraction: Automatically extracts all hashtags into an array for easy filtering and analysis.\n\nWorkflow Architecture\n\nSection 1: Fetch & Filter\nGet Instagram Account Info → Configuration → Fetch Media → Split Out Items → Filter Videos Only\n\nGet Instagram Account Info**: Fetches your Instagram account ID and username\nConfiguration**: Stores account ID, Google Drive folder ID, and settings\nFetch Media**: Gets up to 100 media items from Instagram\nSplit Out Items**: Separates each media item for individual processing\nFilter Videos Only**: Keeps only VIDEO and REELS types (skips images)\n\nSection 2: Process Videos\nCheck If Backed Up → IF Not Backed Up → Wait → Parse Caption → Download → Upload → Extract Metadata → Save Record → Aggregate\n\nFor each video:\nCheck If Already Backed Up: Queries Data Table by postId to avoid duplicates\nIF Not Already Backed Up: Skips if video already exists\nWait: 5-second delay between downloads (prevents API rate limits)\nParse Caption: Splits caption into title, description, tagList, descriptionFull\nDownload Video: Downloads video file from Instagram to memory\nUpload to Google Drive: Uploads video to configured folder\nExtract Metadata: Creates structured metadata object with all fields\nSave Backup Record: Stores accountId, postId, googleDriveFileId, backedUpAt in Data Table\nAggregate: Collects all new video metadata for JSON update\n\nSection 3: Update JSON Catalog\nEnd Loop → Download Existing JSON → Update JSON → Upload Updated JSON\n\nAfter all videos processed:\nDownload Existing Metadata JSON: Gets current JSON file from Google Drive (if exists)\nUpdate Metadata JSON: Appends new video metadata to existing catalog\nUpload Updated Metadata JSON: Saves updated JSON back to Google Drive\n\nSetup Steps\n\n1. Create Google Drive Folder\n\nGo to Google Drive\nCreate a new folder named Instagram Video Backups (or any name you prefer)\nOpen the folder and copy the Folder ID from the URL:\n      https://drive.google.com/drive/folders/1ABC123xyz...\n                                            ^^^^^^^^^^^\n                                            This is your Folder ID\n2. Create n8n Data Table\n\nCreate a Data Table for deduplication tracking with account-level support:\n\nTable Name: Instagram Video Backups\n\nSchema:\n| Field Name | Type | Description |\n|------------|------|-------------|\n| accountId | string | Instagram account ID (allows multi-account use) |\n| postId | string (Primary Key) | Instagram post ID |\n| googleDriveFileId | string | Google Drive file ID for the video |\n| backedUpAt | string | ISO timestamp of backup |\n\nWhy accountId? This allows you to use the same Data Table for multiple Instagram accounts. Each account's videos are tracked separately, preventing conflicts.\n\n3. Configure Credentials\n\nYou'll need two credential sets:\n\nInstagram Graph API (HTTP Bearer Auth)\nIn n8n, create new credential: HTTP Bearer Auth\nSet header name: Authorization\nSet header value: Bearer YOUR_INSTAGRAM_ACCESS_TOKEN\nName it: Instagram Graph API\n\nGetting Instagram Access Token:\nFollow Meta's Business Account setup guide\nRequired permissions: instagram_graph_user_media\nTokens expire after 60 days (requires manual refresh)\n\nGoogle Drive OAuth2\nIn n8n, create new credential: Google Drive OAuth2 API\nFollow OAuth flow to authorize your Google account\nName it: Google Drive Account\n\n4. Update Configuration Node\n\nIn the workflow, open the Configuration node and update:\n\n{\n  \"googleDriveFolderId\": \"PASTE_YOUR_FOLDER_ID_HERE\",\n  \"maxVideosPerRun\": 100,\n  \"waitBetweenDownloads\": 5,\n  \"metadataFileName\": \"instagram-backup-metadata.json\"\n}\n\nSettings Explained:\ngoogleDriveFolderId: The folder ID you copied in step 1\nmaxVideosPerRun: Max videos to process per run (100 is safe for API limits)\nwaitBetweenDownloads: Seconds to wait between downloads (prevents rate limits)\nmetadataFileName: Name of the JSON catalog file in Google Drive\n\nNote: accountId and accountUsername are automatically populated from Instagram API.\n\n5. Test & Activate\n\nClick Manual Trigger to test the workflow\nCheck Google Drive folder for:\n   Video files named instagram_{postId}.mp4\n   JSON file named instagram-backup-metadata.json\nVerify Data Table has records with accountId and postId\nActivate the Schedule Trigger for daily automatic backups\n\nMetadata JSON Structure\n\nThe JSON file stored in Google Drive has this structure:\n\n{\n  \"lastUpdated\": \"2026-02-01T10:00:00Z\",\n  \"totalVideos\": 42,\n  \"videos\": [\n    {\n      \"accountId\": \"17841400123456789\",\n      \"instagramId\": \"123456789\",\n      \"permalink\": \"https://instagram.com/p/ABC123\",\n      \"title\": \"Amazing sunset at the beach!\",\n      \"description\": \"#travel #nature #sunset\",\n      \"tagList\": [\"travel\", \"nature\", \"sunset\"],\n      \"descriptionFull\": \"Amazing sunset at the beach! #travel #nature #sunset\",\n      \"timestamp\": \"2026-01-15T08:30:00Z\",\n      \"mediaType\": \"VIDEO\",\n      \"googleDriveFileId\": \"1ABC123xyz...\",\n      \"googleDriveFileName\": \"instagram_123456789.mp4\",\n      \"backedUpAt\": \"2026-02-01T10:00:00Z\"\n    }\n  ]\n}\n\nField Descriptions\n\naccountId**: Instagram account ID (from Graph API /me endpoint)\ninstagramId**: Instagram post ID (unique identifier)\npermalink**: Direct link to Instagram post\ntitle**: Caption text before the first hashtag\ndescription**: Caption text from first hashtag onward (includes all tags)\ntagList**: Array of hashtags without the # symbol\ndescriptionFull**: Complete original caption (preserves full text)\ntimestamp**: When the video was originally posted to Instagram\nmediaType**: VIDEO or REELS\ngoogleDriveFileId**: Google Drive file ID (use to access file via Drive API)\ngoogleDriveFileName**: Filename in Google Drive (instagram_{postId}.mp4)\nbackedUpAt**: When the video was backed up (ISO timestamp)\n\nCaption Parsing Logic\n\nThe Parse Caption Code node splits Instagram captions intelligently:\n\nExample Caption:\n\"Amazing sunset at the beach! 🌅 #travel #nature #sunset\"\n\nParsed Fields:\ntitle**: \"Amazing sunset at the beach! 🌅\"\ndescription**: \"#travel #nature #sunset\"\ntagList**: [\"travel\", \"nature\", \"sunset\"]\ndescriptionFull**: \"Amazing sunset at the beach! 🌅 #travel #nature #sunset\"\n\nEdge Cases:\nNo hashtags**: Entire caption becomes title, description is empty\nHashtag at start**: title is empty, entire caption becomes description\nMultiple lines**: Preserves all line breaks in descriptionFull\n\nMulti-Account Usage\n\nUsing the same Data Table for multiple accounts:\n\nImport this workflow multiple times (once per Instagram account)\nConfigure each workflow with different Instagram credentials\nUse the same Data Table name in all workflows: Instagram Video Backups\nEach workflow automatically filters by its own accountId\n\nBenefits:\nSingle deduplication table for all accounts\nEasy to query all backups across accounts\nPrevents conflicts between accounts with same post IDs\n\nQuerying specific account backups:\n// In Data Table or external script\nconst accountBackups = allBackups.filter(\n  backup =&gt; backup.accountId === \"17841400123456789\"\n);\n\nAPI Quotas & Limits\n\nInstagram Graph API\nRate Limits**: 200 calls/hour per user token (standard)\nThis Workflow**: 2 calls total (1 for account info, 1 for media fetch)\nImpact**: Can run safely within free tier limits\n\nGoogle Drive API\nRate Limits**: 1,000 requests per 100 seconds per user\nThis Workflow**: 2 calls per video (upload video + final JSON update)\nImpact**: 100 videos = ~200 calls, well within limits\n\nRecommended Schedule\nDaily (midnight)**: Default, safe for most accounts\nWeekly**: Good for accounts with infrequent posting\nManual**: On-demand backups when needed\n\nTroubleshooting\n\nNo videos are being backed up\n\nCheck Instagram credentials:\nOpen \"Get Instagram Account Info\" node\nClick \"Execute Node\"\nLook for error messages about authentication\n\nVerify account has videos:\nInstagram Graph API only returns VIDEO and REELS\nWon't backup images or carousels (by design)\n\naccountId is empty in Data Table\n\nAccount info fetch failed:\nCheck Instagram credentials have correct permissions\nVerify token hasn't expired (60-day limit)\nTest \"Get Instagram Account Info\" node separately\n\nJSON file has wrong title/description\n\nCaption parsing issue:\nOpen \"Parse Caption\" Code node\nCheck the output to see parsed fields\nVerify caption has hashtags (if no hashtags, entire caption becomes title)\n\nCustom parsing logic:\nEdit the \"Parse Caption\" Code node to adjust splitting logic:\n// Current: splits at FIRST hashtag\nconst firstHashtagIndex = caption.indexOf('#');\n\n// Alternative: split at specific word\nconst splitWord = 'DESCRIPTION:';\nconst splitIndex = caption.indexOf(splitWord);\n\nDuplicate videos in Google Drive\n\nData Table issues:\nVerify table name is exactly: Instagram Video Backups\nCheck table has postId as primary key\nVerify accountId field exists\n\nWorkflow execution failed mid-run:\nIf workflow fails after upload but before saving to Data Table, video won't be tracked\nSafe to delete duplicate video in Google Drive and re-run\n\nRate limit errors\n\nInstagram rate limits:\nReduce maxVideosPerRun to 50 or 25\nIncrease waitBetweenDownloads to 10 seconds\n\nGoogle Drive rate limits:\nUnlikely with default settings\nIf occurs, reduce maxVideosPerRun\n\nCaption has special characters (emojis, line breaks)\n\nEmojis preserved:\nAll emojis are preserved in descriptionFull\nMay appear in title or description depending on position\n\nLine breaks:\nLine breaks are preserved in descriptionFull\nMay affect title/description split if hashtags are on new lines\n\nAdvanced Customization\n\nChange Backup Folder\n\nUpdate googleDriveFolderId in Configuration node to any Google Drive folder ID.\n\nChange Schedule\n\nEdit the Schedule Trigger node:\nDaily midnight: 0 0 * * * (default)\nEvery 12 hours: 0 */12 * * *\nWeekly Sunday: 0 0 * * 0\nCustom: Use crontab.guru to generate expression\n\nOrganize Videos by Date\n\nTo create monthly subfolders (e.g., 2026-02/video.mp4):\n\nBefore \"Upload to Google Drive\" node, add \"Google Drive - Create Folder\" node\nFolder name: ={{ $now.format('yyyy-MM') }}\nParent folder: ={{ $('Configuration').item.json.googleDriveFolderId }}\nUpdate upload node to use created folder ID\n\nDownload Videos Locally Too\n\nTo keep local copies in addition to Google Drive:\n\nAfter \"Download Video\" node, add Write Binary File node\nFile path: /path/to/backup/{{ $('Extract Metadata').item.json.googleDriveFileName }}\nConnect in parallel with \"Upload to Google Drive\"\n\nCustom Caption Parsing\n\nTo use different title/description split logic:\n\nOption 1: Split at specific keyword\nconst splitKeyword = 'DESCRIPTION:';\nconst splitIndex = caption.indexOf(splitKeyword);\n\nif (splitIndex === -1) {\n  title = caption.trim();\n  description = '';\n} else {\n  title = caption.substring(0, splitIndex).trim();\n  description = caption.substring(splitIndex + splitKeyword.length).trim();\n}\n\nOption 2: Use first sentence as title\nconst sentenceEnd = caption.match(/[.!?]/);\nconst endIndex = sentenceEnd ? caption.indexOf(sentenceEnd[0]) + 1 : -1;\n\nif (endIndex === -1) {\n  title = caption.trim();\n  description = '';\n} else {\n  title = caption.substring(0, endIndex).trim();\n  description = caption.substring(endIndex).trim();\n}\n\nFilter by Account in JSON\n\nTo create separate JSON files per account:\n\nUpdate \"Update Metadata JSON\" Code node to filter by accountId\nChange metadataFileName to include account username:\n      instagram-backup-{{ $('Configuration').item.json.accountUsername }}.json\nUse Cases\n\nSearch Videos by Hashtag\n\nDownload the JSON file from Google Drive, then:\n\n// Load JSON\nconst metadata = require('./instagram-backup-metadata.json');\n\n// Find all #travel videos\nconst travelVideos = metadata.videos.filter(v =&gt;\n  v.tagList.includes('travel')\n);\n\nconsole.log(Found ${travelVideos.length} travel videos);\n\nFind Videos by Date Range\n\nconst startDate = new Date('2026-01-01');\nconst endDate = new Date('2026-01-31');\n\nconst videosInRange = metadata.videos.filter(v =&gt; {\n  const videoDate = new Date(v.timestamp);\n  return videoDate &gt;= startDate && videoDate &lt;= endDate;\n});\n\nGenerate Reports\n\nImport JSON into Google Sheets or Excel to analyze:\nMost used hashtags\nVideos per month\nBackup coverage percentage\nVideos by account (if using multi-account setup)\n\nMigrate to Another Platform\n\nThe JSON catalog includes permalinks and timestamps, making it easy to:\nRe-upload to YouTube, TikTok, etc.\nGenerate video sitemap for website\nCreate video archive with searchable metadata\n\nKnown Limitations\n\nOnly videos: Doesn't backup images or carousel posts (by design)\nToken expiration: Instagram tokens expire after 60 days, requires manual refresh\nStorage limits: Google Drive free tier is 15GB\nNo analytics: Doesn't track views, likes, or comments\nSingle folder: All videos in one folder (can be customized, see Advanced Customization)\nCaption parsing: Assumes first hashtag splits title/description (customizable)\n\nData Privacy\n\nVideos are downloaded to n8n temporarily, then uploaded to Google Drive\nn8n doesn't permanently store video files\nMetadata JSON contains only public Instagram data\nGoogle Drive files are private to your account\nInstagram access token is encrypted by n8n credentials system\nAccount ID is public data from Instagram Graph API\n\nVersion History\n\nv1.0** (2026-02-01): Initial release\n  Daily automatic backups\n  Google Drive storage\n  JSON metadata catalog with smart caption parsing\n  Multi-account support via accountId\n  Deduplication via Data Tables\n  Title/description/tagList extraction\n\nRelated Workflows\n\nUpload from Instagram to YouTube**: Cross-post videos to YouTube with metadata\nInstagram to X**: Share posts to Twitter/X\nInstagram Account Information Tracker**: Track follower metrics and insights over time\n\nAdditional Resources\n\nInstagram Graph API Documentation\nGoogle Drive API Documentation\nn8n Data Tables Guide\nInstagram Access Token Setup\n\nSupport\n\nIf you encounter issues:\nCheck Troubleshooting section above\nReview n8n execution logs for error details\nVerify all credentials are active and have required permissions\nTest with Manual Trigger before relying on Schedule Trigger\nCheck \"Parse Caption\" node output if title/description is incorrect\n",
+  "createdAt": "2026-02-11T21:55:48.923Z",
+  "nodes": [
+    {
+      "id": 19,
+      "icon": "file:httprequest.svg",
+      "name": "n8n-nodes-base.httpRequest",
+      "codex": {
+        "data": {
+          "alias": [
+            "API",
+            "Request",
+            "URL",
+            "Build",
+            "cURL"
+          ],
+          "resources": {
+            "generic": [
+              {
+                "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                "icon": "☀️",
+                "label": "2021: The Year to Automate the New You with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                "icon": "🧬",
+                "label": "Why business process automation with n8n can change your daily life"
+              },
+              {
+                "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                "icon": "📈",
+                "label": "Automatically pulling and visualizing data with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                "icon": "✍️",
+                "label": "Learn how to automatically cross-post your content with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                "icon": "🧾",
+                "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                "icon": "🛳",
+                "label": "Running n8n on ships: An interview with Maranics"
+              },
+              {
+                "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                "icon": " 🪢",
+                "label": "What are APIs and how to use them with no code"
+              },
+              {
+                "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                "icon": "⚡️",
+                "label": "5 tasks you can automate with the new Notion API "
+              },
+              {
+                "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                "icon": "📜",
+                "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+              },
+              {
+                "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                "icon": "💡",
+                "label": "15 Google apps you can combine and automate to increase productivity"
+              },
+              {
+                "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                "icon": "🎨",
+                "label": "Automate Designs with Bannerbear and n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                "icon": " 🕸️",
+                "label": "How uProc scraped a multi-page website with a low-code workflow"
+              },
+              {
+                "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                "icon": "📱",
+                "label": "Building an expense tracking app in 10 minutes"
+              },
+              {
+                "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                "icon": "🤖",
+                "label": "5 workflow automations for Mattermost that we love at n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                "icon": "🧰",
+                "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+              },
+              {
+                "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                "icon": "🦄",
+                "label": "Learn how to use webhooks with Mattermost slash commands"
+              },
+              {
+                "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                "icon": "📈",
+                "label": "How a Membership Development Manager automates his work and investments"
+              },
+              {
+                "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                "icon": "📈",
+                "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+              },
+              {
+                "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                "icon": "🎡",
+                "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+              },
+              {
+                "url": "https://n8n.io/blog/automations-for-activists/",
+                "icon": "✨",
+                "label": "How Common Knowledge use workflow automation for activism"
+              },
+              {
+                "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                "icon": "🤟",
+                "label": "Creating scheduled text affirmations with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                "icon": "🛵",
+                "label": "How Goomer automated their operations with over 200 n8n workflows"
+              },
+              {
+                "url": "https://n8n.io/blog/aws-workflow-automation/",
+                "label": "7 no-code workflow automations for Amazon Web Services"
+              }
+            ],
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+              }
+            ]
+          },
+          "categories": [
+            "Development",
+            "Core Nodes"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0",
+          "subcategories": {
+            "Core Nodes": [
+              "Helpers"
+            ]
+          }
+        }
+      },
+      "group": "[\"output\"]",
+      "defaults": {
+        "name": "HTTP Request",
+        "color": "#0004F5"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+      },
+      "displayName": "HTTP Request",
+      "typeVersion": 4,
+      "nodeCategories": [
+        {
+          "id": 5,
+          "name": "Development"
+        },
+        {
+          "id": 9,
+          "name": "Core Nodes"
+        }
+      ]
+    },
+    {
+      "id": 58,
+      "icon": "file:googleDrive.svg",
+      "name": "n8n-nodes-base.googleDrive",
+      "codex": {
+        "data": {
+          "resources": {
+            "generic": [
+              {
+                "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                "icon": " 🖥️",
+                "label": "Hey founders! Your business doesn't need you to operate"
+              },
+              {
+                "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                "icon": "🧠",
+                "label": "Why this Product Manager loves workflow automation with n8n"
+              },
+              {
+                "url": "https://n8n.io/blog/aws-workflow-automation/",
+                "label": "7 no-code workflow automations for Amazon Web Services"
+              }
+            ],
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googledrive/"
+              }
+            ],
+            "credentialDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+              }
+            ]
+          },
+          "categories": [
+            "Data & Storage"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0"
+        }
+      },
+      "group": "[\"input\"]",
+      "defaults": {
+        "name": "Google Drive"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgODEgNzMiPjx1c2UgeGxpbms6aHJlZj0iI2EiIHg9Ii41IiB5PSIuNSIvPjxzeW1ib2wgaWQ9ImEiIG92ZXJmbG93PSJ2aXNpYmxlIj48ZyBmaWxsLXJ1bGU9Im5vbnplcm8iIHN0cm9rZT0ibm9uZSI+PHBhdGggZmlsbD0iIzAwNjZkYSIgZD0ibTYuMDQ4IDYxLjI2IDMuNTI4IDYuMDk0Yy43MzMgMS4yODMgMS43ODcgMi4yOTEgMy4wMjQgMy4wMjRsMTIuNi0yMS44MUgwYTguMyA4LjMgMCAwIDAgMS4xIDQuMTI0eiIvPjxwYXRoIGZpbGw9IiMwMGFjNDciIGQ9Ik00MCAyMi45MSAyNy40IDEuMWMtMS4yMzcuNzMzLTIuMjkxIDEuNzQxLTMuMDI0IDMuMDI0TDEuMSA0NC40NDVBOC4zIDguMyAwIDAgMCAwIDQ4LjU2OGgyNS4yeiIvPjxwYXRoIGZpbGw9IiNlYTQzMzUiIGQ9Ik02Ny40IDcwLjM3OGMxLjIzNy0uNzMzIDIuMjkxLTEuNzQxIDMuMDI0LTMuMDI0bDEuNDY2LTIuNTIgNy4wMS0xMi4xNDJhOC4zIDguMyAwIDAgMCAxLjEtNC4xMjRINTQuNzk4bDUuMzYzIDEwLjUzOHoiLz48cGF0aCBmaWxsPSIjMDA4MzJkIiBkPSJNNDAgMjIuOTEgNTIuNiAxLjFDNTEuMzYzLjM2NyA0OS45NDMgMCA0OC40NzcgMEgzMS41MjRjLTEuNDY2IDAtMi44ODcuNDEyLTQuMTI0IDEuMXoiLz48cGF0aCBmaWxsPSIjMjY4NGZjIiBkPSJNNTQuNzk5IDQ4LjU2OEgyNS4ybC0xMi42IDIxLjgxYzEuMjM3LjczMyAyLjY1NyAxLjEgNC4xMjQgMS4xaDQ2LjU1MmMxLjQ2NiAwIDIuODg3LS40MTIgNC4xMjQtMS4xeiIvPjxwYXRoIGZpbGw9IiNmZmJhMDAiIGQ9Ik02Ny4yNjIgMjQuMjg0IDU1LjYyNCA0LjEyNEM1NC44OTEgMi44NDEgNTMuODM3IDEuODMzIDUyLjYgMS4xTDQwIDIyLjkxbDE0LjggMjUuNjU5aDI1LjE1NWE4LjMgOC4zIDAgMCAwLTEuMS00LjEyNHoiLz48L2c+PC9zeW1ib2w+PC9zdmc+"
+      },
+      "displayName": "Google Drive",
+      "typeVersion": 3,
+      "nodeCategories": [
+        {
+          "id": 3,
+          "name": "Data & Storage"
+        }
+      ]
+    },
+    {
+      "id": 834,
+      "icon": "file:code.svg",
+      "name": "n8n-nodes-base.code",
+      "codex": {
+        "data": {
+          "alias": [
+            "cpde",
+            "Javascript",
+            "JS",
+            "Python",
+            "Script",
+            "Custom Code",
+            "Function"
+          ],
+          "details": "The Code node allows you to execute JavaScript in your workflow.",
+          "resources": {
+            "primaryDocumentation": [
+              {
+                "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+              }
+            ]
+          },
+          "categories": [
+            "Development",
+            "Core Nodes"
+          ],
+          "nodeVersion": "1.0",
+          "codexVersion": "1.0",
+          "subcategories": {
+            "Core Nodes": [
+              "Helpers",
+              "Data Transformation"
+            ]
+          }
+        }
+      },
+      "group": "[\"transform\"]",
+      "defaults": {
+        "name": "Code"
+      },
+      "iconData": {
+        "type": "file",
+        "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+      },
+      "displayName": "Code",
+      "typeVersion": 2,
+      "nodeCategories": [
+        {
+          "id": 5,
+          "name": "Development"
+        },
+        {
+          "id": 9,
+          "name": "Core Nodes"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,2431 @@
+{
+  "workflow": {
+    "id": 2879,
+    "name": "Book ghostwriting & research AI agent",
+    "views": 1915,
+    "recentViews": 0,
+    "totalViews": 1915,
+    "createdAt": "2025-02-11T07:45:24.545Z",
+    "description": "**How it Works:**\n\n1.  **Trigger:** The workflow is triggered by a webhook, initiated by an Airtable automation.  This automation sends the Book or Chapter record ID and the desired action (e.g., \"Generate Book Details,\" \"Generate Chapters,\" \"Generate Chapter Research,\" \"Generate Chapter Content\").\n2.  **Action Routing:**  A \"Switch\" node directs the workflow based on the `action` query parameter received from the webhook.  This determines which part of the book creation process will be executed.\n3.  **Data Retrieval:**  The workflow fetches the relevant book or chapter data from Airtable using the provided `recordId`.\n4.  **AI Processing:**\n    *   **Book Details Generation:**  If the action is \"Generate Book Details,\" an AI Agent (powered by a Large Language Model (LLM) like Google Gemini and the Perplexity search tool) researches the book idea.  It focuses on crafting a compelling book description, identifying the target audience, and conducting general book research to maximize bestseller potential.  The research brief is then saved back to Airtable.\n    *   **Chapter Generation:** If the action is \"Generate Chapters,\" an LLM generates 7-10 chapter titles and descriptions based on the book idea and previous research.  A structured output parser ensures the chapter data is in the correct format. The chapters are then split into individual items and saved as separate records in the \"Chapter\" table in Airtable, linked to the main book record.\n    *   **Chapter Research Generation:** If the action is \"Generate Chapter Research,\" another AI Agent conducts in-depth research on a specific chapter, using the Perplexity search tool multiple times. It focuses on finding stories, case studies, historical events, and expert perspectives to make the chapter engaging and credible. The research is saved back to the \"Chapter\" record in Airtable.\n    *   **Chapter Content Generation:** If the action is \"Generate Chapter Content,\" an LLM writes the full content of the chapter, using the research gathered in the previous step, the overall book research, and the chapter description.  The generated content is saved back to the \"Chapter\" record in Airtable.\n5.  **Airtable Updates:**  In each of the AI processing steps, the workflow updates the corresponding Airtable record (either \"Book\" or \"Chapter\") with the generated results (research, chapter details, or content) and sets the \"Action\" field back to \"Idle.\"\n\n**Set Up Steps:**\n\n![image.png](fileId:935)\n\n1.  **Airtable Setup (Estimated time: 10-15 minutes):**\n    *   Copy the Airtable base blueprint: [https://airtable.com/appfkz4KUlKvOjtbp/shra78TlDfqLRdSfT](https://airtable.com/appfkz4KUlKvOjtbp/shra78TlDfqLRdSfT). This will create the \"Book\" and \"Chapter\" tables with the necessary fields.\n    *   In the \"Book\" table, create three Airtable Automations:\n        *   **Trigger:** When a record matches conditions -&gt; `Action` is `Generate Book Details`\n        *   **Action:** Run a script. Use the following script:\n\n            ```javascript\n            let autoRoute = input.config();\n            await fetch(autoRoute.webhookUrl + \"?recordId=\" + autoRoute.recordId + \"&action=\" + autoRoute.action);\n            ```\n        *       In the script action's configuration, add three \"Input variables\":\n                 *   `webhookUrl` (map it to your n8n webhook URL, obtained in the next step)\n                 *   `recordId` (map it to the Airtable record ID)\n                 *  `action` (map it to `Action`)\n        *   Repeat this process to create two more automations in the \"Book\" table, identical except triggered when `Action` is `Generate Chapters`, respectively.\n    *   In the \"Chapter\" table, create two Airtable Automations:\n        *   **Trigger:** When a record matches conditions -&gt; `Action` is `Generate Chapter Research`\n        *   **Action:** Run a script (use the same script as above, with the same input variables).\n        *   Create a second automation, identical except triggered when `Action` is `Generate Chapter Content`.\n\n2.  **n8n Setup (Estimated time: 15-20 minutes):**\n    *   Import the provided JSON workflow into n8n.\n    *   **Webhook Node:**\n        *   Copy the \"Test URL\" from the Webhook node.  This is the `webhookUrl` you'll use in the Airtable automations.  *Important: Once you've tested and are ready to go live, switch to the \"Production URL.\"*\n    *   **Airtable Nodes:**\n        *   Configure *all* Airtable nodes (there are eight).  You'll need to connect your Airtable account using OAuth 2.  Select the correct Base (\"Book Agency \\[v1] Cobuild\" or whatever you named it) and Table (\"Book\" or \"Chapter\") for each node.  The field mappings are already defined in the template, but double-check them.\n    *   **LLM Nodes (Google Gemini & OpenAI):**\n        *   Connect your Google Gemini and OpenAI accounts to the respective LLM nodes. You'll need API keys for both. You may also configure different LLM Models.\n    *  **Perplexity Nodes**\n        *  Connect your Perplexity AI API to the Perplexity nodes. You'll need API keys for that.\n    *   **Activate** the workflow.\n\n3. **Testing (Estimated Time: 5-10 minutes):**\n     * Go to your Airtable \"Book\" table. Create a New Record.\n     *  Fill in the \"Idea\" field with a book concept.\n     *  Change the \"Action\" field to \"Generate Book Details\".\n     *   The Airtable automation should trigger, sending a request to your n8n webhook.\n     *   Monitor the n8n execution log to see the workflow in action.\n      *   Check the Airtable record to see if the \"Research\" field is populated.\n      *  Repeat the testing for `Generate Chapters`, `Generate Chapter Research` and `Generate Chapter Content`.",
+    "workflow": {
+      "id": "9ugFSjIFwdf6F77r",
+      "meta": {
+        "instanceId": "cee1dd552aaa0d97912d392ce2641a3c3d2ea024e64b51a0c5f129401a1d3f51",
+        "templateCredsSetupCompleted": true
+      },
+      "name": "Book Agency Cobuild",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "6deac409-8a03-429f-b532-4ea7760027cc",
+          "name": "Webhook",
+          "type": "n8n-nodes-base.webhook",
+          "position": [
+            40,
+            20
+          ],
+          "webhookId": "5f5e76fa-7ef4-4ab9-8576-40e6dc86e319",
+          "parameters": {
+            "path": "ai-book",
+            "options": {}
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "313f9bb3-f7de-428f-86c6-c8b110ba530c",
+          "name": "Switch",
+          "type": "n8n-nodes-base.switch",
+          "position": [
+            220,
+            0
+          ],
+          "parameters": {
+            "rules": {
+              "values": [
+                {
+                  "outputKey": "Generate Book Details",
+                  "conditions": {
+                    "options": {
+                      "version": 2,
+                      "leftValue": "",
+                      "caseSensitive": true,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "and",
+                    "conditions": [
+                      {
+                        "operator": {
+                          "type": "string",
+                          "operation": "equals"
+                        },
+                        "leftValue": "={{ $json.query.action }}",
+                        "rightValue": "bookDetails"
+                      }
+                    ]
+                  },
+                  "renameOutput": true
+                },
+                {
+                  "outputKey": "Generate Chapters",
+                  "conditions": {
+                    "options": {
+                      "version": 2,
+                      "leftValue": "",
+                      "caseSensitive": true,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "and",
+                    "conditions": [
+                      {
+                        "id": "1d48a951-0874-440d-895d-7396d0befff7",
+                        "operator": {
+                          "name": "filter.operator.equals",
+                          "type": "string",
+                          "operation": "equals"
+                        },
+                        "leftValue": "={{ $json.query.action }}",
+                        "rightValue": "generateChapters"
+                      }
+                    ]
+                  },
+                  "renameOutput": true
+                },
+                {
+                  "outputKey": "Generate Chapter Research",
+                  "conditions": {
+                    "options": {
+                      "version": 2,
+                      "leftValue": "",
+                      "caseSensitive": true,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "and",
+                    "conditions": [
+                      {
+                        "id": "94ebafe3-f075-46db-bc2e-330743e16dec",
+                        "operator": {
+                          "name": "filter.operator.equals",
+                          "type": "string",
+                          "operation": "equals"
+                        },
+                        "leftValue": "={{ $json.query.action }}",
+                        "rightValue": "generateChapterResearch"
+                      }
+                    ]
+                  },
+                  "renameOutput": true
+                },
+                {
+                  "outputKey": "Generate Chapter Content",
+                  "conditions": {
+                    "options": {
+                      "version": 2,
+                      "leftValue": "",
+                      "caseSensitive": true,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "and",
+                    "conditions": [
+                      {
+                        "id": "2b39ed3b-79f9-4e55-9297-cf8bdf6f3720",
+                        "operator": {
+                          "name": "filter.operator.equals",
+                          "type": "string",
+                          "operation": "equals"
+                        },
+                        "leftValue": "={{ $json.query.action }}",
+                        "rightValue": "generateChapterContent"
+                      }
+                    ]
+                  },
+                  "renameOutput": true
+                }
+              ]
+            },
+            "options": {}
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "ade819b6-20f0-4625-86c8-49815aff21c2",
+          "name": "Airtable",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            580,
+            -20
+          ],
+          "parameters": {
+            "id": "={{ $json.query.recordId }}",
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "appfkz4KUlKvOjtbp",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp",
+              "cachedResultName": "Book Agency [v1] Cobuild"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tblOHX9DHKFvEZ04O",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp/tblOHX9DHKFvEZ04O",
+              "cachedResultName": "Book"
+            },
+            "options": {},
+            "authentication": "airtableOAuth2Api"
+          },
+          "credentials": {
+            "airtableOAuth2Api": {
+              "id": "credential-id",
+              "name": "airtableOAuth2Api Credential"
+            }
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "9fed967e-2645-4d11-9df4-2c9b87c39876",
+          "name": "AI Agent",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            720,
+            -20
+          ],
+          "parameters": {
+            "text": "=This is the idea: {{ $json.Idea }}",
+            "options": {
+              "systemMessage": "=# Role\n\nYou are a Book Researcher Agent, a highly skilled expert in leveraging information retrieval tools to support book creation. Your primary goal is to conduct thorough research that empowers authors to craft compelling book descriptions, understand their target audience, and build a strong foundation for writing a bestseller.\n\n\n# Objective\n\nYour objective is to thoroughly research a **book concept** to generate a detailed research brief. This brief will provide the author with all the necessary information to write a captivating book description, clearly define the target audience, and gain insightful research to inform the book's content and increase its potential to become a bestseller.  You have a limited number of uses for the Perplexity tool (maximum 5 times), so use it strategically to gather the most impactful information.\n\n[Also Make sure you know the difference between book description, target audience & general book research and explicitly give the structure of the research brief.]\n\n# Tools\n\nYou have access to the following tool:\n\n* **Perplexity:** Use this tool to conduct in-depth web research specifically tailored for book development. It allows you to run complex search queries, ask follow-up questions, and explore topics in detail. Use this to gain a deep understanding of your book's genre, target readers, comparable titles, and potential unique selling points. **Limit: 5 uses per research task.**\n    * **Input:** Search query (string) -  e.g., \"market research for fantasy novels\", \"compelling book descriptions for thrillers\", \"target audience for self-help books on productivity\".\n    * **Output:**  Comprehensive search results, summaries, and the ability to ask follow-up questions for further exploration.\n\n[Note: Use this tool multiple times, and write only after you've done really good use of tools multiple times to comeup with the data for conclusion.]\n\n# Instructions\n\nYou will be provided with a **book concept**. Follow these steps to conduct thorough research and create a comprehensive brief:\n\n1. **Book Concept Analysis:**\n   * Review the provided **book concept**. Understand the genre, core themes, and intended message.\n   * **Identify Key Areas for Research:** Determine the specific areas where research is needed: book description elements, target audience definition, and general background research for the book's content.\n\n2. **Research for Book Description (Perplexity - Max 2 uses):**\n   * Utilize the **Perplexity** tool to research best practices for writing book descriptions in the given genre.\n   * Ask specific questions like:\n     * \"What are the key elements of a compelling book description for [Genre] novels?\"\n     * \"Analyze successful book descriptions in the [Genre] genre. What common themes and techniques are used?\"\n     * \"Examples of highly effective book descriptions for books similar to [Book Concept].\"\n   * Analyze the results to identify effective description techniques, hooks, and keywords.\n\n3. **Target Audience Research (Perplexity - Max 2 uses):**\n   * Use **Perplexity** to define the target audience for the book.\n   * Ask questions like:\n     * \"Who is the target audience for [Genre] books about [Core Theme of Book Concept]?\"\n     * \"Demographics and interests of readers who enjoy [Comparable Book Titles or Authors].\"\n     * \"What are the reading habits and preferences of readers in the [Genre] genre?\"\n   * Gather information on demographics, interests, reading habits, and pain points of the potential target audience.\n\n4. **General Book Research (Perplexity - Max 1 use):**\n   * Conduct broader research related to the book's concept using **Perplexity**.\n   * Ask questions like:\n     * \"Current trends and popular themes in [Genre] literature.\"\n     * \"Expert opinions and reviews on books similar to [Book Concept].\"\n     * \"Potential unique selling points for a book in the [Genre] genre about [Core Theme].\"\n   * Gather insights to inform the book's content and identify opportunities to make it stand out.\n\n5. **Research Brief Generation:**\n   * Compile all your findings into a well-formatted research brief. This brief should include:\n     * **Book Concept:** Clearly state the Book Concept you researched.\n     * **Book Description Insights:** Summarize your findings on effective book description techniques, including examples and key elements to incorporate.\n     * **Target Audience Profile:**  Provide a detailed profile of the target audience, including demographics, interests, reading habits, and motivations.\n     * **General Book Research Summary:**  Summarize key trends, expert opinions, and potential unique selling points identified through your research.\n     * **Potential Bestseller Elements:** Based on your research, suggest elements that could contribute to the book's bestseller potential (e.g., specific themes, unique angles, marketing hooks).\n     * **Perplexity Research Insights:** Include key information and insights gathered directly from your Perplexity queries, potentially with citations or summaries of sources.\n     * **Next Steps for Author:** Suggest actionable next steps for the author based on the research, such as focusing on specific description elements or tailoring the book to the identified target audience preferences.\n\n**Key Principles:**\n\n* **Focus on Bestseller Potential:**  Orient your research towards identifying elements that can contribute to the book's success in the market.\n* **Strategic Perplexity Usage:** Be mindful of the usage limit. Plan your queries to gather the most valuable information efficiently.\n* **Actionable Insights:**  Your research brief should provide concrete and actionable guidance for the author to improve their book's description, target audience understanding, and overall market appeal.\n* **Targeted Research:**  Focus your research on the three key areas: book description, target audience, and general book research.\n* **Use tools Multiple times** Don't make conclusion from a single call of each tool, use tools multiple times to come up with much better, thoughful & nuanced research.\n\nBy following these instructions and utilizing the Perplexity tool effectively and strategically within the given limits, you will be able to generate high-quality research briefs that empower authors to create compelling books with a strong potential to become bestsellers."
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 1.7
+        },
+        {
+          "id": "6955d7ab-12c8-4a67-bb77-3d3656f4ada5",
+          "name": "Google Gemini Chat Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+          "position": [
+            680,
+            120
+          ],
+          "parameters": {
+            "options": {},
+            "modelName": "models/gemini-2.0-flash-exp"
+          },
+          "credentials": {
+            "googlePalmApi": {
+              "id": "credential-id",
+              "name": "googlePalmApi Credential"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9dde0b0f-2f18-4c4e-a3c4-c6ec4183cdda",
+          "name": "Perplexity",
+          "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+          "position": [
+            940,
+            120
+          ],
+          "parameters": {
+            "url": "https://api.perplexity.ai/chat/completions",
+            "method": "POST",
+            "jsonBody": "{\n  \"model\": \"sonar\",\n  \"messages\": [\n    { \"role\": \"system\", \"content\": \"Only respond with information from verifiable and credible sources. Include source urls and event dates when possible\" },\n    { \"role\": \"user\", \"content\": \"{query}\" }\n  ]\n}\n",
+            "sendBody": true,
+            "specifyBody": "json",
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth",
+            "toolDescription": "Use this tool gives you access to the Perplexity search to run web search queries. You can use this tool to run to research about anything.",
+            "placeholderDefinitions": {
+              "values": [
+                {
+                  "name": "query",
+                  "type": "string",
+                  "description": "The query used for the search"
+                }
+              ]
+            }
+          },
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "credential-id",
+              "name": "httpHeaderAuth Credential"
+            }
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "4df196ae-2189-48c0-9218-8d75916f91ef",
+          "name": "Airtable1",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            1000,
+            -20
+          ],
+          "parameters": {
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "appfkz4KUlKvOjtbp",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp",
+              "cachedResultName": "Book Agency [v1] Cobuild"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tblOHX9DHKFvEZ04O",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp/tblOHX9DHKFvEZ04O",
+              "cachedResultName": "Book"
+            },
+            "columns": {
+              "value": {
+                "id": "={{ $('Airtable').item.json.id }}",
+                "Action": "Idle",
+                "Research": "={{ $json.output }}"
+              },
+              "schema": [
+                {
+                  "id": "id",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": true,
+                  "required": false,
+                  "displayName": "id",
+                  "defaultMatch": true
+                },
+                {
+                  "id": "Idea",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Idea",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Action",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Idle",
+                      "value": "Idle"
+                    },
+                    {
+                      "name": "Generate Book Details",
+                      "value": "Generate Book Details"
+                    },
+                    {
+                      "name": "Generate Chapters",
+                      "value": "Generate Chapters"
+                    }
+                  ],
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Action",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Description",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Description",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Audience",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Audience",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Research",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Research",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Chapter",
+                  "type": "array",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Chapter",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [
+                "id"
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "update",
+            "authentication": "airtableOAuth2Api"
+          },
+          "credentials": {
+            "airtableOAuth2Api": {
+              "id": "credential-id",
+              "name": "airtableOAuth2Api Credential"
+            }
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "be6dd8af-6a6c-4fe7-9013-9cce1a923ba0",
+          "name": "Airtable2",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            580,
+            260
+          ],
+          "parameters": {
+            "id": "={{ $('Webhook').item.json.query.recordId }}",
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "appfkz4KUlKvOjtbp",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp",
+              "cachedResultName": "Book Agency [v1] Cobuild"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tblOHX9DHKFvEZ04O",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp/tblOHX9DHKFvEZ04O",
+              "cachedResultName": "Book"
+            },
+            "options": {},
+            "authentication": "airtableOAuth2Api"
+          },
+          "credentials": {
+            "airtableOAuth2Api": {
+              "id": "credential-id",
+              "name": "airtableOAuth2Api Credential"
+            }
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "63ae5cb5-ea87-4c89-ad54-d96ee9f83115",
+          "name": "Basic LLM Chain",
+          "type": "@n8n/n8n-nodes-langchain.chainLlm",
+          "position": [
+            740,
+            260
+          ],
+          "parameters": {
+            "text": "=Give chapters for this book idea:  {{ $json.Idea }}\n-----\nResrearch on the topic:\n{{ $json.Research }}",
+            "messages": {
+              "messageValues": [
+                {
+                  "message": "=You're an expert book writer, you will ideate a book based on chapters, and will give multiple chapters that people would love to read, every book you write will have a flow between the chapters to make them coherent.\n\nYou'll give 7-10 chapters for each book, and the chapters should be well thought and connected to the previous one, also the descirption should be expainatory in cature for the researcher to research about the chapter and write content on."
+                }
+              ]
+            },
+            "promptType": "define",
+            "hasOutputParser": true
+          },
+          "typeVersion": 1.5
+        },
+        {
+          "id": "7343b415-2008-42e2-8bb5-c85b240d7bb9",
+          "name": "OpenAI Chat Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            680,
+            420
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o",
+              "cachedResultName": "gpt-4o"
+            },
+            "options": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "credential-id",
+              "name": "openAiApi Credential"
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "623edcb7-ab23-44fd-80e1-e3b03c1ff359",
+          "name": "Structured Output Parser",
+          "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+          "position": [
+            940,
+            420
+          ],
+          "parameters": {
+            "schemaType": "manual",
+            "inputSchema": "{\n  \"name\": \"chapters\",\n  \"schema\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"chapters\": {\n        \"type\": \"array\",\n        \"description\": \"A collection of chapters.\",\n        \"items\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"title\": {\n              \"type\": \"string\",\n              \"description\": \"The name of the chapter.\"\n            },\n            \"description\": {\n              \"type\": \"string\",\n              \"description\": \"A brief description of the chapter.\"\n            }\n          },\n          \"required\": [\n            \"title\",\n            \"description\"\n          ],\n          \"additionalProperties\": false\n        }\n      }\n    },\n    \"required\": [\n      \"chapters\"\n    ],\n    \"additionalProperties\": false\n  },\n  \"strict\": true\n}"
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "a5ed4ce2-42b0-4d73-98ea-be5363cecef7",
+          "name": "Edit Fields",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            1020,
+            260
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "8f4644ec-040c-4dd9-94e9-b8708fede172",
+                  "name": "chapters",
+                  "type": "array",
+                  "value": "={{ $json.output.chapters }}"
+                },
+                {
+                  "id": "0fe83fde-7e97-4dc4-8889-b1c8f017feac",
+                  "name": "Book",
+                  "type": "array",
+                  "value": "=[\"{{ $('Webhook').item.json.query.recordId }}\"]"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "f7ce2916-6f64-4216-9fae-91dc00caa281",
+          "name": "Split Out",
+          "type": "n8n-nodes-base.splitOut",
+          "position": [
+            1160,
+            260
+          ],
+          "parameters": {
+            "options": {},
+            "fieldToSplitOut": "chapters"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ade70c34-ed85-4d1a-8153-58526532fb9c",
+          "name": "Airtable3",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            1280,
+            260
+          ],
+          "parameters": {
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "appfkz4KUlKvOjtbp",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp",
+              "cachedResultName": "Book Agency [v1] Cobuild"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tblCDohhEri0a2CQy",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp/tblCDohhEri0a2CQy",
+              "cachedResultName": "Chapter"
+            },
+            "columns": {
+              "value": {
+                "Book": "={{ $('Edit Fields').item.json.Book }}",
+                "Description": "={{ $json.description }}",
+                "Chapter Name": "={{ $json.title }}"
+              },
+              "schema": [
+                {
+                  "id": "Chapter Name",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Chapter Name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Description",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Description",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Action",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Idle",
+                      "value": "Idle"
+                    },
+                    {
+                      "name": "Generate Research",
+                      "value": "Generate Research"
+                    },
+                    {
+                      "name": "Generate Chapter Content",
+                      "value": "Generate Chapter Content"
+                    }
+                  ],
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Action",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Research",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Research",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Chapter Content",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Chapter Content",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Book",
+                  "type": "array",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Book",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "create",
+            "authentication": "airtableOAuth2Api"
+          },
+          "credentials": {
+            "airtableOAuth2Api": {
+              "id": "credential-id",
+              "name": "airtableOAuth2Api Credential"
+            }
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "5f6449cb-964a-413d-90c2-132e8b162ef9",
+          "name": "Airtable4",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            1420,
+            260
+          ],
+          "parameters": {
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "appfkz4KUlKvOjtbp",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp",
+              "cachedResultName": "Book Agency [v1] Cobuild"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tblOHX9DHKFvEZ04O",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp/tblOHX9DHKFvEZ04O",
+              "cachedResultName": "Book"
+            },
+            "columns": {
+              "value": {
+                "id": "={{ $('Webhook').item.json.query.recordId }}",
+                "Action": "Idle"
+              },
+              "schema": [
+                {
+                  "id": "id",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": true,
+                  "required": false,
+                  "displayName": "id",
+                  "defaultMatch": true
+                },
+                {
+                  "id": "Idea",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Idea",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Action",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Idle",
+                      "value": "Idle"
+                    },
+                    {
+                      "name": "Generate Book Details",
+                      "value": "Generate Book Details"
+                    },
+                    {
+                      "name": "Generate Chapters",
+                      "value": "Generate Chapters"
+                    }
+                  ],
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Action",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Research",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Research",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Chapter",
+                  "type": "array",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Chapter",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [
+                "id"
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "update",
+            "authentication": "airtableOAuth2Api"
+          },
+          "credentials": {
+            "airtableOAuth2Api": {
+              "id": "credential-id",
+              "name": "airtableOAuth2Api Credential"
+            }
+          },
+          "executeOnce": true,
+          "typeVersion": 2.1
+        },
+        {
+          "id": "970dc454-c696-4f1c-8ad0-f74d85f77461",
+          "name": "Airtable5",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            580,
+            560
+          ],
+          "parameters": {
+            "id": "={{ $('Webhook').item.json.query.recordId }}",
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "appfkz4KUlKvOjtbp",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp",
+              "cachedResultName": "Book Agency [v1] Cobuild"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tblCDohhEri0a2CQy",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp/tblCDohhEri0a2CQy",
+              "cachedResultName": "Chapter"
+            },
+            "options": {},
+            "authentication": "airtableOAuth2Api"
+          },
+          "credentials": {
+            "airtableOAuth2Api": {
+              "id": "credential-id",
+              "name": "airtableOAuth2Api Credential"
+            }
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "1c8c7b03-8aec-4142-a469-0db1e4227ed4",
+          "name": "AI Agent1",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            780,
+            560
+          ],
+          "parameters": {
+            "text": "=Chapter Name: {{ $json['Chapter Name'] }}\nChapter Description: {{ $json.Description }}\n\nName of the book: {{ $json.Idea[0] }}\n\n----\nUse Perplexity1 tool religiously.",
+            "options": {
+              "systemMessage": "=## **Role: Chapter Research Specialist**  \n\nYou are a **Chapter Research Specialist**, responsible for conducting **in-depth, story-driven research** for a specific chapter of a book. Your goal is to provide **unique, compelling, and evidence-based insights** that enhance the depth, credibility, and engagement of the chapter.  \n\n## **Objective:**  \nYour research should **uncover powerful stories, historical events, psychological insights, real-world case studies, and expert perspectives** that strengthen the chapter’s narrative. You will **strategically use the Perplexity tool** to find high-quality, reliable information.  \n\n## **Research Process:**  [Perplexity1] tool\n\n1. **Deep Dive into the Chapter Theme:**  \n   - Understand the core concept of the chapter.  \n   - Identify key arguments, theories, or perspectives that require **supporting evidence or real-world examples**.  \n\n2. **Strategic Use of Perplexity1 tool (Mandatory - Multiple Uses [max 5 times]):**  \n   - Conduct **multiple searches** in Perplexity to extract **narrative-driven** insights.  \n   - Prioritize **stories, case studies, and unique historical references** that add richness to the chapter.  \n   - Look for **contrarian or lesser-known perspectives** to make the chapter stand out.  \n   - Search for **scientific or psychological explanations** that can validate claims or provide fresh insights.  \n   - Identify **market trends or audience engagement data** to see if similar topics have resonated before.  \n\n3. **Extracting Expert Insights & Controversial Takes:**  \n   - Find opinions or research from **experts, thought leaders, or researchers** in the field.  \n   - Identify **counterarguments or controversies** that add intellectual depth to the chapter.  \n\n4. **Synthesizing Findings into Actionable Insights:**  \n   - Organize the research into a structured format that helps shape the chapter effectively.  \n   - Highlight key **stories, data points, and unique takeaways** that make the content engaging and credible.  \n\n## **Key Deliverables:**  \n- **Well-researched narratives and case studies** that make the chapter engaging.  \n- **Multiple Perplexity1 tool searches with thoughtful extraction** of relevant insights.  \n- **Psychological, historical, or scientific references** that add credibility.  \n- **Contrarian or thought-provoking perspectives** to make the chapter more impactful.  \n\n**Your success is measured by how deeply researched, unique, and compelling the final insights are. Use Perplexity strategically to extract maximum value and deliver research that elevates the chapter’s quality.**"
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 1.7
+        },
+        {
+          "id": "3b0cfa5d-f4e4-48cf-86d5-b1355a6da8a8",
+          "name": "Google Gemini Chat Model1",
+          "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+          "position": [
+            760,
+            760
+          ],
+          "parameters": {
+            "options": {},
+            "modelName": "models/gemini-2.0-flash-exp"
+          },
+          "credentials": {
+            "googlePalmApi": {
+              "id": "credential-id",
+              "name": "googlePalmApi Credential"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "88dd2023-2c37-4b71-901a-3e65b3813b44",
+          "name": "Perplexity1",
+          "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+          "position": [
+            1020,
+            780
+          ],
+          "parameters": {
+            "url": "https://api.perplexity.ai/chat/completions",
+            "method": "POST",
+            "jsonBody": "{\n  \"model\": \"sonar\",\n  \"messages\": [\n    { \"role\": \"system\", \"content\": \"Only respond with information from verifiable and credible sources. Include source urls and event dates when possible\" },\n    { \"role\": \"user\", \"content\": \"{query}\" }\n  ]\n}\n",
+            "sendBody": true,
+            "specifyBody": "json",
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth",
+            "toolDescription": "Use this tool gives you access to the Perplexity search to run web search queries. You can use this tool to run to research about anything.",
+            "placeholderDefinitions": {
+              "values": [
+                {
+                  "name": "query",
+                  "type": "string",
+                  "description": "The query used for the search"
+                }
+              ]
+            }
+          },
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "credential-id",
+              "name": "httpHeaderAuth Credential"
+            }
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "db2f5f7e-fd3e-48e1-b1df-8ec6d780034e",
+          "name": "Airtable6",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            1100,
+            560
+          ],
+          "parameters": {
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "appfkz4KUlKvOjtbp",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp",
+              "cachedResultName": "Book Agency [v1] Cobuild"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tblCDohhEri0a2CQy",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp/tblCDohhEri0a2CQy",
+              "cachedResultName": "Chapter"
+            },
+            "columns": {
+              "value": {
+                "id": "={{ $('Webhook').item.json.query.recordId }}",
+                "Action": "Idle",
+                "Research": "={{ $json.output }}"
+              },
+              "schema": [
+                {
+                  "id": "id",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": true,
+                  "required": false,
+                  "displayName": "id",
+                  "defaultMatch": true
+                },
+                {
+                  "id": "Chapter Name",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Chapter Name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Description",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Description",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Action",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Idle",
+                      "value": "Idle"
+                    },
+                    {
+                      "name": "Generate Research",
+                      "value": "Generate Research"
+                    },
+                    {
+                      "name": "Generate Chapter Content",
+                      "value": "Generate Chapter Content"
+                    }
+                  ],
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Action",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Research",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Research",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Chapter Content",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Chapter Content",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Idea",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": true,
+                  "required": false,
+                  "displayName": "Idea",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Book",
+                  "type": "array",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Book",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [
+                "id"
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "update",
+            "authentication": "airtableOAuth2Api"
+          },
+          "credentials": {
+            "airtableOAuth2Api": {
+              "id": "credential-id",
+              "name": "airtableOAuth2Api Credential"
+            }
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "8aeb06ec-fa60-4c6e-8d7b-6fab5fd92580",
+          "name": "Airtable7",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            560,
+            920
+          ],
+          "parameters": {
+            "id": "={{ $('Webhook').item.json.query.recordId }}",
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "appfkz4KUlKvOjtbp",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp",
+              "cachedResultName": "Book Agency [v1] Cobuild"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tblCDohhEri0a2CQy",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp/tblCDohhEri0a2CQy",
+              "cachedResultName": "Chapter"
+            },
+            "options": {},
+            "authentication": "airtableOAuth2Api"
+          },
+          "credentials": {
+            "airtableOAuth2Api": {
+              "id": "credential-id",
+              "name": "airtableOAuth2Api Credential"
+            }
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "3f24870d-a4bc-42c5-9664-cdaa41646202",
+          "name": "Basic LLM Chain1",
+          "type": "@n8n/n8n-nodes-langchain.chainLlm",
+          "position": [
+            780,
+            920
+          ],
+          "parameters": {
+            "text": "=Name of the book: {{ $json.Idea[0] }}\n\nThe research data you need for the book: {{ $json['Book Research'][0] }}\n\n=== CHAPTER ===\nName of the chapter: {{ $json['Chapter Name'] }}\n\nResearch about the chapter: {{ $json.Research }}\n\n======= PERFECT NOW WRITE THE CONTENT FOR THE CHAPTER ======",
+            "messages": {
+              "messageValues": [
+                {
+                  "message": "=You're a world class book writer with half a century of experience weaving words that connects with people, you'll be given specific tasks to write chapters for books, you'll be given research and the idea, description of the chapter, and you'll have to comeup with the adecuate amount of content necesary to make the chapter gold, you'll filter through all the information and will write the chapter as it connects.\n\nWrite the content in markdown, it's should be a long chapter and you'll have to do your word magic to write the chapter in this book."
+                }
+              ]
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 1.5
+        },
+        {
+          "id": "b6a5d495-b1a1-4504-9daf-8939e0b09f7b",
+          "name": "Google Gemini Chat Model2",
+          "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+          "position": [
+            700,
+            1080
+          ],
+          "parameters": {
+            "options": {},
+            "modelName": "models/gemini-exp-1206"
+          },
+          "credentials": {
+            "googlePalmApi": {
+              "id": "credential-id",
+              "name": "googlePalmApi Credential"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "32ed5a6e-1113-43a2-915c-d6da82313f31",
+          "name": "Airtable8",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            1140,
+            920
+          ],
+          "parameters": {
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "appfkz4KUlKvOjtbp",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp",
+              "cachedResultName": "Book Agency [v1] Cobuild"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "tblCDohhEri0a2CQy",
+              "cachedResultUrl": "https://airtable.com/appfkz4KUlKvOjtbp/tblCDohhEri0a2CQy",
+              "cachedResultName": "Chapter"
+            },
+            "columns": {
+              "value": {
+                "id": "={{ $('Webhook').item.json.query.recordId }}",
+                "Action": "Idle",
+                "Chapter Content": "={{ $json.text }}"
+              },
+              "schema": [
+                {
+                  "id": "id",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": true,
+                  "required": false,
+                  "displayName": "id",
+                  "defaultMatch": true
+                },
+                {
+                  "id": "Chapter Name",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Chapter Name",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Description",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Description",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Action",
+                  "type": "options",
+                  "display": true,
+                  "options": [
+                    {
+                      "name": "Idle",
+                      "value": "Idle"
+                    },
+                    {
+                      "name": "Generate Research",
+                      "value": "Generate Research"
+                    },
+                    {
+                      "name": "Generate Chapter Content",
+                      "value": "Generate Chapter Content"
+                    }
+                  ],
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Action",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Research",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Research",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Chapter Content",
+                  "type": "string",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Chapter Content",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Book",
+                  "type": "array",
+                  "display": true,
+                  "removed": false,
+                  "readOnly": false,
+                  "required": false,
+                  "displayName": "Book",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Idea",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": true,
+                  "required": false,
+                  "displayName": "Idea",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "Book Research",
+                  "type": "string",
+                  "display": true,
+                  "removed": true,
+                  "readOnly": true,
+                  "required": false,
+                  "displayName": "Book Research",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [
+                "id"
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "update",
+            "authentication": "airtableOAuth2Api"
+          },
+          "credentials": {
+            "airtableOAuth2Api": {
+              "id": "credential-id",
+              "name": "airtableOAuth2Api Credential"
+            }
+          },
+          "typeVersion": 2.1
+        }
+      ],
+      "active": true,
+      "pinData": {
+        "AI Agent1": [
+          {
+            "json": {
+              "output": "Okay, I've conducted four Perplexity searches and have gathered some useful insights. Here's a synthesis of the findings to help shape the chapter:\n\n**Chapter Theme:** Origins of Formula 1: Post-War Beginnings\n\n**Key Insights:**\n\n1.  **Socioeconomic Context:**\n    *   The post-WWII economic boom in the US and Europe led to increased car ownership and a burgeoning car culture which fueled the rise of motorsports.\n    *   Technological advancements from the war, like aerodynamics and powerful engines, were quickly adopted in racing, helping transition it into a professional sport.\n    *   The establishment of the U.S. Interstate Highway System in 1956 had a large impact on car culture, and consequently racing.\n\n2.  **Transition from Pre-War Grand Prix to F1:**\n    *   Post-war, the French played a key role in reviving motorsport events as early as 1945.\n    *   The FIA's Commission Sportive Internationale (CSI) defined Formula 1 in 1946, setting the stage for the 1947 season, though some races before the 1950 championship are recognized as F1 races.\n    *   Initial regulations balanced supercharged and normally aspirated cars, attempting to provide an even playing field before modern rules were standardized.\n    *   The first Formula 1 World Championship was established in 1950, with the British Grand Prix at Silverstone being the first race.\n\n3.  **Early F1 Stories and Underdogs:**\n    *   The early 1950s were dominated by Alfa Romeo and Ferrari, but smaller teams like Vanwall began emerging.\n    *   The underdog spirit was always alive, with examples like Hesketh in the 1970s, and Brawn GP in 2009, proving that smaller teams can achieve remarkable victories against the odds.\n    *   The British Revolution by the end of the decade saw teams like Cooper challenge Italian dominance. Jack Brabham winning the 1959 World Championship with Cooper was an important moment.\n\n4.  **Psychological Factors:**\n    *   Early F1 drivers were incredibly brave, facing much higher fatality rates which required extreme risk acceptance and resilience.\n    *   Drivers emphasized psychological skills like focus, self-efficacy, and emotional regulation to handle immense pressures.\n    *   The post-war mindset played a key role, with innovation and competition serving as major motivators.\n    *   The acceptance of risk was higher in the post-war period, and the resilience of drivers was vital to their success.\n\n**Actionable Insights for the Chapter:**\n\n*   **Narrative Hook:** Start with a story that demonstrates the immediate post-war enthusiasm for racing, perhaps detailing an early race in 1945 or 1946, highlighting the blend of pre-war machines and the beginning of a new era.\n*   **Human Element:** Showcase driver profiles and stories to add a human angle to the chapter. Detail the bravery and psychological toughness required in this era, maybe with specific anecdotes or interviews if available.\n*   **Technological Evolution:** Compare pre-war cars with early F1 cars to show the innovations, which were largely a result of wartime tech, and emphasize the shift to professional racing.\n*   **Underdog Emphasis:** Highlight stories of teams that went against the grain, showing how smaller teams challenged larger manufacturers, creating excitement and drama in early races.\n*   **World Championship Build-Up:** Detail the political and competitive factors that led to the creation of the 1950 World Championship. Explain how the FIA standardized rules and how the calendar evolved over time, initially being entirely in Europe before expanding globally.\n*   **Psychological Underpinnings:** Dive into the mental state of these early drivers. Discuss the unique mental demands they faced, and how the post-war period played a role in shaping these drivers' attitudes to risk and competition.\n\n**Key Deliverables:**\n\n*   Engaging narrative that captures the spirit of post-war racing.\n*   Case studies of key teams, drivers, and races.\n*   Psychological insights to create a well-rounded chapter.\n*   A clear account of how Formula 1 evolved from pre-war racing to a global championship.\n\nI believe this research will deliver a chapter that is both informative and compelling, appealing to a broad audience. Let me know if you'd like me to dig deeper into any specific area.\n"
+            }
+          }
+        ],
+        "Basic LLM Chain1": [
+          {
+            "json": {
+              "text": "## Chapter 1: Origins of Formula 1: Post-War Beginnings\n\nThe roar of engines, a symphony of raw power and mechanical fury, echoed through the crisp air as Europe began to heal from the scars of war. It was 1945, and the world was eager for a new beginning, a distraction from the ruins and a return to the thrill of life. In this atmosphere of renewed hope and burgeoning innovation, the seeds of Formula 1 were sown. The world was witnessing not just the revival of motorsport, but the birth of a legend that would captivate generations.\n\nThe immediate post-war years were a time of stark contrasts. Much of Europe lay in rubble, yet the human spirit, unyielding and resilient, sought avenues of expression and excitement. The automobile, once a symbol of freedom and progress, had been central to the war machine. Now, it was poised to reclaim its place in the hearts of the people, not as a tool of destruction, but as a symbol of speed, skill, and ingenuity.\n\nIn the United States and across the Atlantic, an economic boom fueled a burgeoning car culture. The open road beckoned, and with it, the desire for speed and competition. The establishment of the U.S. Interstate Highway System in 1956 further solidified the car's central role in American life, creating a fertile ground for the growth of motorsports. Back in Europe, the French, ever passionate about their automotive heritage, were instrumental in reviving the racing scene. As early as September 9, 1945, the roar of engines returned to the Bois de Boulogne in Paris, for the first post-war race in Europe, the \"Coupe des Prisonniers,\" a symbolic event that represented liberation and the return of joy and excitement.\n\nThis race was a testament to the enduring allure of the sport. Pre-war Grand Prix machines, lovingly maintained or hastily cobbled together, once again took to the track. It was a bridge between eras, a nostalgic nod to the past and a bold step into the future, the cars themselves were a mix of pre-war models and early prototypes, showcasing a blend of old-world craftsmanship and emerging technologies. The drivers, some veterans of pre-war races, others new to the sport, shared a common passion—a love for speed and a desire to push the limits of man and machine. Among them was the legendary Jean-Pierre Wimille, driving a Bugatti Type 59, who dominated the race, showcasing the enduring prowess of pre-war technology and his exceptional driving skills.\n\nTechnological advancements born from the crucible of war found new life on the racetrack. Aerodynamics, honed in the design of fighter planes, now shaped the contours of racing cars. Powerful engines, developed for military vehicles, now propelled these machines to new speeds. The transition from war to peace saw a rapid evolution in automotive technology, and racing became the ultimate testing ground for these innovations. This era was about more than just speed; it was about ingenuity, about taking the lessons learned from war and applying them to a new arena of competition.\n\nIt was in this environment of rapid change and fervent competition that the Fédération Internationale de l'Automobile (FIA) stepped in, recognizing the need for a structured and unified approach to racing. In 1946, the FIA's Commission Sportive Internationale (CSI) laid down the foundation for what would become Formula 1, the regulations established a new formula for Grand Prix racing, initially known as Formula A, which would later be renamed Formula 1. These early rules were designed to create a level playing field, balancing the power of supercharged engines with that of normally aspirated ones. It was a delicate dance of engineering and regulation, aimed at fostering competition while keeping the nascent sport accessible.\n\nThe first races under the new Formula 1 regulations, held in 1947, were a mix of old and new. Established teams like Alfa Romeo and Maserati, with their pre-war pedigree, faced off against emerging manufacturers eager to make their mark. The tracks, too, were a mix of pre-war circuits and new venues, each with its own unique character and challenges. It was a time of experimentation, of learning, and of fierce rivalry. Drivers like Achille Varzi, and Luigi Villoresi became household names, their exploits on the track followed with rapt attention by fans around the world.\n\nAs the decade drew to a close, a new force was rising in the world of motorsport—the British. Teams like Cooper, led by the visionary Charles Cooper and his son John, began to challenge the Italian dominance. Their innovative rear-engined cars, a radical departure from the traditional front-engined designs, were lighter, more agile, and faster through the corners. This marked a significant turning point in the sport's history, with British engineering challenging the status quo and introducing revolutionary concepts that would reshape the future of Formula 1.\n\nThe culmination of these early years of Formula 1 came in 1950, with the inauguration of the first World Championship of Drivers. It was a bold step, a move that elevated the sport from a collection of individual races to a unified global championship. The first race of this historic championship took place on May 13, 1950, at the Silverstone Circuit in England. The British Grand Prix, as it was known, was a momentous occasion, attended by King George VI, marking the first time a reigning monarch had attended a motor race in the United Kingdom.\n\nThe race itself was a thrilling spectacle, with Alfa Romeo's dominant 158, affectionately known as the \"Alfetta,\" taking the top three positions. Giuseppe \"Nino\" Farina, a skilled and fearless driver, emerged victorious, etching his name in history as the first winner of a Formula 1 World Championship race. The 1950 championship was a European affair, with races held at iconic circuits like Monaco, Spa-Francorchamps, and Monza. It was a season dominated by Alfa Romeo, but it also saw the emergence of Ferrari as a serious contender, with the legendary Alberto Ascari showcasing his immense talent.\n\nYet, amid the dominance of these titans, the spirit of the underdog was never far away. Smaller teams, often operating on shoestring budgets, dared to dream and occasionally tasted victory. The story of Vanwall, a British team that rose to prominence in the late 1950s, is a testament to this spirit. Founded by industrialist Tony Vandervell, Vanwall took on the might of Ferrari and Maserati, eventually winning the first-ever Constructors' Championship in 1958, a watershed moment that underscored the rising power of British engineering and innovation. Their story was one of David versus Goliath, a small team with limited resources taking on the established giants and, against all odds, succeeding.\n\nThese early years of Formula 1 were not just about the cars and the races; they were about the people. The drivers of this era were a unique breed, men of immense courage and skill who raced with little regard for their own safety. The cars were powerful and unforgiving, and the tracks were often dangerous, lacking the safety features that are taken for granted today. Fatalities were a grim reality, and every driver knew the risks they faced each time they strapped themselves into their machines.\n\nThe psychological makeup of these early drivers was as fascinating as their driving skills. They were men who thrived on the edge, who possessed an extraordinary ability to focus, to control their fear, and to make split-second decisions at breakneck speeds. They were driven by a fierce desire to win, by a passion for the sport, and by a willingness to accept the ultimate risk in pursuit of victory. The mental and emotional toll on these drivers was immense, yet they persevered, pushing themselves and their machines to the limit. They were pioneers, forging a new path in the world of motorsport, and their legacy continues to inspire drivers and fans alike.\n\nThe post-war era was a defining period for Formula 1. It was a time of rapid innovation, of fierce competition, and of extraordinary human endeavor. From the ashes of war rose a sport that would capture the world's imagination, a sport that embodied the spirit of a new age. The origins of Formula 1 were humble, but the seeds sown in those early years would grow into a global phenomenon, a testament to the enduring power of human passion, ingenuity, and the relentless pursuit of speed. This was the dawn of a new era in motorsport, an era of legends, of rivalries, and of breathtaking moments that would forever be etched in the annals of racing history. The story of Formula 1 had begun, and the world was watching, captivated by the roar of the engines and the thrill of the race.\n"
+            }
+          }
+        ]
+      },
+      "settings": {
+        "executionOrder": "v1"
+      },
+      "versionId": "042e2a5b-d8d0-4f85-ace1-012a0a8c8152",
+      "connections": {
+        "Switch": {
+          "main": [
+            [
+              {
+                "node": "Airtable",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Airtable2",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Airtable5",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Airtable7",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Webhook": {
+          "main": [
+            [
+              {
+                "node": "Switch",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "AI Agent": {
+          "main": [
+            [
+              {
+                "node": "Airtable1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Airtable": {
+          "main": [
+            [
+              {
+                "node": "AI Agent",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "AI Agent1": {
+          "main": [
+            [
+              {
+                "node": "Airtable6",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Airtable2": {
+          "main": [
+            [
+              {
+                "node": "Basic LLM Chain",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Airtable3": {
+          "main": [
+            [
+              {
+                "node": "Airtable4",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Airtable5": {
+          "main": [
+            [
+              {
+                "node": "AI Agent1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Airtable7": {
+          "main": [
+            [
+              {
+                "node": "Basic LLM Chain1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Split Out": {
+          "main": [
+            [
+              {
+                "node": "Airtable3",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Perplexity": {
+          "ai_tool": [
+            [
+              {
+                "node": "AI Agent",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Edit Fields": {
+          "main": [
+            [
+              {
+                "node": "Split Out",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Perplexity1": {
+          "ai_tool": [
+            [
+              {
+                "node": "AI Agent1",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Basic LLM Chain": {
+          "main": [
+            [
+              {
+                "node": "Edit Fields",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Basic LLM Chain1": {
+          "main": [
+            [
+              {
+                "node": "Airtable8",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "OpenAI Chat Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Basic LLM Chain",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Google Gemini Chat Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "AI Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Structured Output Parser": {
+          "ai_outputParser": [
+            [
+              {
+                "node": "Basic LLM Chain",
+                "type": "ai_outputParser",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Google Gemini Chat Model1": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "AI Agent1",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Google Gemini Chat Model2": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Basic LLM Chain1",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 62,
+    "workflowInfo": {
+      "nodeCount": 24,
+      "nodeTypes": {
+        "n8n-nodes-base.set": {
+          "count": 1
+        },
+        "n8n-nodes-base.switch": {
+          "count": 1
+        },
+        "n8n-nodes-base.webhook": {
+          "count": 1
+        },
+        "n8n-nodes-base.airtable": {
+          "count": 9
+        },
+        "n8n-nodes-base.splitOut": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.chainLlm": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.toolHttpRequest": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.lmChatGoogleGemini": {
+          "count": 3
+        },
+        "@n8n/n8n-nodes-langchain.outputParserStructured": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Agniva Mahata",
+      "username": "agniiiva",
+      "bio": "",
+      "verified": false,
+      "links": [],
+      "avatar": "https://gravatar.com/avatar/7804592eecd0a17ee14d5835fbdaf7665d3205da44096e315355e45fc3f8288c?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 2,
+        "icon": "file:airtable.svg",
+        "name": "n8n-nodes-base.airtable",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-goals-level-up-your-vocabulary-with-vonage-and-n8n/",
+                  "icon": "🎯",
+                  "label": "2021 Goals: Level Up Your Vocabulary With Vonage and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-sms-the-low-code-way-with-airtable-twilio-programmable-sms-and-n8n/",
+                  "icon": "📱",
+                  "label": "Sending SMS the Low-Code Way with Airtable, Twilio Programmable SMS, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automating-conference-organization-processes-with-n8n/",
+                  "icon": "🙋‍♀️",
+                  "label": "Automating Conference Organization Processes with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.airtable/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/airtable/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Airtable"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMDAgMTcwIj48cGF0aCBmaWxsPSIjZmNiNDAwIiBkPSJNODkgNC44IDE2LjIgMzQuOWMtNC4xIDEuNy00IDcuNC4xIDkuMWw3My4yIDI5YzYuNCAyLjYgMTMuNiAyLjYgMjAgMGw3My4yLTI5YzQuMS0xLjYgNC4xLTcuNC4xLTkuMWwtNzMtMzAuMUMxMDMuMiAyIDk1LjcgMiA4OSA0LjgiLz48cGF0aCBmaWxsPSIjMThiZmZmIiBkPSJNMTA1LjkgODguOXY3Mi41YzAgMy40IDMuNSA1LjggNi43IDQuNWw4MS42LTMxLjdjMS45LS43IDMuMS0yLjUgMy4xLTQuNVY1Ny4yYzAtMy40LTMuNS01LjgtNi43LTQuNUwxMDkgODQuM2MtMS45LjgtMy4xIDIuNi0zLjEgNC42Ii8+PHBhdGggZmlsbD0iI2Y4MmI2MCIgZD0ibTg2LjkgOTIuNi0yNC4yIDExLjctMi41IDEuMkw5LjEgMTMwYy0zLjIgMS42LTcuNC0uOC03LjQtNC40VjU3LjVjMC0xLjMuNy0yLjQgMS42LTMuM3EuNi0uNiAxLjItLjljMS4yLS43IDMtLjkgNC40LS4zbDc3LjUgMzAuN2M0IDEuNSA0LjMgNy4xLjUgOC45Ii8+PHBhdGggZmlsbD0iI2JhMWU0NSIgZD0ibTg2LjkgOTIuNi0yNC4yIDExLjctNTkuNC01MHEuNi0uNiAxLjItLjljMS4yLS43IDMtLjkgNC40LS4zbDc3LjUgMzAuN2M0IDEuNCA0LjMgNyAuNSA4LjgiLz48L3N2Zz4="
+        },
+        "displayName": "Airtable",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 47,
+        "icon": "file:webhook.svg",
+        "name": "n8n-nodes-base.webhook",
+        "codex": {
+          "data": {
+            "alias": [
+              "HTTP",
+              "API",
+              "Build",
+              "WH"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-custom-incident-response-workflows-with-n8n/",
+                  "label": "How to automate every step of an incident response workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Webhook"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTM1IDM3Yy0yLjIgMC00LTEuOC00LTRzMS44LTQgNC00IDQgMS44IDQgNC0xLjggNC00IDQiLz48cGF0aCBmaWxsPSIjMzc0NzRmIiBkPSJNMzUgNDNjLTMgMC01LjktMS40LTcuOC0zLjdsMy4xLTIuNWMxLjEgMS40IDIuOSAyLjMgNC43IDIuMyAzLjMgMCA2LTIuNyA2LTZzLTIuNy02LTYtNmMtMSAwLTIgLjMtMi45LjdsLTEuNyAxTDIzLjMgMTZsMy41LTEuOSA1LjMgOS40YzEtLjMgMi0uNSAzLS41IDUuNSAwIDEwIDQuNSAxMCAxMFM0MC41IDQzIDM1IDQzIi8+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTE0IDQzQzguNSA0MyA0IDM4LjUgNCAzM2MwLTQuNiAzLjEtOC41IDcuNS05LjdsMSAzLjlDOS45IDI3LjkgOCAzMC4zIDggMzNjMCAzLjMgMi43IDYgNiA2czYtMi43IDYtNnYtMmgxNXY0SDIzLjhjLS45IDQuNi01IDgtOS44IDgiLz48cGF0aCBmaWxsPSIjZTkxZTYzIiBkPSJNMTQgMzdjLTIuMiAwLTQtMS44LTQtNHMxLjgtNCA0LTQgNCAxLjggNCA0LTEuOCA0LTQgNCIvPjxwYXRoIGZpbGw9IiMzNzQ3NGYiIGQ9Ik0yNSAxOWMtMi4yIDAtNC0xLjgtNC00czEuOC00IDQtNCA0IDEuOCA0IDQtMS44IDQtNCA0Ii8+PHBhdGggZmlsbD0iI2U5MWU2MyIgZD0ibTE1LjcgMzQtMy40LTIgNS45LTkuN2MtMi0xLjktMy4yLTQuNS0zLjItNy4zIDAtNS41IDQuNS0xMCAxMC0xMHMxMCA0LjUgMTAgMTBjMCAuOS0uMSAxLjctLjMgMi41bC0zLjktMWMuMS0uNS4yLTEgLjItMS41IDAtMy4zLTIuNy02LTYtNnMtNiAyLjctNiA2YzAgMi4xIDEuMSA0IDIuOSA1LjFsMS43IDF6Ii8+PC9zdmc+"
+        },
+        "displayName": "Webhook",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 112,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.switch",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "If",
+              "Path",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Branch",
+              "Case"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.switch/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Switch",
+          "color": "#506000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "Switch",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1123,
+        "icon": "fa:link",
+        "name": "@n8n/n8n-nodes-langchain.chainLlm",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.chainllm/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Chains",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Basic LLM Chain",
+          "color": "#909298"
+        },
+        "iconData": {
+          "icon": "link",
+          "type": "icon"
+        },
+        "displayName": "Basic LLM Chain",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1179,
+        "icon": "fa:code",
+        "name": "@n8n/n8n-nodes-langchain.outputParserStructured",
+        "codex": {
+          "data": {
+            "alias": [
+              "json",
+              "zod"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.outputparserstructured/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Output Parsers"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Structured Output Parser"
+        },
+        "iconData": {
+          "icon": "code",
+          "type": "icon"
+        },
+        "displayName": "Structured Output Parser",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1239,
+        "icon": "file:splitOut.svg",
+        "name": "n8n-nodes-base.splitOut",
+        "codex": {
+          "data": {
+            "alias": [
+              "Split",
+              "Nested",
+              "Transform",
+              "Array",
+              "List",
+              "Item"
+            ],
+            "details": "",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.splitout/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Split Out"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJub25lIj48ZyBmaWxsPSIjOUI2REQ1IiBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTQ4MCAxNDhjMC02LjYyNy01LjM3My0xMi0xMi0xMkgzMjJjLTYuNjI3IDAtMTIgNS4zNzMtMTIgMTJ2MjRjMCA2LjYyNyA1LjM3MyAxMiAxMiAxMmgxNDZjNi42MjcgMCAxMi01LjM3MyAxMi0xMnptMCA5NmMwLTYuNjI3LTUuMzczLTEyLTEyLTEySDMyMmMtNi42MjcgMC0xMiA1LjM3My0xMiAxMnYyNGMwIDYuNjI3IDUuMzczIDEyIDEyIDEyaDE0NmM2LjYyNyAwIDEyLTUuMzczIDEyLTEyem0wIDk2YzAtNi42MjctNS4zNzMtMTItMTItMTJIMzIyYy02LjYyNyAwLTEyIDUuMzczLTEyIDEydjI0YzAgNi42MjcgNS4zNzMgMTIgMTIgMTJoMTQ2YzYuNjI3IDAgMTItNS4zNzMgMTItMTJ6IiBjbGlwLXJ1bGU9ImV2ZW5vZGQiLz48cGF0aCBkPSJNNDM4IDc2YzAgNi42MjctNS4zNzMgMTItMTIgMTJIMzA5Ljc4M2MtMTcuNjczIDAtMzIgMTQuMzI3LTMyIDMydjU2YzAgMjYuOTc4LTEwLjI3MiA1MS41NTctMjcuMTE5IDcwLjAzOS01LjA1NSA1LjU0NS01LjA1NSAxNC4zNzcgMCAxOS45MjIgMTYuODQ3IDE4LjQ4MiAyNy4xMTkgNDMuMDYxIDI3LjExOSA3MC4wMzl2NTZjMCAxNy42NzMgMTQuMzI3IDMyIDMyIDMySDQyNmM2LjYyNyAwIDEyIDUuMzczIDEyIDEydjI0YzAgNi42MjctNS4zNzMgMTItMTIgMTJIMzA5Ljc4M2MtNDQuMTgzIDAtODAtMzUuODE3LTgwLTgwdi01NmMwLTMwLjkyOC0yNS4wNzItNTYtNTYtNTZhNS43ODMgNS43ODMgMCAwIDEtNS43ODMtNS43ODN2LTM2LjQzNGE1Ljc4MyA1Ljc4MyAwIDAgMSA1Ljc4My01Ljc4M2MzMC45MjggMCA1Ni0yNS4wNzIgNTYtNTZ2LTU2YzAtNDQuMTgzIDM1LjgxNy04MCA4MC04MEg0MjZjNi42MjcgMCAxMiA1LjM3MyAxMiAxMnoiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0xMzYgMjQ0YzAtNi42MjctNS4zNzMtMTItMTItMTJIMTJjLTYuNjI3IDAtMTIgNS4zNzMtMTIgMTJ2MjRjMCA2LjYyNyA1LjM3MyAxMiAxMiAxMmgxMTJjNi42MjcgMCAxMi01LjM3MyAxMi0xMnoiIGNsaXAtcnVsZT0iZXZlbm9kZCIvPjwvZz48ZGVmcz48Y2xpcFBhdGggaWQ9ImEiPjxwYXRoIGZpbGw9IiNmZmYiIGQ9Ik01MTIgMEgwdjUxMmg1MTJ6Ii8+PC9jbGlwUGF0aD48L2RlZnM+PC9zdmc+"
+        },
+        "displayName": "Split Out",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1262,
+        "icon": "file:google.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatgooglegemini/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Google Gemini Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB2aWV3Qm94PSIwIDAgNDggNDgiPjxkZWZzPjxwYXRoIGlkPSJhIiBkPSJNNDQuNSAyMEgyNHY4LjVoMTEuOEMzNC43IDMzLjkgMzAuMSAzNyAyNCAzN2MtNy4yIDAtMTMtNS44LTEzLTEzczUuOC0xMyAxMy0xM2MzLjEgMCA1LjkgMS4xIDguMSAyLjlsNi40LTYuNEMzNC42IDQuMSAyOS42IDIgMjQgMiAxMS44IDIgMiAxMS44IDIgMjRzOS44IDIyIDIyIDIyYzExIDAgMjEtOCAyMS0yMiAwLTEuMy0uMi0yLjctLjUtNCIvPjwvZGVmcz48Y2xpcFBhdGggaWQ9ImIiPjx1c2UgeGxpbms6aHJlZj0iI2EiIG92ZXJmbG93PSJ2aXNpYmxlIi8+PC9jbGlwUGF0aD48cGF0aCBmaWxsPSIjRkJCQzA1IiBkPSJNMCAzN1YxMWwxNyAxM3oiIGNsaXAtcGF0aD0idXJsKCNiKSIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im0wIDExIDE3IDEzIDctNi4xTDQ4IDE0VjBIMHoiIGNsaXAtcGF0aD0idXJsKCNiKSIvPjxwYXRoIGZpbGw9IiMzNEE4NTMiIGQ9Im0wIDM3IDMwLTIzIDcuOSAxTDQ4IDB2NDhIMHoiIGNsaXAtcGF0aD0idXJsKCNiKSIvPjxwYXRoIGZpbGw9IiM0Mjg1RjQiIGQ9Ik00OCA0OCAxNyAyNGwtNC0zIDM1LTEweiIgY2xpcC1wYXRoPSJ1cmwoI2IpIi8+PC9zdmc+"
+        },
+        "displayName": "Google Gemini Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1268,
+        "icon": "file:httprequest.svg",
+        "name": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.toolhttprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Tools"
+              ],
+              "Tools": [
+                "Recommended Tools"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MCA0MCI+PHBhdGggZmlsbD0iIzAwMDRGNSIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNNDAgMjBDNDAgOC45NTMgMzEuMDQ3IDAgMjAgMFMwIDguOTUzIDAgMjBzOC45NTMgMjAgMjAgMjAgMjAtOC45NTMgMjAtMjBNMjAgMzYuOTQ2Yy0xLjExNSAwLTIuODYyLS45NzktNC41LTQuMjQ3LS43MDQtMS40MDctMS4zMDQtMy4xNTYtMS43NDctNS4wMTRIMjYuMTljLS4zODYgMS44NTUtLjk4NiAzLjYwNS0xLjY5IDUuMDE0LTEuNjM4IDMuMjY4LTMuMzg1IDQuMjQ3LTQuNSA0LjI0N00xMi45MDYgMjBjMCAxLjYxLjEwMyAzLjE2NC4yOTQgNC42M2gxMy42YTM2IDM2IDAgMCAwIC4yOTQtNC42M2MwLTEuNjEtLjEwMy0zLjE2NC0uMjk0LTQuNjNIMTMuMmEzNiAzNiAwIDAgMC0uMjk0IDQuNjNNMjAgMy4wNTRjMS4xMTUgMCAyLjg2Mi45NzcgNC41IDQuMjQ2LjcwNyAxLjQxNCAxLjMwNyAzLjEwNyAxLjY5MiA1LjAxNUgxMy43NWMuNDQzLTEuOTEgMS4wNDQtMy42MDIgMS43NS01LjAxNCAxLjYzOC0zLjI3IDMuMzg1LTQuMjQ3IDQuNS00LjI0N00zMC4xNDggMjBjMC0xLjU5LS4wOTQtMy4xMzgtLjMyNS00LjYzaDYuNDgxYy40MjEgMS40NzIuNjQyIDMuMDI2LjY0MiA0LjYzcy0uMjIgMy4xNTgtLjY0MiA0LjYzaC02LjQ4MWMuMjMxLTEuNDkyLjMyNS0zLjA0LjMyNS00LjYzTTI2LjI3NyA0LjI1NWMxLjM2IDIuMTA1IDIuNDM0IDQuODc3IDMuMSA4LjA2aDUuNzI4YTE2Ljk4IDE2Ljk4IDAgMCAwLTguODI4LTguMDZtLTE1LjY1NCA4LjA2aC01LjczYzEuODU4LTMuNjQ3IDUtNi41MzIgOC44My04LjA2LTEuMzYgMi4xMDUtMi40MzQgNC44NzctMy4xIDguMDZNMy4wNTQgMjBjMCAxLjYwMy4yMjMgMy4xNTcuNjQgNC42M2g2LjQyOGE0MCA0MCAwIDAgMS0uMjctNC42M2MwLTEuNTk0LjA5NC0zLjE0Mi4yNy00LjYzSDMuNjk1YTE3IDE3IDAgMCAwLS42NCA0LjYzbTIzLjIyMyAxNS43NDNjMS4zNi0yLjEwNCAyLjQzNC00Ljg3NSAzLjEtOC4wNThoNS43MjhhMTYuOTYgMTYuOTYgMCAwIDEtOC44MjggOC4wNThtLTEyLjU1NCAwYTE3IDE3IDAgMCAxLTguODMtOC4wNThoNS43M2MuNjY2IDMuMTgzIDEuNzQgNS45NTQgMy4xIDguMDU4IiBjbGlwLXJ1bGU9ImV2ZW5vZGQiLz48L3N2Zz4="
+        },
+        "displayName": "HTTP Request Tool",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 25,
+        "name": "AI"
+      },
+      {
+        "id": 31,
+        "name": "Content Creation"
+      }
+    ],
+    "image": [
+      {
+        "id": 935,
+        "url": "https://n8niostorageaccount.blob.core.windows.net/n8nio-strapi-blobs-prod/assets/image_c0fa69c58e.png"
+      }
+    ]
+  }
+}

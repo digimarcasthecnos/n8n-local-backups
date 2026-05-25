@@ -1,0 +1,1523 @@
+{
+  "workflow": {
+    "id": 15356,
+    "name": "Turn video recordings into Twitter (X) threads with WayinVideo, GPT-4o-mini and Google Sheets",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-28T10:12:41.834Z",
+    "description": "### Description\n\nPaste any YouTube, podcast, or Zoom URL into a simple form along with your video title, niche, and target audience and the workflow handles the rest. [WayinVideo](https://wayin.ai/api/) transcribes the full video with speaker labels and timestamps, then GPT-4o-mini writes exactly 10 tweets — a hook, eight content insights each under 270 characters, and a call-to-action. All 10 tweets are saved to Google Sheets as drafts, and if you choose Auto Post, each tweet is published to Twitter/X in sequence and the sheet row is updated with the live tweet ID. Built for content creators, marketers, and thought leaders who want to repurpose long-form video into Twitter/X threads without watching or manually summarizing anything.\n\n---\n\n## What This Workflow Does\n\n- **Transcribes any video with speaker labels** — WayinVideo processes the full video and returns every spoken segment attributed to the correct speaker with timestamps\n- **Polls automatically until transcription is complete** — Waits 60 seconds then checks every 45 seconds until the transcript is ready, with no manual monitoring required\n- **Writes exactly 10 tweets in one GPT call** — A hook tweet, eight standalone content insights each under 270 characters, and a CTA tweet — all grounded in the actual transcript\n- **Assigns a unique thread ID to every run** — All 10 tweets share one thread ID in Google Sheets so you can filter and find the full thread at any time\n- **Saves all 10 tweets to Google Sheets as drafts** — Each tweet gets its own row with character count, tweet number, thread ID, and Draft status for review\n- **Auto-posts to Twitter/X on request** — If you choose Yes at form submission, each tweet is posted to your connected Twitter/X account in sequence\n- **Updates the sheet with live tweet IDs** — After each tweet is posted, the corresponding row Status changes from Draft to Posted and the live tweet ID is saved\n\n---\n\n## Setup Requirements\n\n### Tools Needed\n- n8n instance (self-hosted or cloud)\n- WayinVideo account with API access\n- OpenAI account with GPT-4o-mini API access\n- Google Sheets (one sheet with a tab named **Twitter Threads**)\n- Twitter/X developer account with OAuth2 and `tweet.write` scope\n\n### Credentials Required\n- WayinVideo API key (pasted into **2. WayinVideo — Submit Transcription** and **4. WayinVideo — Get Transcript Results**)\n- OpenAI API key\n- Google Sheets OAuth2 (used in **11. Google Sheets — Save Thread Draft** and **14. Google Sheets — Update Status to Posted**)\n- Twitter/X OAuth2 credential\n\n&gt; ⚠️ **WayinVideo API key appears in 2 steps** — replace `YOUR_WAYINVIDEO_API_KEY` in both **2. WayinVideo — Submit Transcription** and **4. WayinVideo — Get Transcript Results**. Missing either one will cause the workflow to fail.\n\n&gt; ⚠️ **Google Sheet ID appears in 2 steps** — replace `YOUR_GOOGLE_SHEET_ID` in both **11. Google Sheets — Save Thread Draft** and **14. Google Sheets — Update Status to Posted**.\n\n**Estimated Setup Time: 20–25 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Import the workflow** — Open n8n → Workflows → Import from JSON → paste the workflow JSON → click Import\n\n2. **Get your WayinVideo API key** — Log in to your WayinVideo account → go to Account Settings → copy your API key\n\n3. **Add your WayinVideo API key to node 2** — Open node **2. WayinVideo — Submit Transcription** → find the `Authorization` header value `Bearer YOUR_WAYINVIDEO_API_KEY` → replace `YOUR_WAYINVIDEO_API_KEY` with your actual key\n\n4. **Add your WayinVideo API key to node 4** — Open node **4. WayinVideo — Get Transcript Results** → find the same `Authorization` header → replace `YOUR_WAYINVIDEO_API_KEY` with the same key\n\n5. **Connect OpenAI** — Open node **9. OpenAI — GPT-4o-mini Model** → click the credential dropdown → add your OpenAI API key → test the connection\n\n6. **Create your Google Sheet tab** — Open your Google Sheet → add a tab named exactly **Twitter Threads** → add these 8 column headers in row 1: `Video Title`, `Video URL`, `Thread ID`, `Tweet Number`, `Tweet Text`, `Character Count`, `Generated On`, `Status`\n\n7. **Add a Tweet ID column too** — In the same tab, add a 9th column header: `Tweet ID` — this is where live tweet IDs are written after posting\n\n8. **Get your Google Sheet ID** — Open your Google Sheet in a browser → copy the string between `/d/` and `/edit` in the URL — this is your Sheet ID\n\n9. **Connect Google Sheets for saving** — Open node **11. Google Sheets — Save Thread Draft** → click the document field → replace `YOUR_GOOGLE_SHEET_ID` by selecting your spreadsheet or entering the ID → click the credential dropdown → add Google Sheets OAuth2 → authorize access\n\n10. **Connect Google Sheets for updating** — Open node **14. Google Sheets — Update Status to Posted** → repeat the same process — select your spreadsheet, replace `YOUR_GOOGLE_SHEET_ID`, and confirm the same Google Sheets OAuth2 credential is connected\n\n11. **Connect Twitter/X** — Open node **13. Twitter/X — Post Tweet** → click the credential dropdown → add Twitter OAuth2 → complete the OAuth flow — make sure your Twitter app has `tweet.write` permission enabled in the Twitter Developer Portal\n\n12. **Activate the workflow** — Toggle the workflow to Active → copy the Form URL from node **1. Form — Video URL + Details** → open it in a browser to submit your first video\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Form: Video URL + Details**\nYou open the form URL in a browser and fill in five fields: the video URL (YouTube, Zoom, Vimeo, or any direct link), the video title, your niche or topic, target audience, and whether to auto-post to Twitter/X (type `Yes` or `No`). Submitting the form starts the workflow.\n\n**Step 2 — HTTP: WayinVideo — Submit Transcription**\nThe video URL is sent to the WayinVideo transcription API with the target language set to English. WayinVideo accepts the job and returns a task ID confirming transcription has started.\n\n**Step 3 — Wait: 60 Seconds**\nThe workflow pauses for 60 seconds before checking the transcription status for the first time, giving WayinVideo time to begin processing.\n\n**Step 4 — HTTP: WayinVideo — Get Transcript Results**\nA GET request checks the WayinVideo results endpoint using the task ID from step 2. It returns the current processing status and, once complete, the full speaker-labeled transcript.\n\n**Step 5 — IF: Transcription Complete?**\nThis is the polling gate. If the status equals `SUCCEEDED` (YES path), the transcript is ready and the workflow moves forward to formatting. If still processing (NO path), the workflow routes to **6. Wait — 45 Seconds Retry** which pauses 45 seconds then loops back to step 4 to check again. This repeats until SUCCEEDED.\n\n**Step 6 — Wait: 45 Seconds Retry**\nWhen the transcript is not yet ready, the workflow waits 45 seconds then returns to step 4 for another check. The loop continues automatically.\n\n**Step 7 — Code: Format Transcript**\nEach segment is formatted as `[Speaker Name | MM:SS] text` for clear, structured GPT input. Total video duration in minutes, word count, and unique speaker names are also calculated. All form inputs (video title, URL, niche, target audience, auto-post preference) are packaged here for the AI prompt.\n\n**Step 8 — AI Agent: Write Twitter Thread**\nGPT-4o-mini receives the formatted transcript as the user message and a detailed system prompt specifying ten strict Twitter rules. The rules enforce exactly 10 tweets, a hook that does not start with \"I\", 270-character limits per tweet, one standalone insight per content tweet, and a CTA for tweet 10. The output format uses labeled sections `TWEET 1:` through `TWEET 10:` so parsing is reliable.\n\n**Step 9 — OpenAI: GPT-4o-mini Model**\nThis is the language model powering the thread writing. It runs with default settings for natural output.\n\n**Step 10 — Code: Parse Tweets**\nThe AI output text is parsed using regex to extract each tweet from its labeled section. All 10 tweets are returned as individual rows, each carrying the tweet text, character count, tweet number, video title, video URL, a unique thread ID, auto-post preference, and Draft status. If zero tweets are extracted, the step throws a clear error.\n\n**Step 11 — Google Sheets: Save Thread Draft**\nEach of the 10 tweets is appended as one row to your Twitter Threads tab. All 8 columns are populated including the shared thread ID that groups the full thread together. Status is set to Draft for all rows.\n\n**Step 12 — IF: Auto Post Enabled?**\nAfter each tweet is saved, this check reads the `autoPost` value from the form. If it equals `Yes` (YES path — case-insensitive), the workflow moves to post the tweet on Twitter/X. If `No` or anything else (NO path), the workflow ends here — the tweet stays as a draft in your sheet.\n\n**Step 13 — Twitter/X: Post Tweet**\nThe tweet text is posted to your connected Twitter/X account using the Twitter OAuth2 credential. Twitter returns the live tweet ID on success.\n\n**Step 14 — Google Sheets: Update Status to Posted**\nThe sheet row matching this tweet's Thread ID and Tweet Number is updated. Status changes from Draft to Posted and the live tweet ID is saved to the Tweet ID column. This lookup uses both Thread ID and Tweet Number together to find the exact row.\n\nThe final result is 10 logged rows in your Twitter Threads sheet — all Drafts if Auto Post was No, or all updated to Posted with live tweet IDs if Auto Post was Yes.\n\n---\n\n## Key Features\n\n✅ **Optional auto-posting at form submission** — You decide at submission time whether to save as draft or post immediately — no separate workflow run needed\n✅ **Speaker-labeled transcript for context** — WayinVideo attributes each sentence to the right speaker so GPT understands dialogue flow and can write tweets that reflect real insights from the conversation\n✅ **Ten strict Twitter rules enforced in the prompt** — Character limits, hook structure, standalone tweet requirement, no invented facts, and CTA placement are all built into the system prompt — not left to chance\n✅ **Unique thread ID per run** — Every set of 10 tweets shares one thread ID so you can filter your Google Sheets library by thread and find all 10 tweets together at any time\n✅ **Character count per tweet logged** — The sheet records the character count for every tweet so you can spot any that approach the 270-character limit before posting\n✅ **Status updates from Draft to Posted automatically** — When auto-posting, the sheet updates in real time as each tweet goes live — no manual tracking needed\n✅ **Retry loop with 45-second intervals** — The workflow polls on a sensible schedule without hammering the WayinVideo API or timing out on longer videos\n\n---\n\n## Customisation Options\n\n**Change the number of tweets per thread** — In node **10. Code — Parse Tweets**, change the loop from `i &lt;= 10` to a different number — and update the system prompt in node **8. AI Agent — Write Twitter Thread** to request that same number of tweets, adjusting the OUTPUT FORMAT section to match.\n\n**Add a retry limit to stop infinite polling** — Before node **6. Wait — 45 Seconds Retry**, add a Set step that increments a counter, then add a second IF check to stop after 15 polls and route to a Gmail or Slack error notification instead of looping indefinitely.\n\n**Post threads as replies to each other** — In node **13. Twitter/X — Post Tweet**, add the previous tweet's ID as a `reply_to_tweet_id` parameter so tweets are chained as a proper threaded reply on Twitter/X rather than separate posts.\n\n**Add a Slack notification when the thread is drafted** — After node **11. Google Sheets — Save Thread Draft** (only on tweet 10), add a Slack step that posts the video title, hook tweet, and a link to your Twitter Threads sheet so your team sees new threads without checking email.\n\n**Schedule threads for a future time** — Replace node **13. Twitter/X — Post Tweet** with a scheduling step that saves tweets to a Buffer or Hypefury queue instead of posting immediately, so you can plan threads in advance without live posting.\n\n---\n\n## Troubleshooting\n\n**WayinVideo returning an error on submission:**\n- Confirm `YOUR_WAYINVIDEO_API_KEY` in node **2. WayinVideo — Submit Transcription** is replaced with your actual API key — not the placeholder\n- Also confirm the same replacement was made in node **4. WayinVideo — Get Transcript Results** — both steps need the key\n- Check the execution log of node 2 for the raw error — a 401 means wrong key, a 422 means the URL format is unsupported\n\n**Workflow stuck in the retry loop:**\n- Check that the video URL is publicly accessible — private, password-protected, or region-blocked videos will not be processed\n- Open the execution log of node **4. WayinVideo — Get Transcript Results** and inspect the raw response — WayinVideo may have returned a FAILED status with an error message\n- If the loop runs indefinitely, deactivate the workflow, fix the video URL, and resubmit\n\n**GPT not generating all 10 tweets:**\n- Confirm the API key is connected in node **9. OpenAI — GPT-4o-mini Model** and your account has available credits\n- Check the execution log of node **8. AI Agent — Write Twitter Thread** for the raw output — if fewer than 10 labeled tweet sections are present, the regex in node 10 will only extract what is there\n- If the issue is consistent, check that the system prompt in node 8 is intact and has not been accidentally edited\n\n**Google Sheets not saving rows or updating status:**\n- Confirm `YOUR_GOOGLE_SHEET_ID` is replaced in both **11. Google Sheets — Save Thread Draft** and **14. Google Sheets — Update Status to Posted** — both need the same Sheet ID\n- Confirm the tab is named **Twitter Threads** exactly and all column headers match\n- Check that the Google Sheets OAuth2 credential is connected and not expired in both steps\n\n**Twitter/X posting failing:**\n- Confirm the Twitter OAuth2 credential in node **13. Twitter/X — Post Tweet** is connected and your app has `tweet.write` permission enabled in the Twitter Developer Portal\n- Twitter rate limits allow 17 posts per 15 minutes on free tier — if your thread of 10 tweets posts too fast, Twitter may reject later tweets\n- Check the execution log of node 13 for the exact Twitter API error response — a 403 usually means a permission scope issue\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email: [info@incrementors.com](info@incrementors.com)\n🌐 Website: [https://www.incrementors.com/](https://www.incrementors.com/)",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "499399d2-74f8-4e44-b0ab-82bc8840bdb9",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -5264,
+            -496
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 508,
+            "height": 1124,
+            "content": "## YouTube Video to Twitter/X Thread Auto-Generator — WayinVideo + GPT-4o-mini + Sheets + Twitter\n\nFor content creators, marketers, and thought leaders who want to repurpose long-form video content into Twitter/X threads without watching or manually summarizing the video. Paste any YouTube, podcast, or Zoom URL via the form. WayinVideo transcribes the full video with speaker labels and timestamps. GPT-4o-mini reads the transcript and writes exactly 10 tweets — a hook tweet, 8 content tweets each under 270 characters, and a CTA tweet. Every tweet is saved individually to Google Sheets with a shared thread ID. If you set Auto Post to Yes in the form, each tweet is posted directly to Twitter/X in sequence and the Sheet row is updated with the live tweet ID and Posted status.\n\n## How it works\n- **1. Form — Video URL + Details** collects the video URL, title, niche, target audience, and auto-post preference\n- **2. WayinVideo — Submit Transcription** submits the URL for speaker-labeled transcription\n- **3. Wait — 60 Seconds** gives the API initial processing time\n- **4. WayinVideo — Get Transcript Results** polls for the task result\n- **5. IF — Transcription Complete?** checks for SUCCEEDED — if not, retries via 45-second wait\n- **7. Code — Format Transcript** formats each segment as speaker label with timestamp and builds the GPT input\n- **8. AI Agent — Write Twitter Thread** uses GPT-4o-mini with 10 strict Twitter rules to write exactly 10 labeled tweets\n- **10. Code — Parse Tweets** extracts each TWEET 1 through TWEET 10 via regex and returns one item per tweet\n- **11. Google Sheets — Save Thread Draft** appends 10 rows with tweet text, character count, thread ID, and Draft status\n- **12. IF — Auto Post Enabled?** checks if the user set Auto Post to Yes\n- **13. Twitter/X — Post Tweet** posts each tweet to Twitter/X using the connected OAuth2 credential\n- **14. Google Sheets — Update Status to Posted** updates each row with the live tweet ID and Posted status\n\n## Set up steps\n1. In **2. WayinVideo — Submit Transcription** and **4. WayinVideo — Get Transcript Results** — replace YOUR_WAYINVIDEO_API_KEY with your key from wayin.ai\n2. In **9. OpenAI — GPT-4o-mini Model** — connect your OpenAI credential\n3. In **11. Google Sheets — Save Thread Draft** and **14. Google Sheets — Update Status to Posted** — connect your Google Sheets OAuth2 credential and replace YOUR_GOOGLE_SHEET_ID\n4. In **13. Twitter/X — Post Tweet** — connect your Twitter OAuth2 credential with tweet.write scope\n5. Create a Google Sheet tab named Twitter Threads with columns: Video Title, Video URL, Thread ID, Tweet Number, Tweet Text, Character Count, Generated On, Status"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "bc7188cf-0df1-4208-8a7f-c1cf51b369f6",
+          "name": "Section — Form Input",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -4720,
+            -224
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 260,
+            "height": 436,
+            "content": "## Form Input\nUser submits video URL, title, niche, target audience, and whether to auto-post to Twitter/X or save as draft only."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "58971942-dbbf-4b11-82a5-ba8ce355c25d",
+          "name": "Section — Transcription Submit and Poll",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -4432,
+            -240
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 676,
+            "height": 484,
+            "content": "## WayinVideo Transcription Submit and Poll\nSubmits the video URL for speaker-labeled transcription. Waits 60 seconds for initial processing. Polls the results endpoint until status equals SUCCEEDED."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "8ef8845d-35a0-4e56-945d-8df531d6e9f5",
+          "name": "Section — Status Check and Retry Loop",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -3712,
+            -384
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 292,
+            "height": 820,
+            "content": "## Transcription Status Check and Retry Loop\nIF checks for SUCCEEDED status. TRUE proceeds to transcript formatting. FALSE waits 45 seconds and polls again. Loop continues until ready."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "85930a13-3b6d-4652-80d2-a2106ec4ab8b",
+          "name": "Section — Transcript Formatting and AI Thread Writing",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -3376,
+            -272
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 468,
+            "height": 532,
+            "content": "## Transcript Formatting and AI Thread Writing\nFormats each segment with speaker label and timestamp. GPT-4o-mini writes exactly 10 tweets using strict Twitter rules — hook, 8 insights each under 270 chars, and a CTA tweet."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "eced4495-ee6b-4fdc-a08c-4fc66dc6f0ed",
+          "name": "Section — Tweet Parsing and Sheet Save",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2848,
+            -224
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 388,
+            "height": 372,
+            "content": "## Tweet Parsing and Sheet Save\nRegex extracts each tweet from labeled AI output and returns one item per tweet. Google Sheets logs 10 rows with thread ID, tweet number, character count, and Draft status."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "24abd023-5005-4714-82c2-379e48d0fa85",
+          "name": "Section — Auto-Post to Twitter/X",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2368,
+            -288
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 756,
+            "height": 452,
+            "content": "## Auto-Post to Twitter/X\nIF Auto Post equals Yes, posts each tweet to Twitter/X using the connected OAuth2 credential. Google Sheets row is updated with the live tweet ID and Status changes from Draft to Posted."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "b1dc43ff-b017-4fef-bc54-b338cb148855",
+          "name": "1. Form — Video URL + Details",
+          "type": "n8n-nodes-base.formTrigger",
+          "position": [
+            -4656,
+            -64
+          ],
+          "webhookId": "f87e3c7a-4253-449d-8c8c-1dbd51cb8e9c",
+          "parameters": {
+            "options": {},
+            "formTitle": "YouTube to Twitter/X Thread Generator",
+            "formFields": {
+              "values": [
+                {
+                  "fieldLabel": "Video URL",
+                  "placeholder": "https://www.youtube.com/watch?v=xxxxxxx or Zoom/Vimeo/Podcast link",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Video Title",
+                  "placeholder": "e.g. How to Build a $10K/Month Business Using AI Tools",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Your Niche / Topic",
+                  "placeholder": "e.g. Entrepreneurship, AI Tools, Marketing, Productivity",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Target Audience",
+                  "placeholder": "e.g. Startup founders, freelancers, digital marketers",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Auto Post to Twitter/X?",
+                  "placeholder": "Yes or No",
+                  "requiredField": true
+                }
+              ]
+            },
+            "formDescription": "Paste any YouTube or video URL. AI will transcribe the full content and write a viral Twitter/X thread ready to post."
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "b0e4e656-f24e-4d78-9e53-b2892d26f76e",
+          "name": "2. WayinVideo — Submit Transcription",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -4368,
+            -64
+          ],
+          "parameters": {
+            "url": "https://wayinvideo-api.wayin.ai/api/v2/transcripts",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"video_url\": \"{{ $json['Video URL'] }}\",\n  \"target_lang\": \"en\"\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer YOUR_TOKEN_HERE"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "e943f3a5-5135-4cb6-9b0f-ef04463b7c7b",
+          "name": "3. Wait — 60 Seconds",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            -4128,
+            -64
+          ],
+          "webhookId": "wait-twitter-transcribe-60s",
+          "parameters": {
+            "amount": 60
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "0289ebe3-2288-4881-9cb1-803e8bbef180",
+          "name": "4. WayinVideo — Get Transcript Results",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -3888,
+            -64
+          ],
+          "parameters": {
+            "url": "=https://wayinvideo-api.wayin.ai/api/v2/transcripts/results/{{ $('2. WayinVideo — Submit Transcription').item.json.data.id }}",
+            "options": {},
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer YOUR_TOKEN_HERE"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "542ffc06-e601-43e3-980f-0c2697afde60",
+          "name": "5. IF — Transcription Complete?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -3648,
+            -64
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "status-check",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ $json.data.status }}",
+                  "rightValue": "SUCCEEDED"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "93f54cf4-af25-461d-9638-a67c43f54c8d",
+          "name": "6. Wait — 45 Seconds Retry",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            -3632,
+            176
+          ],
+          "webhookId": "wait-twitter-retry-30s",
+          "parameters": {
+            "amount": 45
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "719486d1-979a-4d37-ba94-9ebd034758e3",
+          "name": "7. Code — Format Transcript",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -3344,
+            -80
+          ],
+          "parameters": {
+            "jsCode": "// Get transcript segments from WayinVideo\nconst segments = $('4. WayinVideo — Get Transcript Results').item.json.data.transcript || [];\n\nif (segments.length === 0) {\n  throw new Error('Transcript is empty — check if the video URL is valid and publicly accessible.');\n}\n\n// Format transcript — clean and readable for GPT\nconst formattedTranscript = segments\n  .map(s => {\n    const timeInSeconds = Math.floor(s.start / 1000);\n    const minutes = Math.floor(timeInSeconds / 60);\n    const seconds = timeInSeconds % 60;\n    const timestamp = `${minutes}:${seconds.toString().padStart(2, '0')}`;\n    return `[${s.speaker} | ${timestamp}] ${s.text.trim()}`;\n  })\n  .join('\\n');\n\n// Total duration\nconst lastSegment = segments[segments.length - 1];\nconst totalDurationMs = lastSegment?.end || 0;\nconst totalMinutes = Math.round(totalDurationMs / 60000);\n\n// Word count\nconst wordCount = segments.map(s => s.text).join(' ').split(/\\s+/).length;\n\n// Unique speakers\nconst speakers = [...new Set(segments.map(s => s.speaker))];\n\nreturn [{\n  json: {\n    formattedTranscript,\n    wordCount,\n    totalMinutes,\n    speakerCount: speakers.length,\n    speakers: speakers.join(', '),\n    videoTitle: $('1. Form — Video URL + Details').item.json['Video Title'],\n    videoUrl: $('1. Form — Video URL + Details').item.json['Video URL'],\n    niche: $('1. Form — Video URL + Details').item.json['Your Niche / Topic'],\n    targetAudience: $('1. Form — Video URL + Details').item.json['Target Audience'],\n    autoPost: $('1. Form — Video URL + Details').item.json['Auto Post to Twitter/X?']\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "0aa9d859-ddc0-42de-abc7-fd5f8367d1ad",
+          "name": "8. AI Agent — Write Twitter Thread",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            -3152,
+            -80
+          ],
+          "parameters": {
+            "text": "={{ $json.formattedTranscript }}",
+            "options": {
+              "systemMessage": "=You are an expert Twitter/X content writer who specializes in writing viral threads from video transcripts.\n\nYour job is to read the video transcript below and write a high-engagement Twitter/X thread that makes people stop scrolling, read every tweet, and retweet.\n\n---\n\n## VIDEO DETAILS\n- Video Title: {{ $json.videoTitle }}\n- Niche / Topic: {{ $json.niche }}\n- Target Audience: {{ $json.targetAudience }}\n- Video Duration: {{ $json.totalMinutes }} minutes\n- Speakers: {{ $json.speakers }}\n\n---\n\n## TWITTER THREAD RULES\n1. Write EXACTLY 10 tweets — no more, no less\n2. Every tweet MUST be under 270 characters (leave room for thread numbering)\n3. Tweet 1 = The HOOK — make it a bold claim, a surprising stat, or a question that creates curiosity. Do NOT start with 'I'. Start with the insight.\n4. Tweets 2–9 = The CONTENT — one key insight per tweet. Each tweet must stand alone and make sense without reading the others.\n5. Tweet 10 = The CTA — tell people to like, retweet, follow, or reply with their opinion\n6. Use line breaks inside tweets for readability — short punchy lines work better than long sentences\n7. Use numbers, bullets, or emojis sparingly — only where they genuinely add value\n8. Write ONLY from what is in the transcript — no invented facts\n9. Sound like a real person sharing what they learned — not a robot summarizing\n10. Each tweet must create a reason to read the next one\n\n---\n\n## OUTPUT FORMAT\nReturn ONLY the 10 tweets in this exact format — nothing else before or after:\n\nTWEET 1:\n[Hook tweet text here]\n\nTWEET 2:\n[Content tweet text here]\n\nTWEET 3:\n[Content tweet text here]\n\nTWEET 4:\n[Content tweet text here]\n\nTWEET 5:\n[Content tweet text here]\n\nTWEET 6:\n[Content tweet text here]\n\nTWEET 7:\n[Content tweet text here]\n\nTWEET 8:\n[Content tweet text here]\n\nTWEET 9:\n[Content tweet text here]\n\nTWEET 10:\n[CTA tweet text here]\n\n---\n\nNow read the transcript and write the 10-tweet thread:"
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "454fcf71-b86f-4402-b36b-0f7df272153c",
+          "name": "9. OpenAI — GPT-4o-mini Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            -3152,
+            112
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini"
+            },
+            "options": {},
+            "builtInTools": {}
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "55b466f5-8df0-4c79-9f7a-71b4c856b5e0",
+          "name": "10. Code — Parse Tweets",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -2800,
+            -80
+          ],
+          "parameters": {
+            "jsCode": "// Parse AI output — extract each tweet individually\nconst output = $input.first().json.output || '';\nconst videoTitle = $('7. Code — Format Transcript').item.json.videoTitle;\nconst videoUrl = $('7. Code — Format Transcript').item.json.videoUrl;\nconst autoPost = $('7. Code — Format Transcript').item.json.autoPost;\n\n// Generate a unique thread ID for grouping\nconst threadId = 'thread_' + Date.now();\n\n// Extract all 10 tweets\nconst tweets = [];\nfor (let i = 1; i <= 10; i++) {\n  const regex = new RegExp(`TWEET ${i}:\\s*([\\\\s\\\\S]*?)(?=TWEET ${i + 1}:|$)`);\n  const match = output.match(regex);\n  if (match) {\n    const tweetText = match[1].trim();\n    tweets.push({\n      json: {\n        tweetNumber: i,\n        tweetText: tweetText,\n        charCount: tweetText.length,\n        videoTitle: videoTitle,\n        videoUrl: videoUrl,\n        threadId: threadId,\n        autoPost: autoPost,\n        generatedOn: new Date().toISOString(),\n        status: 'Draft'\n      }\n    });\n  }\n}\n\nif (tweets.length === 0) {\n  throw new Error('Could not parse tweets from AI output. Check the AI prompt output format.');\n}\n\nreturn tweets;"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "756a7b8b-2878-4112-ad2b-7abcc6588eb0",
+          "name": "11. Google Sheets — Save Thread Draft",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            -2624,
+            -80
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "Status": "Draft",
+                "Thread ID": "={{ $json.threadId }}",
+                "Video URL": "={{ $json.videoUrl }}",
+                "Tweet Text": "={{ $json.tweetText }}",
+                "Video Title": "={{ $json.videoTitle }}",
+                "Generated On": "={{ $now.toFormat('dd MMMM yyyy HH:mm') }}",
+                "Tweet Number": "={{ $json.tweetNumber }}",
+                "Character Count": "={{ $json.charCount }}"
+              },
+              "schema": [],
+              "mappingMode": "defineBelow",
+              "matchingColumns": []
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Twitter Threads"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_GOOGLE_SHEET_ID"
+            }
+          },
+          "typeVersion": 4.5
+        },
+        {
+          "id": "6d96e863-d1fc-4c8e-9916-43f8d2fd57ad",
+          "name": "12. IF — Auto Post Enabled?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -2320,
+            -80
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "auto-post-check",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ $('10. Code — Parse Tweets').item.json.autoPost }}",
+                  "rightValue": "Yes"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "b3fb206f-b54f-493a-a73d-b7cca1bcdb94",
+          "name": "13. Twitter/X — Post Tweet",
+          "type": "n8n-nodes-base.twitter",
+          "position": [
+            -2064,
+            -96
+          ],
+          "parameters": {
+            "text": "={{ $('10. Code — Parse Tweets').item.json.tweetText }}",
+            "additionalFields": {}
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "33bb56c0-bd4e-4781-b930-ca976a6b9cab",
+          "name": "14. Google Sheets — Update Status to Posted",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            -1824,
+            -96
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "Status": "Posted",
+                "Tweet ID": "={{ $json.id }}",
+                "Thread ID": "={{ $('10. Code — Parse Tweets').item.json.threadId }}",
+                "Tweet Number": "={{ $('10. Code — Parse Tweets').item.json.tweetNumber }}"
+              },
+              "schema": [],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [
+                "Thread ID",
+                "Tweet Number"
+              ]
+            },
+            "options": {},
+            "operation": "update",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "Twitter Threads"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_GOOGLE_SHEET_ID"
+            }
+          },
+          "typeVersion": 4.5
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "3. Wait — 60 Seconds": {
+          "main": [
+            [
+              {
+                "node": "4. WayinVideo — Get Transcript Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "10. Code — Parse Tweets": {
+          "main": [
+            [
+              {
+                "node": "11. Google Sheets — Save Thread Draft",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "13. Twitter/X — Post Tweet": {
+          "main": [
+            [
+              {
+                "node": "14. Google Sheets — Update Status to Posted",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. Wait — 45 Seconds Retry": {
+          "main": [
+            [
+              {
+                "node": "4. WayinVideo — Get Transcript Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "12. IF — Auto Post Enabled?": {
+          "main": [
+            [
+              {
+                "node": "13. Twitter/X — Post Tweet",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. Code — Format Transcript": {
+          "main": [
+            [
+              {
+                "node": "8. AI Agent — Write Twitter Thread",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Form — Video URL + Details": {
+          "main": [
+            [
+              {
+                "node": "2. WayinVideo — Submit Transcription",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "9. OpenAI — GPT-4o-mini Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "8. AI Agent — Write Twitter Thread",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. IF — Transcription Complete?": {
+          "main": [
+            [
+              {
+                "node": "7. Code — Format Transcript",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "6. Wait — 45 Seconds Retry",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. AI Agent — Write Twitter Thread": {
+          "main": [
+            [
+              {
+                "node": "10. Code — Parse Tweets",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "2. WayinVideo — Submit Transcription": {
+          "main": [
+            [
+              {
+                "node": "3. Wait — 60 Seconds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "11. Google Sheets — Save Thread Draft": {
+          "main": [
+            [
+              {
+                "node": "12. IF — Auto Post Enabled?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "4. WayinVideo — Get Transcript Results": {
+          "main": [
+            [
+              {
+                "node": "5. IF — Transcription Complete?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 21,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 2
+        },
+        "n8n-nodes-base.code": {
+          "count": 2
+        },
+        "n8n-nodes-base.wait": {
+          "count": 2
+        },
+        "n8n-nodes-base.twitter": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 7
+        },
+        "n8n-nodes-base.formTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 2
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Incrementors",
+      "username": "incrementors",
+      "bio": "",
+      "verified": true,
+      "links": [
+        "https://www.incrementors.com/"
+      ],
+      "avatar": "https://gravatar.com/avatar/e09b4b6a8c5a00f886a9eedf3be23a4af5a50cc216cd6b2aee2a12c2dfba99dd?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 325,
+        "icon": "file:x.svg",
+        "name": "n8n-nodes-base.twitter",
+        "codex": {
+          "data": {
+            "alias": [
+              "Tweet",
+              "Twitter",
+              "X",
+              "X API"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.twitter/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/twitter/"
+                }
+              ]
+            },
+            "categories": [
+              "Marketing"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "X"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTIzLjMxNzEgMTYuOTM3M0wzNy45MDI2IDBIMzQuNDQ2M0wyMS43ODE3IDE0LjcwNjRMMTEuNjY2NiAwSDBMMTUuMjk2MSAyMi4yMzg3TDAgNDBIMy40NTY0OEwxNi44MzA2IDI0LjQ2OTZMMjcuNTEyOSA0MEgzOS4xNzk1TDIzLjMxNjMgMTYuOTM3M0gyMy4zMTcxWk0xOC41ODMgMjIuNDM0NkwxNy4wMzMyIDIwLjIyMDFMNC43MDE5IDIuNTk5MzZIMTAuMDEwOEwxOS45NjIzIDE2LjgxOTlMMjEuNTEyMiAxOS4wMzQ0TDM0LjQ0NzkgMzcuNTE4OUgyOS4xMzlMMTguNTgzIDIyLjQzNTRWMjIuNDM0NloiIGZpbGw9ImJsYWNrIi8+Cjwvc3ZnPgo="
+        },
+        "displayName": "X (Formerly Twitter)",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 27,
+            "name": "Marketing"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1225,
+        "icon": "file:form.svg",
+        "name": "n8n-nodes-base.formTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "table",
+              "submit",
+              "post"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.formtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Other Trigger Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "On form submission"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NiIgaGVpZ2h0PSI0MCIgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iIzAwQjdCQyIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMzQuOTc4IDM3LjczMmExLjU2IDEuNTYgMCAwIDEtMS41NjIgMS41NjNINi4yNmExLjU2IDEuNTYgMCAwIDEtMS41NjMtMS41NjNWOS42MDdjMC0uNDA1LjE1Ny0uNzk0LjQzOC0xLjA4Nmw2LjMwNC02LjUzMXY1LjM0NEg4LjIxM2ExLjE3MiAxLjE3MiAwIDEgMCAwIDIuMzQzaDQuNDNhMS4xNyAxLjE3IDAgMCAwIDEuMTcxLTEuMTcxVi4yMzJoMTkuNjAyYTEuNTYgMS41NiAwIDAgMSAxLjU2MiAxLjU2M3YxMC4zMjdsLTIuODYgMi44Ni04LjI1MiA4LjI3NmE0MTMuMDA2IDQxMy4wMDYgMCAwIDEtMS42NTQgMS42NjJsLS4zMzcuMzM3YTIgMiAwIDAgMC0uNTU3IDEuMDhMMjAuMyAzMS45MjJjLS4xMDguNjM4LS4yMTUgMS4wNzkuMjExIDEuNDE4LjQwMy4zMi45LjE3NCAxLjU0LjA2Nmw1LjQwOC0uOTI4YTIgMiAwIDAgMCAxLjA4LS41NTZsNi40NC02LjQyOXptLTI0LjAzLTIxLjI2NWExLjE4IDEuMTggMCAwIDAgMS4xNzEgMS4xNzJoMTMuMTYzYTEuMTcyIDEuMTcyIDAgMSAwIDAtMi4zNDRIMTIuMTE5YTEuMTcgMS4xNyAwIDAgMC0xLjE3MiAxLjE3Mm03LjI5NCAxNC43NjZhMS4xNyAxLjE3IDAgMCAwLTEuMTcyLTEuMTcySDEyLjEyYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNC45NTFhMS4xNyAxLjE3IDAgMCAwIDEuMTcyLTEuMTcybS44Ni03LjM5MWExLjE3IDEuMTcgMCAwIDAtMS4xNzItMS4xNzJoLTUuODExYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNS44MWExLjE2NCAxLjE2NCAwIDAgMCAxLjE3My0xLjE3MSIgY2xpcC1ydWxlPSJldmVub2RkIi8+PHBhdGggZmlsbD0iIzAwQjdCQyIgZD0ibTMzLjUzMiAxNi4zOTcgNC4yODktNC4yODkgMy43NTggMy43MSAxLjYxNy0xLjYxNiAyLjI1OCAyLjI1N2MuMjE4LjIxOC4zNC41MTMuMzQzLjgyLS4wMDIuMzExLS4xMjUuNjA4LS4zNDQuODNsLTYuODA0IDYuNzk2YTEuMTMgMS4xMyAwIDAgMS0uODI4LjM0MyAxLjE1IDEuMTUgMCAwIDEtLjgyOC0uMzQzIDEuMTggMS4xOCAwIDAgMSAwLTEuNjU3bDUuOTc2LTUuOTY4LTEuMzEyLTEuMzEzLTEuMzgzIDEuNDE0LTEzLjE0OSAxMy4xMjUtNC42MTcuNzgyLjc4Mi00LjYxNy4zMzYtLjMzNyAyLjU2MiAyLjU1NWExLjEgMS4xIDAgMCAwIC44MjguMzQ0Yy4zMTIuMDA1LjYxMi0uMTIuODI4LS4zNDRhMS4xOCAxLjE4IDAgMCAwIDAtMS42NTZsLTIuNTYyLTIuNTYyek00NC43MzYgMTIuMjRjMCAuNDE0LS4xNjMuODEtLjQ1NCAxLjEwMmwtLjkyMi45MTQtMy44NTItMy44MjguOTMtLjkzYTEuNTYzIDEuNTYzIDAgMCAxIDIuMjAzIDBsMS42NCAxLjY0MWMuMjkxLjI5My40NTUuNjkuNDU1IDEuMTAyIi8+PC9zdmc+"
+        },
+        "displayName": "n8n Form Trigger",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 31,
+        "name": "Content Creation"
+      },
+      {
+        "id": 51,
+        "name": "Multimodal AI"
+      }
+    ],
+    "image": []
+  }
+}

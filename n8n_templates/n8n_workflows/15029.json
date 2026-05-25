@@ -1,0 +1,2010 @@
+{
+  "workflow": {
+    "id": 15029,
+    "name": "Analyze vendor security risk from Jira tickets using Grok, Claude and Slack",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-13T16:20:37.399Z",
+    "description": "## How it works\n\nWhen a new vendor ticket is created in Jira, this workflow automatically performs a comprehensive security due-diligence investigation and posts the findings back as a Jira comment plus a Slack notification.\n\n1. A Jira webhook fires when an issue is created. An AI agent (Grok) extracts the vendor company name, URL, and product from the issue fields.\n2. A Seed Discovery agent (Claude + Perplexity) finds the vendor's official domains, trust center, privacy policy, and status page URLs — handling domain aliases automatically.\n3. Seven specialized research agents run **in parallel**, each with a focused persona: Compliance, Data Handling, Privacy & Legal, Security Controls, Availability, Pricing, and Company Intel. All use Perplexity sonar-pro-search for live web research.\n4. A Sanitizer code node strips unpredictable LLM formatting from all 7 outputs.\n5. A Lead Security Analyst agent (Grok) synthesizes all findings into a risk-scored report, generating Jira Wiki Markup and Slack Block Kit JSON simultaneously.\n6. The report is posted as a comment on the original Jira ticket, and a rich Slack notification with a \"View Report in Jira\" button is sent to your security channel.\n\n## Set up steps\n\n- **OpenRouter** — Create an OpenRouter account and add an API credential in n8n. The workflow uses three models: `x-ai/grok-4-fast`, `anthropic/claude-sonnet-4.5`, and `perplexity/sonar-pro-search` (~10 min)\n- **Jira** — Add a Jira credential (API token) and configure a Jira webhook automation to POST to this workflow's webhook URL when an issue is created in your vendor-review project (~10 min)\n- **Slack** — Add a Slack credential (OAuth) and set your target channel in the \"Send a message\" node (~5 min)\n- **Jira URL** — In the \"AI Agent\" node, replace `YOUR-JIRA-DOMAIN` in the Jira Browser URL with your actual Atlassian domain (~1 min)\n",
+    "workflow": {
+      "id": "loypsWkof4yBWa0v",
+      "meta": {
+        "instanceId": "6279df2a419ffb3d04c6deb9b43ef25efd3592d998144632443ca1d58cb3afef"
+      },
+      "name": "AI-Powered Vendor Security Risk Analyzer",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "7885b6b9-eb0c-4223-94c4-729582119263",
+          "name": "Add required fields",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            992,
+            2304
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "6060b306-5ddc-4a44-8e4a-7c6ca9b4661b",
+                  "name": "output.depth",
+                  "type": "string",
+                  "value": "=standard"
+                },
+                {
+                  "id": "a419cb3e-ddef-4bc7-8c8f-0fa5e82b910e",
+                  "name": "output.max_sources",
+                  "type": "string",
+                  "value": "30"
+                },
+                {
+                  "id": "dac1b779-2a27-4a7f-be3e-adeafcf0f61e",
+                  "name": "output.timeout_seconds",
+                  "type": "string",
+                  "value": "900"
+                },
+                {
+                  "id": "3ecb48a7-1f18-46ef-9253-073899b95673",
+                  "name": "output.hints",
+                  "type": "array",
+                  "value": "[\"SOC2\", \"privacy policy\"]"
+                },
+                {
+                  "id": "31d628d2-6b73-4eba-b6a3-48ed320ae1ef",
+                  "name": "output.jira_key",
+                  "type": "string",
+                  "value": "={{ $('Jira task webhook').item.json.body.issue.key }}"
+                },
+                {
+                  "id": "9938bcaf-061a-4013-8a6b-9e7718df32d4",
+                  "name": "output.effectiveQuery",
+                  "type": "string",
+                  "value": "={{\n  (() => {\n    const company = ($json.output.companyName ?? '').toString().trim();\n    const product = ($json.output.productName ?? '').toString().trim();\n\n    if (!company && !product) return '';\n    if (!product) return company;\n\n    if (company.toLowerCase() === product.toLowerCase()) return company;\n    return (company + ' ' + product).trim();\n  })()\n}}"
+                },
+                {
+                  "id": "70e59f62-a557-447b-8f78-a4ab2d770f85",
+                  "name": "output.companyUrl_norm",
+                  "type": "string",
+                  "value": "={{   (() => {     const u = ($json.output.companyUrl ?? '').toString().trim();     if (!u) return null;     if (/^https?:\\/\\//i.test(u)) return u;     return 'https://' + u;   })() }}"
+                },
+                {
+                  "id": "a418b87b-f726-4c6e-ad2e-a3a13d05e4c3",
+                  "name": "output.domain",
+                  "type": "string",
+                  "value": "={{\n  (() => {\n    const u = (($json.output.companyUrl_norm ?? $json.output.companyUrl) ?? '').toString().trim();\n    if (!u) return null;\n\n    const withScheme = /^https?:\\/\\//i.test(u) ? u : ('https://' + u);\n\n    try {\n      const host = new URL(withScheme).hostname.toLowerCase();\n      return host.replace(/^www\\./, '');\n    } catch (e) {\n      return u\n        .toLowerCase()\n        .replace(/^https?:\\/\\//, '')\n        .replace(/\\/.*$/, '')\n        .replace(/^www\\./, '')\n        .trim() || null;\n    }\n  })()\n}}"
+                }
+              ]
+            },
+            "includeOtherFields": true
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "1a7a4121-327b-4053-aaed-428105010316",
+          "name": "Extract vendor identity",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            416,
+            2304
+          ],
+          "parameters": {
+            "text": "=You are a precise entity extractor for SAAS due-diligence automation. \nAnalyze the incoming JSON payload from Jira webhook and extract exactly three fields: companyName, companyUrl, productName.\n{{ JSON.stringify($json) }}\n\nPriority rules (follow strictly in order):\n1. Find the vendor URL first — this is the primary source:\n   - Prefer explicit URLs in any field: customfield_*, description, summary, changelog, or body.\n   - Especially look for fields like customfield_12270 (often \"Vendor URL\" or \"Website\").\n   - If URL found (e.g., \"https://www.clay.com/\" or \"clay.com\"), use it as companyUrl.\n   - Normalize: add https:// if missing, strip path/query → only origin (e.g., https://www.clay.com/ → https://www.clay.com).\n\n2. companyName:\n   - Derive from companyUrl root domain: \n     - clay.com → \"Clay\"\n     - upstash.com → \"Upstash\"\n     - chatgpt.com → \"ChatGPT\"\n     - acme.com → \"Acme\"\n   - Remove \"www.\", capitalize properly.\n   - If explicit company name exists in description/summary and differs from domain-derived, prefer explicit only if it's clearly the vendor (e.g., \"OpenAI\" for chatgpt.com).\n   - Do NOT use issue summary as companyName unless no URL found.\n\n3. productName:\n   - Prefer explicit product mention near URL or in summary/description.\n   - If summary = \"Clay\" and URL = \"https://www.clay.com/\", then productName = \"Clay\" (same as company).\n   - If summary = \"ChatGPT Atlas\" and URL = \"https://chatgpt.com/atlas/\", then productName = \"ChatGPT Atlas\".\n   - If path in URL suggests product (e.g., /atlas, /redis), use it only if no better name.\n   - If no distinction, productName can equal companyName.\n\n4. Fallbacks:\n   - If no URL → try headers.host (e.g., your-instance.app.n8n.cloud → ignore, not vendor).\n   - If still no URL → companyUrl = null.\n   - If no clear name → companyName = null.\n\n5. Output ONLY valid JSON — no text, no explanations:\n{\n  \"companyName\": string | null,\n  \"companyUrl\": string | null,\n  \"productName\": string | null,\n  \"source\": {\n    \"companyName\": \"brief description or JSON path\",\n    \"companyUrl\": \"brief description or JSON path\",\n    \"productName\": \"brief description or JSON path\"\n  }\n}\n\nExamples:\n- URL: \"https://www.clay.com/\", summary: \"Clay\" → \n  companyName: \"Clay\", companyUrl: \"https://www.clay.com\", productName: \"Clay\", source: {companyUrl: \"customfield_12270\", ...}\n\n- URL: \"https://chatgpt.com/atlas/\", summary: \"ChatGPT Atlas\" → \n  companyName: \"ChatGPT\", companyUrl: \"https://chatgpt.com\", productName: \"ChatGPT Atlas\"\n\nNow analyze the provided JSON payload and return the JSON object.",
+            "options": {
+              "systemMessage": "You are the Orchestrator agent for an evidence-driven security research pipeline. \nYour role: Accept input payload {requestId, companyName, url, depth, max_sources, timeout_seconds, hints (optional), cache_key (optional), productName (optional)}. \n\nNormalize inputs:\n  • Add https:// to url if missing.\n  • Generate cache_key = sha256(companyName + url + (productName or \"\")) if not provided.\n  • Compute effectiveQuery = productName ? \"{{companyName}} {{productName}}\" : \"{{companyName}}\".\n\nCheck cache for fresh results (TTL=7 days; if cached and valid, return it immediately).\n\nDispatch 7 Worker agents in parallel (compliance, data-handling, privacy, security-controls, availability, pricing, company-intel), each with:\n  • Full payload\n  • effectiveQuery\n  • Section-specific instructions\n\nAggregate responses while preserving all evidence:\n  • Use Chain-of-Thought to detect contradictions (company vs. product vs. third-party).\n  • Compute confidence per rules.\n  • Derive data_categories and data_sensitivity (product-aware mapping).\n  • Flag missing keys in missing_info.\n\nEnforce timeouts by monitoring duration_ms; retry once on transient errors.\nPersist evidence snapshots locally or via cache.\nPrioritize official sources (domain matches url) — if productName set, prioritize product-specific pages (e.g., plugin docs, GitHub, API portal).\n\nUse deterministic behavior (temperature=0.0).\nOutput ONLY the final JSON matching the schema — no free text, explanations, or extra keys.\nIf aggregation fails, include error in status field."
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "7013b14a-3d9a-4c88-aeae-940fb366aaff",
+          "name": "Process values",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            768,
+            2304
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "b8a5cbb8-a870-4b8a-adf7-b3e8409db3db",
+                  "name": "output",
+                  "type": "object",
+                  "value": "={{ $json.output }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "ef53a249-680b-4298-8072-4aabd9fac653",
+          "name": "Grok 4 Fast (extractor)",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+          "position": [
+            416,
+            2496
+          ],
+          "parameters": {
+            "model": "x-ai/grok-4-fast",
+            "options": {}
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "4a473584-e9cb-4c37-9cc1-b6bb520747f3",
+          "name": "Discover seed URLs",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            1328,
+            2304
+          ],
+          "parameters": {
+            "text": "=Analyze this vendor:\n- Company Name: {{ $json.output.companyName }}\n- Input URL: {{ $json.output.companyUrl_norm }}\n- Product Name: {{ $json.output.productName }}\n\nINSTRUCTIONS:\n1. Call `perplexity_sub_agent` tool with query: \"[Company Name] official website trust center security compliance\".\n2. Call `perplexity_sub_agent` tool with query: \"site:[Input Domain] OR site:[Company Name] privacy policy terms dpa\".\n3. ANALYZE IDENTITY:\n   - Does the search result redirect to a different domain? (e.g., input `manus.im` -> result `manus.ai`)?\n   - If yes, treat the redirect target as the `primary_domain`.\n4. EXTRACT URLS:\n   - Map found URLs to the output schema.\n   - For 'trust_portal', look for subdomains like `trust.`, `security.`, or paths like `/security`, `/compliance`.",
+            "options": {
+              "systemMessage": "=ROLE: Seed Discovery & Identity Verification Agent\n\nGOAL:\nYou are the first step in a security due-diligence pipeline. Your job is to:\n1. Identify the \"Official Truth\" domains for the company.\n2. Handle Domain Aliases (e.g., if input is `manus.im` but real site is `manus.ai`, accept the primary).\n3. Return a structured map of URLs for downstream workers.\n\nTOOL USAGE (MANDATORY):\n- You are an OFFLINE model. You MUST use `perplexity_sub_agent` to verify links.\n- Do NOT guess URLs. Only return URLs found via the tool.\n\nOUTPUT RULES (CRITICAL):\n1. **RAW JSON ONLY:** Do NOT use Markdown code blocks (no ```json).\n2. **NO CHATTER:** Do NOT add an \"Analysis Summary\", \"Note\", or any text before/after the JSON.\n3. Start output with `{` and end with `}`.\n\nOUTPUT SCHEMA:\n{\n  \"status\": \"ok\",\n  \"identity\": {\n    \"input_domain\": \"...\",\n    \"primary_domain\": \"...\",\n    \"is_alias\": boolean\n  },\n  \"seed_urls\": {\n    \"trust_portal\": \"url or null\",\n    \"security_page\": \"url or null\",\n    \"privacy_policy\": \"url or null\",\n    \"terms\": \"url or null\",\n    \"subprocessors\": \"url or null\",\n    \"status_page\": \"url or null\"\n  }\n}",
+              "returnIntermediateSteps": true
+            },
+            "promptType": "define",
+            "hasOutputParser": true
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "f402317a-7041-4a44-810e-75fb464cc737",
+          "name": "Compliance Agent",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            2400,
+            1264
+          ],
+          "parameters": {
+            "text": "=TARGET: {{ $('Add required fields').item.json.output.companyName }}\nPRIMARY DOMAIN: {{ $json.output.identity.primary_domain }}\nSEED URLS: {{ JSON.stringify($json.output.seed_urls) }}\n\nTASK:\nUsing the seed URLs (specifically 'trust_portal' and 'security_page') and the `perplexity_sub_agent`:\n1. Find evidence of SOC 2 (Type I or II), ISO 27001, PCI DSS, FedRAMP or any other.\n2. Check the dates. Are the certs current?\n3. If no direct PDF is found, look for a \"Request Access\" page (common for SOC2).\n\nTARGET: {{ $('Add required fields').item.json.output.companyName }}\nPRIMARY DOMAIN: {{ $json.output.identity.primary_domain }}\nSEED URLS: {{ JSON.stringify($json.output.seed_urls) }}\n\nTASK:\n1. **TRUST CENTER DEEP DIVE (Priority 1):**\n   - If a 'trust_portal' URL is provided (e.g., trust.manus.im), you MUST analyze it specifically.\n   - Trust Centers often host \"Subprocessors\", \"Security Controls\", and \"Report Request\" buttons.\n   - Search specifically for: `site:{{ $json.output.seed_urls.trust_portal }} \"SOC 2\" OR \"ISO 27001\" OR \"controls\" OR \"subprocessors\"`\n   - If the main trust page seems empty, look for sub-pages like `/compliance`, `/security`, `/legal`.\n\n2. **CERTIFICATION VERIFICATION:**\n   - Find evidence of SOC 2 (Type I or II), ISO 27001, PCI DSS, or FedRAMP.\n   - **Crucial:** Distinguish between \"We are SOC 2 Compliant\" (marketing claim) vs \"Download SOC 2 Report\" (evidence).\n   - Check dates: Evidence older than 18 months is \"Outdated\".\n\n3. **GAPS:**\n   - If you found the Trust Center but cannot see the *content* of the reports (e.g., locked behind login), Report \"Status: Gated/Requestable\" rather than \"Missing\".",
+            "options": {
+              "maxIterations": 20,
+              "systemMessage": "ROLE: Compliance Research Specialist\nGOAL: Verify formal security attestations (SOC 2, ISO, PCI, FedRAMP).\n\n## TOOL USAGE (MANDATORY)\n- You are an OFFLINE model. You MUST use `perplexity_sub_agent`.\n- You MUST perform a specific \"Deep Dive\" search if a Trust Portal URL is provided.\n\n## OUTPUT RULES\n1. **RAW JSON ONLY:** No Markdown, no chatter.\n2. **STATUS DEFINITIONS:**\n   - \"Present\": Found direct evidence (PDF, badge, text).\n   - \"Gated\": Found a \"Request Report\" or \"NDA\" page.\n   - \"Missing\": No evidence found after searching.\n3. **EVIDENCE:** Include exact URLs and concise snippets.\n\nOUTPUT SCHEMA:\n{\n  \"agent\": \"Compliance Agent\",\n  \"key_findings\": [\n    {\n      \"topic\": \"SOC 2|ISO 27001|PCI DSS|FedRAMP|HIPAA\",\n      \"status\": \"Present|Missing|Gated|Outdated\",\n      \"summary\": \"e.g. 'SOC 2 Type II report covering 2024-2025 available via Trust Portal.'\",\n      \"url\": \"...\"\n    }\n  ],\n  \"evidence\": [ { \"url\": \"...\", \"snippet\": \"...\", \"source_type\": \"official|third_party\" } ]\n}"
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "532f2d05-49c1-41a8-90b2-d57d4febe0d2",
+          "name": "Data Handling Agent",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            2400,
+            1424
+          ],
+          "parameters": {
+            "text": "=TARGET: {{ $('Add required fields').item.json.output.companyName }}\nPRIMARY DOMAIN: {{ $json.output.identity.primary_domain }}\nSEED URLS: {{ JSON.stringify($json.output.seed_urls) }}\n\nTASK:\n1. **SUBPROCESSORS:**\n   - Search: `site:{{ $json.output.identity.primary_domain }} \"subprocessors\" OR \"sub-processors\" OR \"third party vendors\"`\n   - Summary: Do they have a public list?\n\n2. **DPA & RESIDENCY:**\n   - Search: `site:{{ $json.output.identity.primary_domain }} \"Data Processing Agreement\" OR \"DPA\" OR \"EU hosting\" OR \"data residency\"`\n   - Summary: Can customers choose EU vs US storage? Is there a standard DPA?\n\n3. **RETENTION:**\n   - Search: `site:{{ $json.output.identity.primary_domain }} \"data retention\" OR \"deletion policy\" OR \"termination\"`\n   - Summary: What happens to data after the contract ends? (e.g., deleted in 30 days).",
+            "options": {
+              "maxIterations": 20,
+              "systemMessage": "ROLE: Data Governance Specialist\nGOAL: Map data processing, residency, subprocessors, and retention policies.\n\n## TOOL USAGE (MANDATORY)\n- You are an OFFLINE model. Use `perplexity_sub_agent`.\n\n## OUTPUT RULES\n1. **RAW JSON ONLY:** No Markdown.\n2. **PRIORITY:** Focus on finding the actual DPA PDF or page.\n\nOUTPUT SCHEMA:\n{\n  \"agent\": \"Data Handling Agent\",\n  \"key_findings\": [\n    {\n      \"topic\": \"DPA|Subprocessors|Data Residency|Retention\",\n      \"status\": \"Present|Missing|Unclear\",\n      \"summary\": \"...\",\n      \"url\": \"...\"\n    }\n  ],\n  \"evidence\": [ { \"url\": \"...\", \"snippet\": \"...\", \"source_type\": \"official|third_party\" } ]\n}"
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "dffdda53-e4ef-47e3-b7ec-0558340ea580",
+          "name": "Privacy & Legal Agent",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            2400,
+            1616
+          ],
+          "parameters": {
+            "text": "=TARGET: {{ $('Add required fields').item.json.output.companyName }}\nPRIMARY DOMAIN: {{ $json.output.identity.primary_domain }}\nSEED URLS: {{ JSON.stringify($json.output.seed_urls) }}\n\nTASK:\n1. **FRAMEWORKS:**\n   - Search: `site:{{ $json.output.identity.primary_domain }} \"GDPR\" OR \"CCPA\" OR \"CPRA\"`\n   - Search: `site:{{ $json.output.identity.primary_domain }}\"Data Privacy Framework\" OR \"Standard Contractual Clauses\" OR \"SCC\"`\n\n2. **USER RIGHTS:**\n   - Check the Privacy Policy URL provided.\n   - Summary: Do they list specific rights (Right to be Forgotten, Access)? Is there a `privacy@` email?",
+            "options": {
+              "maxIterations": 20,
+              "systemMessage": "ROLE: Privacy Legal Analyst\nGOAL: Assess alignment with GDPR, CCPA, and International Data Transfers.\n\n## TOOL USAGE (MANDATORY)\n- You are an OFFLINE model. Use `perplexity_sub_agent`.\n\n## OUTPUT RULES\n1. **RAW JSON ONLY:** No Markdown.\n2. **SPECIFICITY:** Do not just say \"They comply with laws\". Quote the specific frameworks (GDPR, CCPA, DPF).\n\nOUTPUT SCHEMA:\n{\n  \"agent\": \"Privacy Agent\",\n  \"key_findings\": [\n    {\n      \"topic\": \"GDPR|CCPA|Transfers|Rights\",\n      \"status\": \"Explicit|Implied|Missing\",\n      \"summary\": \"...\",\n      \"url\": \"...\"\n    }\n  ],\n  \"evidence\": [ { \"url\": \"...\", \"snippet\": \"...\", \"source_type\": \"official|third_party\" } ]\n}"
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "a234a10b-4597-4f5d-9ea5-4e5e4108241f",
+          "name": "Security Controls Agent",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            2400,
+            1808
+          ],
+          "parameters": {
+            "text": "=TARGET: {{ $('Add required fields').item.json.output.companyName }}\nPRIMARY DOMAIN: {{ $json.output.identity.primary_domain }}\nSEED URLS: {{ JSON.stringify($json.output.seed_urls) }}\n\nTASK:\n1. **AUTHENTICATION:**\n   - Search: `site:{{ $json.output.identity.primary_domain }} \"SSO\" OR \"SAML\" OR \"SCIM\" OR \"Single Sign On\"`\n   - Search: `site:{{ $json.output.identity.primary_domain }} \"MFA\" OR \"2FA\" OR \"Multi-factor\"`\n\n2. **RED TEAM / INCIDENT HISTORY (CRITICAL):**\n   - Search: `\"{{ $('Process values').item.json.output.companyName }}\" data breach OR security incident OR ransomware OR hacked`\n   - Search: `\"{{ $('Process values').item.json.output.companyName }}\" CVE vulnerabilities exploit`\n   - Search: `site:reddit.com \"{{ $('Process values').item.json.output.companyName }}\" security concern`\n\n3. **VULNERABILITY DISCLOSURE:**\n   - Search: `site:{{ $json.output.identity.primary_domain }} \"security.txt\" OR \"bug bounty\" OR \"responsible disclosure\"`\n   - Search: `\"{{ $('Process values').item.json.output.companyName }}\" bug bounty program`\n",
+            "options": {
+              "maxIterations": 20,
+              "systemMessage": "ROLE: Technical Security Analyst\nGOAL: Validate existence of SSO, MFA, RBAC, and Vulnerability Disclosure.\n\n## TOOL USAGE (MANDATORY)\n- You are an OFFLINE model. Use `perplexity_sub_agent`.\n\n## OUTPUT RULES\n1. **RAW JSON ONLY:** No Markdown.\n2. **FOCUS:** Differentiate between \"Internal security\" (what they do) and \"Customer features\" (SSO/MFA for users). Focus on Customer Features.\n\nOUTPUT SCHEMA:\n{\n  \"agent\": \"Security Controls Agent\",\n  \"key_findings\": [\n    {\n      \"topic\": \"SSO|MFA|RBAC|VDP\",\n      \"status\": \"Supported|Not Found|Add-on\",\n      \"summary\": \"e.g. 'SAML SSO supported via Okta/OneLogin'\",\n      \"url\": \"...\"\n    }\n  ],\n  \"evidence\": [ { \"url\": \"...\", \"snippet\": \"...\", \"source_type\": \"official|third_party\" } ]\n}"
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "9fb288fb-85e1-4052-9789-94809cf39b31",
+          "name": "Availability Agent",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            2400,
+            2016
+          ],
+          "parameters": {
+            "text": "=TARGET: {{ $('Add required fields').item.json.output.companyName }}\nPRIMARY DOMAIN: {{ $json.output.identity.primary_domain }}\nSEED URLS: {{ JSON.stringify($json.output.seed_urls) }}\n\nTASK:\n1. **STATUS PAGE:**\n   - If a status URL exists, check it. Does it show historical uptime?\n   - If not, search: `site:{{ $json.output.identity.primary_domain }} \"status\" OR \"uptime\"`\n   - Search broad: `\"{{ $('Process values').item.json.output.companyName }}\" status page`\n\n2. **SLA & DR:**\n   - Search: `site:{{ $json.output.identity.primary_domain }} \"SLA\" OR \"Service Level Agreement\" OR \"uptime guarantee\"`\n   - Search: `site:{{ $json.output.identity.primary_domain }}\"disaster recovery\" OR \"RTO\" OR \"RPO\"`",
+            "options": {
+              "maxIterations": 20,
+              "systemMessage": "ROLE: Site Reliability Analyst\nGOAL: Confirm uptime transparency, Status Pages, and SLA terms.\n\n## TOOL USAGE (MANDATORY)\n- You are an OFFLINE model. Use `perplexity_sub_agent`.\n\n## OUTPUT RULES\n1. **RAW JSON ONLY:** No Markdown.\n\nOUTPUT SCHEMA:\n{\n  \"agent\": \"Availability Agent\",\n  \"key_findings\": [\n    {\n      \"topic\": \"Status Page|SLA|Disaster Recovery\",\n      \"status\": \"Public|Private|Missing\",\n      \"summary\": \"...\",\n      \"url\": \"...\"\n    }\n  ],\n  \"evidence\": [ { \"url\": \"...\", \"snippet\": \"...\", \"source_type\": \"official|third_party\" } ]\n}"
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "0044fad7-5069-46b0-afe5-68351726b27c",
+          "name": "Pricing Agent",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            2400,
+            2224
+          ],
+          "parameters": {
+            "text": "=TARGET: {{ $('Add required fields').item.json.output.companyName }}\nPRIMARY DOMAIN: {{ $json.output.identity.primary_domain }}\n\nTASK:\n1. **TIERS & SSO TAX:**\n   - Search: `site:{{ $json.output.identity.primary_domain }}pricing`\n   - Search: `site:{{ $json.output.identity.primary_domain }}\"enterprise plan\" features`\n   - **Specific Goal:** Does the \"Pro\" or \"Team\" plan include SSO/SAML? Or is it Enterprise only?\n\n2. **COMMERCIAL TERMS:**\n   - Search: `site:{{ $json.output.identity.primary_domain }}\"refund policy\" OR \"cancellation\" OR \"money back\"`",
+            "options": {
+              "maxIterations": 20,
+              "systemMessage": "ROLE: Procurement Analyst & JSON API\nGOAL: Extract commercial terms, pricing tiers, and \"SSO Tax\" risks.\n\n## TOOL USAGE (MANDATORY)\n- You are an OFFLINE model. Use `perplexity_sub_agent`.\n\n## OUTPUT RULES (CRITICAL)\n1. **YOU ARE AN API.** Do not speak plain English. Do not write summaries.\n2. **RAW JSON ONLY.** No Markdown fences. Start with `{` and end with `}`.\n3. If SSO costs extra (e.g., \"Enterprise only\" or \"Flat fee\"), mark \"SSO Tax\" as \"Verified\".\n\nOUTPUT SCHEMA:\n{\n  \"agent\": \"Pricing Agent\",\n  \"key_findings\": [\n    {\n      \"topic\": \"Pricing Structure|SSO Tax|Refunds\",\n      \"status\": \"Verified|Unclear\",\n      \"summary\": \"Brief factual sentence.\",\n      \"url\": \"...\"\n    }\n  ],\n  \"evidence\": [ { \"url\": \"...\", \"snippet\": \"...\", \"source_type\": \"official|third_party\" } ]\n}"
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "e9405ad0-df40-4fd5-876e-0f7e3d0227fb",
+          "name": "Company Intel Agent",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            2400,
+            2448
+          ],
+          "parameters": {
+            "text": "=TARGET: {{ $('Add required fields').item.json.output.companyName }}\nPRIMARY DOMAIN: {{ $json.output.identity.primary_domain }}\n\nTASK:\n1. **CORPORATE IDENTITY:**\n   - Search: `\"{{ $('Process values').item.json.output.companyName }}\" legal entity name headquarters`\n   - Search: `\"{{ $('Process values').item.json.output.companyName }}\" funding crunchbase linkedin`\n\n2. **VERIFY:**\n   - Official Legal Name (e.g., \"Manus AI, Inc.\").\n   - Headquarters Country/City.\n   - Funding stage (Seed, Series A, Public, Acquired?).\n   - Year Founded.",
+            "options": {
+              "maxIterations": 20,
+              "systemMessage": "ROLE: Corporate Intelligence Analyst\nGOAL: Verify Legal Entity, HQ, Funding, and Acquisition status.\n\n## TOOL USAGE (MANDATORY)\n- You are an OFFLINE model. Use `perplexity_sub_agent`.\n\n## OUTPUT RULES\n1. **RAW JSON ONLY:** No Markdown.\n\nOUTPUT SCHEMA:\n{\n  \"agent\": \"Company Intel Agent\",\n  \"key_findings\": [\n    {\n      \"topic\": \"Legal Entity|HQ|Funding|Founded\",\n      \"status\": \"Verified|Unknown\",\n      \"summary\": \"...\",\n      \"url\": \"...\"\n    }\n  ],\n  \"evidence\": [ { \"url\": \"...\", \"snippet\": \"...\", \"source_type\": \"official|third_party\" } ]\n}"
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "8fd84ede-806d-4f32-83c3-d7ac0a6e721e",
+          "name": "Aggregate",
+          "type": "n8n-nodes-base.aggregate",
+          "position": [
+            3776,
+            1936
+          ],
+          "parameters": {
+            "options": {
+              "mergeLists": true
+            },
+            "fieldsToAggregate": {
+              "fieldToAggregate": [
+                {
+                  "fieldToAggregate": "output"
+                }
+              ]
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "2f5034a6-03df-4852-b0b2-4c85435dff23",
+          "name": "Lead Security Analyst",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            4064,
+            1936
+          ],
+          "parameters": {
+            "text": "=Here are the structured findings from the research team:\n{{ JSON.stringify($('Aggregate').item.json.output) }}\n\nJira Key: {{ $('Jira task webhook').item.json.body.issue.key }}\nJira Browser URL: https://YOUR-JIRA-DOMAIN.atlassian.net/browse/{{ $('Jira task webhook').item.json.body.issue.key }}\n\nTASK:\n1. Deduplicate the \"evidence\" across all agents.\n2. Generate the Jira Wiki Markup body.\n3. Generate the Slack Block Kit JSON (including the \"Actions\" button).",
+            "options": {
+              "systemMessage": "ROLE: Lead Security Analyst (Aggregator)\nGOAL: Synthesize 7 research streams into a unified Vendor Security Report for Jira and Slack.\n\nINPUT DATA:\n- Research results from 7 agents.\n- Jira Key and URL.\n\nINSTRUCTIONS:\n1. **Consolidate Evidence:**\n   - Merge duplicate URLs.\n   - Assign global IDs (E1, E2...).\n   - Reference IDs in findings.\n\n2. **Assess Risk:**\n   - HIGH: Missing SOC2/ISO, No DPA, No SSO, HIPAA violations.\n   - MED: No Status Page, Missing Subprocessor list.\n\n3. **Generate Output JSON:**\n   - `jira_body`: Jira Wiki Markup (h1, h2, tables).\n   - `slack_blocks`: Native JSON array.\n     - Block 1: Header (\"Vendor Security Report: <Vendor>\")\n     - Block 2: Section (Context/Overview)\n     - Block 3: Section (Highlights - Top 3 Pros)\n     - Block 4: Section (Risks - Top 3 Gaps)\n     - Block 5: Actions (Button: \"View Report in Jira\", URL: <Jira Browser URL>)\n\nOUTPUT JSON SCHEMA:\n{\n  \"jira_body\": \"string (wiki markup)\",\n  \"slack_blocks\": [\n    { \"type\": \"header\", \"...\":\"...\" },\n    { \"type\": \"section\", \"...\":\"...\" },\n    { \"type\": \"actions\", \"elements\": [ { \"type\": \"button\", \"text\": {\"...\":\"...\"}, \"url\": \"...\" } ] }\n  ],\n  \"slack_text\": \"Short summary for notification\"\n}",
+              "returnIntermediateSteps": false
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "11daaab5-350f-4a41-bcd7-fafc58faf50e",
+          "name": "Post to Slack channel",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            4832,
+            1936
+          ],
+          "webhookId": "cc57b4a3-9087-429a-bd05-752dabf33cbd",
+          "parameters": {
+            "select": "channel",
+            "blocksUi": "={\n  \"attachments\": [\n    {\n      \"color\": \"{{ $json.colorBar || '#D70000' }}\",\n      \"blocks\": {{ JSON.stringify($('Unwrap final report').item.json.output.slack_blocks) }}\n    }\n  ]\n}",
+            "channelId": {
+              "__rl": true,
+              "mode": "id",
+              "value": ""
+            },
+            "messageType": "block",
+            "otherOptions": {},
+            "authentication": "oAuth2"
+          },
+          "credentials": {
+            "slackOAuth2Api": {
+              "id": "VrQBfbwOfP5KPzDs",
+              "name": "Slack account 4 - dmiroshnichenko"
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "1626ba6b-a91a-4341-9680-46cae20f2f4e",
+          "name": "perplexity_sub_agent",
+          "type": "@n8n/n8n-nodes-langchain.agentTool",
+          "position": [
+            2688,
+            2784
+          ],
+          "parameters": {
+            "text": "=Research the following query passed by the lead agent:\n\"{{ $fromAI('query') }}\"\n\nCONSTRAINTS:\n1. Max Results: {{ $fromAI('max_sources') || 6 }}\n2. Format: Return STRICT JSON only.\n3. Content: Focus on extracting facts, dates, and snippets.",
+            "options": {
+              "systemMessage": "=ROLE: Web Search & Extraction Sub-Agent\n\nGOAL:\nYou are an interface to the real-time web. You receive a specific `query` from a Lead Researcher and must return factual results in JSON format.\n\nINPUT HANDLING:\n- You will receive a query variable. You MUST run a live web search for it.\n- If the query contains `site:`, strictly filter results to that domain.\n\nOUTPUT RULES (STRICT JSON):\n1. Do NOT chat. Do NOT use Markdown (```json). Just return the raw JSON object.\n2. Structure:\n{\n  \"results\": [\n    {\n      \"title\": \"Page Title\",\n      \"url\": \"Full URL\",\n      \"date\": \"YYYY-MM-DD\" or null,\n      \"snippet\": \"The specific text relevant to the query.\",\n      \"source_type\": \"first_party (if matches site: operator) | third_party (reviews/news)\"\n    }\n  ]\n}\n\n3. SNIPPET QUALITY:\n   - If the query asks for \"SOC 2\", the snippet MUST contain the text regarding SOC 2.\n   - Do not return generic homepage descriptions.\n\nERROR HANDLING:\n- If no results found, return { \"results\": [] }."
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "d165c192-ce2a-4316-8550-55b1991d07eb",
+          "name": "Parse discovery JSON",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1680,
+            2304
+          ],
+          "parameters": {
+            "jsCode": "// Clean up markdown/text from the AI output\nconst raw = items[0].json.output;\nlet clean = raw;\n\n// Remove markdown fences\nif (typeof raw === 'string') {\n  clean = raw.replace(/```json/g, '').replace(/```/g, '');\n  \n  // Extract just the JSON object (find first { and last })\n  const firstOpen = clean.indexOf('{');\n  const lastClose = clean.lastIndexOf('}');\n  if (firstOpen !== -1 && lastClose !== -1) {\n    clean = clean.substring(firstOpen, lastClose + 1);\n  }\n  \n  try {\n    return [{ json: { output: JSON.parse(clean) } }];\n  } catch (e) {\n    // If parse fails, return raw to debug\n    return [{ json: { output: raw, error: \"Parse Failed\" } }];\n  }\n}\n\nreturn items;"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "dc9deb61-41f5-4eca-87aa-3b6269f6f245",
+          "name": "Section 1 — Ingestion Pipeline",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            0,
+            1888
+          ],
+          "parameters": {
+            "width": 1152,
+            "height": 784,
+            "content": "## 1. Ingestion Pipeline\n\nReceive the Jira webhook and normalize the vendor target (company, URL, product) into a clean payload for downstream agents."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "94b1df9e-d5df-4848-9b82-bbe91269b1c2",
+          "name": "Section 2 — Discovery Engine",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1248,
+            1872
+          ],
+          "parameters": {
+            "width": 816,
+            "height": 800,
+            "content": "## 2. Discovery Engine\n\nResolve the vendor's canonical URLs (Trust Center, Privacy Policy, Subprocessors, Status page) before deep research. Prevents downstream agents from hallucinating URLs."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9a94618b-4dd0-4f88-8159-3ec0f4b4e16b",
+          "name": "Claude Sonnet 4.5 (discovery)",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+          "position": [
+            1328,
+            2496
+          ],
+          "parameters": {
+            "model": "anthropic/claude-sonnet-4.5",
+            "options": {}
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "6d58ea4a-1dff-413a-a650-a4a8de9dfa68",
+          "name": "Unwrap discovery payload",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            1888,
+            2304
+          ],
+          "parameters": {
+            "options": {
+              "ignoreConversionErrors": true
+            },
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "924c17f8-d026-480b-9553-72f927160e94",
+                  "name": "output",
+                  "type": "object",
+                  "value": "={{ $json.output }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "afc9b175-bcd7-4eda-9f0e-1e50da88d44d",
+          "name": "Section 3 — Parallel Research Swarm",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2096,
+            1024
+          ],
+          "parameters": {
+            "width": 928,
+            "height": 2048,
+            "content": "## 3. Parallel Research Swarm\n\nSeven specialist agents run concurrently — Compliance, Data Handling, Privacy & Legal, Security Controls, Availability, Pricing, Company Intel — each with a focused JSON output schema. All share one `perplexity_sub_agent` tool for live web search and the same Claude Sonnet 4.5 brain."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9d85fa50-f97a-424e-bae6-ef430b7d7eaa",
+          "name": "Claude Sonnet 4.5 (workers)",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+          "position": [
+            2144,
+            2560
+          ],
+          "parameters": {
+            "model": "anthropic/claude-sonnet-4.5",
+            "options": {}
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "467bd8f0-b129-4939-ad86-2056d8729714",
+          "name": "Section 4 — Synthesis Pipeline",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3088,
+            1504
+          ],
+          "parameters": {
+            "width": 864,
+            "height": 720,
+            "content": "## 4. Synthesis Pipeline\n\nCollapse the 7 asynchronous JSON streams into one clean evidence set: merge → sanitize (strip markdown fences, handle bad JSON) → unwrap → aggregate all `key_findings[]` and `evidence[]` arrays for the Lead Analyst."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "88f838db-401d-488a-b713-bd1b0d9a27c0",
+          "name": "Comment on Jira ticket",
+          "type": "n8n-nodes-base.jira",
+          "position": [
+            4624,
+            1936
+          ],
+          "parameters": {
+            "comment": "={{ $json.output.jira_body }}",
+            "options": {
+              "wikiMarkup": true
+            },
+            "issueKey": "={{ $('Jira task webhook').item.json.body.issue.key }}",
+            "resource": "issueComment"
+          },
+          "credentials": {
+            "jiraSoftwareCloudApi": {
+              "id": "X8ObBNn14Zd8DsUd",
+              "name": "Jira uchakin"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "eaefa639-909d-46bf-866a-61d86cfd0506",
+          "name": "Unwrap final report",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            4416,
+            1936
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "becc0407-52ad-47eb-bbc0-14501ccd1919",
+                  "name": "output",
+                  "type": "object",
+                  "value": "={{ $json.output }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "2742011c-bffb-4799-aeff-57cd59120f94",
+          "name": "Section 5 — Reporting Layer",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            4000,
+            1504
+          ],
+          "parameters": {
+            "width": 1072,
+            "height": 720,
+            "content": "## 5. Reporting Layer\n\nLead Analyst deduplicates evidence, scores risk (High / Med / Low), and produces both Jira Wiki Markup and Slack Block Kit outputs — posted to the original ticket and to your security channel."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "d57ec509-f95c-42d4-bd2f-731ec6fbec19",
+          "name": "Grok 4 Fast (synthesizer)",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+          "position": [
+            4064,
+            2080
+          ],
+          "parameters": {
+            "model": "x-ai/grok-4-fast",
+            "options": {}
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "069c4ae8-253c-4878-a076-59cb64142f1b",
+          "name": "Perplexity Sonar Pro (search)",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+          "onError": "continueRegularOutput",
+          "maxTries": 5,
+          "position": [
+            2544,
+            2912
+          ],
+          "parameters": {
+            "model": "perplexity/sonar-pro-search",
+            "options": {}
+          },
+          "retryOnFail": true,
+          "typeVersion": 1,
+          "waitBetweenTries": 5000
+        },
+        {
+          "id": "7bbdb7da-9548-4c3e-95fb-8c0967d574b1",
+          "name": "Merge agent outputs",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            3184,
+            1856
+          ],
+          "parameters": {
+            "numberInputs": 7
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "ca8a6529-ff37-4e3b-bb3e-eb0a3a76bc2a",
+          "name": "Sanitize agent JSON",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            3392,
+            1936
+          ],
+          "parameters": {
+            "jsCode": "// Loop over all 7 agent results\nconst results = items.map(item => {\n  let raw = item.json.output;\n  \n  if (typeof raw === 'string') {\n    let clean = raw.replace(/```json/g, '').replace(/```/g, '').trim();\n    const firstCurly = clean.indexOf('{');\n    const lastCurly = clean.lastIndexOf('}');\n    if (firstCurly !== -1 && lastCurly !== -1) {\n      clean = clean.substring(firstCurly, lastCurly + 1);\n    }\n    try {\n      return { json: { output: JSON.parse(clean) } };\n    } catch (e) {\n      return { json: { output: { agent: \"Error Parsing Agent\", error: \"Agent returned invalid JSON\", raw_content: raw } } };\n    }\n  }\n  return item;\n});\n\nreturn results;"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "9d8e1237-a287-426d-ba02-a3d2660e012f",
+          "name": "Unwrap synthesis payload",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            3568,
+            1936
+          ],
+          "parameters": {
+            "options": {
+              "ignoreConversionErrors": true
+            },
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "924c17f8-d026-480b-9553-72f927160e94",
+                  "name": "output",
+                  "type": "object",
+                  "value": "={{ $json.output }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "5e2cf78c-58a9-4266-bc29-10da8c5df12a",
+          "name": "Jira task webhook",
+          "type": "n8n-nodes-base.webhook",
+          "position": [
+            48,
+            2304
+          ],
+          "webhookId": "555c979c-436a-43f8-9a81-95d1236ba8d5",
+          "parameters": {
+            "path": "ai-vendor-security-analyzer",
+            "options": {},
+            "httpMethod": "POST"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "2d1e54a5-710c-4abf-bffb-034ac838cb56",
+          "name": "Workflow Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            0,
+            0
+          ],
+          "parameters": {
+            "color": 3,
+            "width": 1600,
+            "height": 880,
+            "content": "## 🔐 AI-Powered Vendor Security Risk Analyzer\n\n### Who's it for\nSecurity teams, procurement, and compliance leads running third-party SaaS vendor risk assessments. If you currently spend an hour per vendor digging through Trust Centers, privacy pages, and sub-processor lists, this workflow condenses that work into ~90 seconds of automated, evidence-linked research.\n\n### What it does\nWhen a security-review ticket is opened in Jira, seven specialist research agents run in parallel across the vendor's official sources. A Lead Analyst scores the risk (High / Med / Low) and posts a consolidated report back to the Jira ticket and to a Slack channel — with direct links to every piece of evidence.\n\n### How it works\n1. **Ingest** — Jira webhook fires on ticket creation; an extractor agent parses the payload to pull the vendor's name, URL, and product.\n2. **Discover** — A Seed URL Discovery Agent resolves the canonical Trust Center, Privacy Policy, Subprocessors page and Status page. Handles domain aliases (e.g. `manus.im` → `manus.ai`).\n3. **Research (fan-out)** — Seven specialist agents run concurrently: Compliance, Data Handling, Privacy & Legal, Security Controls, Availability, Pricing, Company Intel. All share one Perplexity sub-agent for live web search.\n4. **Synthesize (fan-in)** — Merge → sanitize JSON → deduplicate evidence → aggregate into a single payload for the Lead Analyst.\n5. **Report** — Lead Analyst scores risk, formats Jira Wiki Markup + Slack Block Kit, and posts to both channels.\n\n### How to use\n1. Add three credentials: **OpenRouter** (API key), **Jira** (API token with `issueComment` permission), **Slack** (OAuth2 with `chat:write`).\n2. Wire your Jira automation rule to POST to this workflow's webhook URL.\n3. Replace every ⚠️ placeholder called out in the green setup notes next to each relevant node (Slack `channelId`, Jira domain, vendor-URL custom field ID).\n4. Activate the workflow and open a test ticket.\n\nTypical run: ~60–120s end-to-end, ~$0.03–$0.08 per vendor (OpenRouter usage)."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "412a9ae2-b43b-4d59-9702-9dfcb3a5cce5",
+          "name": "⚠️ Replace customfield_12270",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            352,
+            2112
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 340,
+            "content": "### ⚠️ Replace `customfield_12270`\nThis prompt references our Jira \"Vendor URL\" field ID. **Change it** to match the custom-field ID used in your Jira instance, otherwise the agent won't find the URL."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "bd3951e9-7aec-4061-866b-f0de40a55e4b",
+          "name": "⚠️ Replace YOUR-JIRA-DOMAIN",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            4016,
+            1728
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 324,
+            "height": 180,
+            "content": "### ⚠️ Replace `YOUR-JIRA-DOMAIN`\nThe agent's prompt builds a Jira link using `YOUR-JIRA-DOMAIN.atlassian.net`. **Replace it** with your Atlassian domain (e.g. `acme.atlassian.net`), otherwise the \"View Report\" button in Slack will 404."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "2cd083ed-bead-4851-ab12-4ff6344a5299",
+          "name": "⚠️ Set Slack channel ID",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            4768,
+            1728
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 244,
+            "height": 180,
+            "content": "### ⚠️ Set Slack `channelId`\nThe Channel ID is empty by default. **Set it** to your security channel's ID, otherwise the Slack post will fail silently."
+          },
+          "typeVersion": 1
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "binaryMode": "separate",
+        "executionOrder": "v1"
+      },
+      "versionId": "4b64fa22-952b-4de5-8a62-6e6573321b19",
+      "connections": {
+        "Aggregate": {
+          "main": [
+            [
+              {
+                "node": "Lead Security Analyst",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Pricing Agent": {
+          "main": [
+            [
+              {
+                "node": "Merge agent outputs",
+                "type": "main",
+                "index": 5
+              }
+            ]
+          ]
+        },
+        "Process values": {
+          "main": [
+            [
+              {
+                "node": "Add required fields",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Compliance Agent": {
+          "main": [
+            [
+              {
+                "node": "Merge agent outputs",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Jira task webhook": {
+          "main": [
+            [
+              {
+                "node": "Extract vendor identity",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Availability Agent": {
+          "main": [
+            [
+              {
+                "node": "Merge agent outputs",
+                "type": "main",
+                "index": 4
+              }
+            ]
+          ]
+        },
+        "Discover seed URLs": {
+          "main": [
+            [
+              {
+                "node": "Parse discovery JSON",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Add required fields": {
+          "main": [
+            [
+              {
+                "node": "Discover seed URLs",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Company Intel Agent": {
+          "main": [
+            [
+              {
+                "node": "Merge agent outputs",
+                "type": "main",
+                "index": 6
+              }
+            ]
+          ]
+        },
+        "Data Handling Agent": {
+          "main": [
+            [
+              {
+                "node": "Merge agent outputs",
+                "type": "main",
+                "index": 1
+              }
+            ]
+          ]
+        },
+        "Merge agent outputs": {
+          "main": [
+            [
+              {
+                "node": "Sanitize agent JSON",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Sanitize agent JSON": {
+          "main": [
+            [
+              {
+                "node": "Unwrap synthesis payload",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Unwrap final report": {
+          "main": [
+            [
+              {
+                "node": "Comment on Jira ticket",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Parse discovery JSON": {
+          "main": [
+            [
+              {
+                "node": "Unwrap discovery payload",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "perplexity_sub_agent": {
+          "ai_tool": [
+            [
+              {
+                "node": "Discover seed URLs",
+                "type": "ai_tool",
+                "index": 0
+              },
+              {
+                "node": "Compliance Agent",
+                "type": "ai_tool",
+                "index": 0
+              },
+              {
+                "node": "Data Handling Agent",
+                "type": "ai_tool",
+                "index": 0
+              },
+              {
+                "node": "Security Controls Agent",
+                "type": "ai_tool",
+                "index": 0
+              },
+              {
+                "node": "Availability Agent",
+                "type": "ai_tool",
+                "index": 0
+              },
+              {
+                "node": "Pricing Agent",
+                "type": "ai_tool",
+                "index": 0
+              },
+              {
+                "node": "Company Intel Agent",
+                "type": "ai_tool",
+                "index": 0
+              },
+              {
+                "node": "Privacy & Legal Agent",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Lead Security Analyst": {
+          "main": [
+            [
+              {
+                "node": "Unwrap final report",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Privacy & Legal Agent": {
+          "main": [
+            [
+              {
+                "node": "Merge agent outputs",
+                "type": "main",
+                "index": 2
+              }
+            ]
+          ]
+        },
+        "Comment on Jira ticket": {
+          "main": [
+            [
+              {
+                "node": "Post to Slack channel",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Extract vendor identity": {
+          "main": [
+            [
+              {
+                "node": "Process values",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Grok 4 Fast (extractor)": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Extract vendor identity",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Security Controls Agent": {
+          "main": [
+            [
+              {
+                "node": "Merge agent outputs",
+                "type": "main",
+                "index": 3
+              }
+            ]
+          ]
+        },
+        "Unwrap discovery payload": {
+          "main": [
+            [
+              {
+                "node": "Compliance Agent",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Data Handling Agent",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Privacy & Legal Agent",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Security Controls Agent",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Availability Agent",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Pricing Agent",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Company Intel Agent",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Unwrap synthesis payload": {
+          "main": [
+            [
+              {
+                "node": "Aggregate",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Grok 4 Fast (synthesizer)": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Lead Security Analyst",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Claude Sonnet 4.5 (workers)": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Data Handling Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              },
+              {
+                "node": "Privacy & Legal Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              },
+              {
+                "node": "Security Controls Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              },
+              {
+                "node": "Availability Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              },
+              {
+                "node": "Pricing Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              },
+              {
+                "node": "Company Intel Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              },
+              {
+                "node": "Compliance Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Claude Sonnet 4.5 (discovery)": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Discover seed URLs",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Perplexity Sonar Pro (search)": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "perplexity_sub_agent",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 37,
+      "nodeTypes": {
+        "n8n-nodes-base.set": {
+          "count": 5
+        },
+        "n8n-nodes-base.code": {
+          "count": 2
+        },
+        "n8n-nodes-base.jira": {
+          "count": 1
+        },
+        "n8n-nodes-base.merge": {
+          "count": 1
+        },
+        "n8n-nodes-base.slack": {
+          "count": 1
+        },
+        "n8n-nodes-base.webhook": {
+          "count": 1
+        },
+        "n8n-nodes-base.aggregate": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 9
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 10
+        },
+        "@n8n/n8n-nodes-langchain.agentTool": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenRouter": {
+          "count": 5
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Dmitry Uchakin",
+      "username": "dmitry-u4",
+      "bio": "Security Engineer and automation builder. I design n8n workflows that combine AI agents with security tooling — vendor risk, Jira, Slack, threat intel. Clone my templates or reach out for custom builds.",
+      "verified": false,
+      "links": [
+        "https://www.linkedin.com/in/dmitry-uchakin/"
+      ],
+      "avatar": "https://gravatar.com/avatar/158643f4240347b26dd0f2c7afad504408e8aa206d7ed3ac2ffc361863e63339?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 24,
+        "icon": "file:merge.svg",
+        "name": "n8n-nodes-base.merge",
+        "codex": {
+          "data": {
+            "alias": [
+              "Join",
+              "Concatenate",
+              "Wait"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-sync-data-between-two-systems/",
+                  "icon": "🏬",
+                  "label": "How to synchronize data between two systems (one-way vs. two-way sync"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.merge/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Merge"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTc3XzUxOCkiPgo8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTAgNDhDMCAyMS40OTAzIDIxLjQ5MDMgMCA0OCAwSDExMkMxMzguNTEgMCAxNjAgMjEuNDkwMyAxNjAgNDhWNTZIMTk2LjI1MkMyNDAuNDM1IDU2IDI3Ni4yNTIgOTEuODE3MiAyNzYuMjUyIDEzNlYxOTJDMjc2LjI1MiAyMTQuMDkxIDI5NC4xNjEgMjMyIDMxNi4yNTIgMjMySDM1MlYyMjRDMzUyIDE5Ny40OSAzNzMuNDkgMTc2IDQwMCAxNzZINDY0QzQ5MC41MSAxNzYgNTEyIDE5Ny40OSA1MTIgMjI0VjI4OEM1MTIgMzE0LjUxIDQ5MC41MSAzMzYgNDY0IDMzNkg0MDBDMzczLjQ5IDMzNiAzNTIgMzE0LjUxIDM1MiAyODhWMjgwSDMxNi4yNTJDMjk0LjE2MSAyODAgMjc2LjI1MiAyOTcuOTA5IDI3Ni4yNTIgMzIwVjM3NkMyNzYuMjUyIDQyMC4xODMgMjQwLjQzNSA0NTYgMTk2LjI1MiA0NTZIMTYwVjQ2NEMxNjAgNDkwLjUxIDEzOC41MSA1MTIgMTEyIDUxMkg0OEMyMS40OTAzIDUxMiAwIDQ5MC41MSAwIDQ2NFY0MDBDMCAzNzMuNDkgMjEuNDkwMyAzNTIgNDggMzUySDExMkMxMzguNTEgMzUyIDE2MCAzNzMuNDkgMTYwIDQwMFY0MDhIMTk2LjI1MkMyMTMuOTI1IDQwOCAyMjguMjUyIDM5My42NzMgMjI4LjI1MiAzNzZWMzIwQzIyOC4yNTIgMjk0Ljc4NCAyMzguODU5IDI3Mi4wNDQgMjU1Ljg1MyAyNTZDMjM4Ljg1OSAyMzkuOTU2IDIyOC4yNTIgMjE3LjIxNiAyMjguMjUyIDE5MlYxMzZDMjI4LjI1MiAxMTguMzI3IDIxMy45MjUgMTA0IDE5Ni4yNTIgMTA0SDE2MFYxMTJDMTYwIDEzOC41MSAxMzguNTEgMTYwIDExMiAxNjBINDhDMjEuNDkwMyAxNjAgMCAxMzguNTEgMCAxMTJWNDhaTTEwNCA0OEMxMDguNDE4IDQ4IDExMiA1MS41ODE3IDExMiA1NlYxMDRDMTEyIDEwOC40MTggMTA4LjQxOCAxMTIgMTA0IDExMkg1NkM1MS41ODE3IDExMiA0OCAxMDguNDE4IDQ4IDEwNFY1NkM0OCA1MS41ODE3IDUxLjU4MTcgNDggNTYgNDhIMTA0Wk00NTYgMjI0QzQ2MC40MTggMjI0IDQ2NCAyMjcuNTgyIDQ2NCAyMzJWMjgwQzQ2NCAyODQuNDE4IDQ2MC40MTggMjg4IDQ1NiAyODhINDA4QzQwMy41ODIgMjg4IDQwMCAyODQuNDE4IDQwMCAyODBWMjMyQzQwMCAyMjcuNTgyIDQwMy41ODIgMjI0IDQwOCAyMjRINDU2Wk0xMTIgNDA4QzExMiA0MDMuNTgyIDEwOC40MTggNDAwIDEwNCA0MDBINTZDNTEuNTgxNyA0MDAgNDggNDAzLjU4MiA0OCA0MDhWNDU2QzQ4IDQ2MC40MTggNTEuNTgxNyA0NjQgNTYgNDY0SDEwNEMxMDguNDE4IDQ2NCAxMTIgNDYwLjQxOCAxMTIgNDU2VjQwOFoiIGZpbGw9IiM1NEI4QzkiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTc3XzUxOCI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Merge",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 47,
+        "icon": "file:webhook.svg",
+        "name": "n8n-nodes-base.webhook",
+        "codex": {
+          "data": {
+            "alias": [
+              "HTTP",
+              "API",
+              "Build",
+              "WH"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-custom-incident-response-workflows-with-n8n/",
+                  "label": "How to automate every step of an incident response workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Webhook"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTM1IDM3Yy0yLjIgMC00LTEuOC00LTRzMS44LTQgNC00IDQgMS44IDQgNC0xLjggNC00IDQiLz48cGF0aCBmaWxsPSIjMzc0NzRmIiBkPSJNMzUgNDNjLTMgMC01LjktMS40LTcuOC0zLjdsMy4xLTIuNWMxLjEgMS40IDIuOSAyLjMgNC43IDIuMyAzLjMgMCA2LTIuNyA2LTZzLTIuNy02LTYtNmMtMSAwLTIgLjMtMi45LjdsLTEuNyAxTDIzLjMgMTZsMy41LTEuOSA1LjMgOS40YzEtLjMgMi0uNSAzLS41IDUuNSAwIDEwIDQuNSAxMCAxMFM0MC41IDQzIDM1IDQzIi8+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTE0IDQzQzguNSA0MyA0IDM4LjUgNCAzM2MwLTQuNiAzLjEtOC41IDcuNS05LjdsMSAzLjlDOS45IDI3LjkgOCAzMC4zIDggMzNjMCAzLjMgMi43IDYgNiA2czYtMi43IDYtNnYtMmgxNXY0SDIzLjhjLS45IDQuNi01IDgtOS44IDgiLz48cGF0aCBmaWxsPSIjZTkxZTYzIiBkPSJNMTQgMzdjLTIuMiAwLTQtMS44LTQtNHMxLjgtNCA0LTQgNCAxLjggNCA0LTEuOCA0LTQgNCIvPjxwYXRoIGZpbGw9IiMzNzQ3NGYiIGQ9Ik0yNSAxOWMtMi4yIDAtNC0xLjgtNC00czEuOC00IDQtNCA0IDEuOCA0IDQtMS44IDQtNCA0Ii8+PHBhdGggZmlsbD0iI2U5MWU2MyIgZD0ibTE1LjcgMzQtMy40LTIgNS45LTkuN2MtMi0xLjktMy4yLTQuNS0zLjItNy4zIDAtNS41IDQuNS0xMCAxMC0xMHMxMCA0LjUgMTAgMTBjMCAuOS0uMSAxLjctLjMgMi41bC0zLjktMWMuMS0uNS4yLTEgLjItMS41IDAtMy4zLTIuNy02LTYtNnMtNiAyLjctNiA2YzAgMi4xIDEuMSA0IDIuOSA1LjFsMS43IDF6Ii8+PC9zdmc+"
+        },
+        "displayName": "Webhook",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 77,
+        "icon": "file:jira.svg",
+        "name": "n8n-nodes-base.jira",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-custom-incident-response-workflows-with-n8n/",
+                  "label": "How to automate every step of an incident response workflow"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.jira/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/jira/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Jira Software"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgNjguMjUgNzEuMjUiPjx1c2UgeGxpbms6aHJlZj0iI2EiIHg9IjMuMTI1IiB5PSIzLjEyNSIvPjxkZWZzPjxsaW5lYXJHcmFkaWVudCBpZD0iYiIgeDE9IjkxLjklIiB4Mj0iMjguNDklIiB5MT0iNDAuMjIlIiB5Mj0iODEuNjMlIj48c3RvcCBvZmZzZXQ9IjE4JSIgc3RvcC1jb2xvcj0iIzAwNTJjYyIvPjxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzI2ODRmZiIvPjwvbGluZWFyR3JhZGllbnQ+PGxpbmVhckdyYWRpZW50IGlkPSJjIiB4MT0iOC43JSIgeDI9IjcyLjI2JSIgeTE9IjU5LjE3JSIgeTI9IjE3Ljk5JSI+PHN0b3Agb2Zmc2V0PSIxOCUiIHN0b3AtY29sb3I9IiMwMDUyY2MiLz48c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiMyNjg0ZmYiLz48L2xpbmVhckdyYWRpZW50PjwvZGVmcz48c3ltYm9sIGlkPSJhIiBvdmVyZmxvdz0idmlzaWJsZSI+PGcgZmlsbC1ydWxlPSJub256ZXJvIiBzdHJva2U9Im5vbmUiPjxwYXRoIGZpbGw9IiMyNjg0ZmYiIGQ9Ik02MS4xNjEgMzAuMjExIDMwLjk1IDAgLjc0IDMwLjIxMWEyLjU0IDIuNTQgMCAwIDAgMCAzLjU4MWwzMC4yMTEgMzAuMjEgMzAuMjExLTMwLjIxYTIuNTQgMi41NCAwIDAgMCAwLTMuNTgxek0zMC45NSA0MS40NmwtOS40NjItOS40NjIgOS40NjItOS40NjIgOS40NjIgOS40NjJ6Ii8+PHBhdGggZmlsbD0idXJsKCNiKSIgZD0iTTMwLjk1IDIyLjU5OUMyNC43NTUgMTYuNDA1IDI0LjcyNCA2LjM3IDMwLjg4MS4xMzhMMTAuMTE0IDIwLjc3NGwxMS4yNjggMTEuMjY4eiIvPjxwYXRoIGZpbGw9InVybCgjYykiIGQ9Ik00MC40MzcgMzEuOTczIDMwLjk1IDQxLjQ2YTE1LjkzIDE1LjkzIDAgMCAxIDAgMjIuNTM2bDIwLjc0OS0yMC43NDl6Ii8+PC9nPjwvc3ltYm9sPjwvc3ZnPg=="
+        },
+        "displayName": "Jira Software",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 4,
+            "name": "Productivity"
+          },
+          {
+            "id": 5,
+            "name": "Development"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1236,
+        "icon": "file:aggregate.svg",
+        "name": "n8n-nodes-base.aggregate",
+        "codex": {
+          "data": {
+            "alias": [
+              "Aggregate",
+              "Combine",
+              "Flatten",
+              "Transform",
+              "Array",
+              "List",
+              "Item"
+            ],
+            "details": "",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.aggregate/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Aggregate"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJub25lIj48ZyBmaWxsPSIjRkY2RDVBIiBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTMyIDE0OGMwLTYuNjI3IDUuMzczLTEyIDEyLTEyaDE0NmM2LjYyNyAwIDEyIDUuMzczIDEyIDEydjI0YzAgNi42MjctNS4zNzMgMTItMTIgMTJINDRjLTYuNjI3IDAtMTItNS4zNzMtMTItMTJ6bTAgOTZjMC02LjYyNyA1LjM3My0xMiAxMi0xMmgxNDZjNi42MjcgMCAxMiA1LjM3MyAxMiAxMnYyNGMwIDYuNjI3LTUuMzczIDEyLTEyIDEySDQ0Yy02LjYyNyAwLTEyLTUuMzczLTEyLTEyem0wIDk2YzAtNi42MjcgNS4zNzMtMTIgMTItMTJoMTQ2YzYuNjI3IDAgMTIgNS4zNzMgMTIgMTJ2MjRjMCA2LjYyNy01LjM3MyAxMi0xMiAxMkg0NGMtNi42MjcgMC0xMi01LjM3My0xMi0xMnoiIGNsaXAtcnVsZT0iZXZlbm9kZCIvPjxwYXRoIGQ9Ik03NCA3NmMwIDYuNjI3IDUuMzczIDEyIDEyIDEyaDExNi4yMTdjMTcuNjczIDAgMzIgMTQuMzI3IDMyIDMydjU2YzAgMjYuOTc4IDEwLjI3MiA1MS41NTcgMjcuMTE5IDcwLjAzOSA1LjA1NSA1LjU0NSA1LjA1NSAxNC4zNzcgMCAxOS45MjItMTYuODQ3IDE4LjQ4Mi0yNy4xMTkgNDMuMDYxLTI3LjExOSA3MC4wMzl2NTZjMCAxNy42NzMtMTQuMzI3IDMyLTMyIDMySDg2Yy02LjYyNyAwLTEyIDUuMzczLTEyIDEydjI0YzAgNi42MjcgNS4zNzMgMTIgMTIgMTJoMTE2LjIxN2M0NC4xODMgMCA4MC0zNS44MTcgODAtODB2LTU2YzAtMzAuOTI4IDI1LjA3Mi01NiA1Ni01NmE1Ljc4MyA1Ljc4MyAwIDAgMCA1Ljc4My01Ljc4M3YtMzYuNDM0YTUuNzgzIDUuNzgzIDAgMCAwLTUuNzgzLTUuNzgzYy0zMC45MjggMC01Ni0yNS4wNzItNTYtNTZ2LTU2YzAtNDQuMTgzLTM1LjgxNy04MC04MC04MEg4NmMtNi42MjcgMC0xMiA1LjM3My0xMiAxMnoiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0zNzYgMjQ0YzAtNi42MjcgNS4zNzMtMTIgMTItMTJoMTEyYzYuNjI3IDAgMTIgNS4zNzMgMTIgMTJ2MjRjMCA2LjYyNy01LjM3MyAxMi0xMiAxMkgzODhjLTYuNjI3IDAtMTItNS4zNzMtMTItMTJ6IiBjbGlwLXJ1bGU9ImV2ZW5vZGQiLz48L2c+PGRlZnM+PGNsaXBQYXRoIGlkPSJhIj48cGF0aCBmaWxsPSIjZmZmIiBkPSJNMCAwaDUxMnY1MTJIMHoiLz48L2NsaXBQYXRoPjwvZGVmcz48L3N2Zz4="
+        },
+        "displayName": "Aggregate",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1281,
+        "icon": "file:openrouter.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenrouter/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenRouter Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyBmaWxsPSIjOTRBM0I4IiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDI0IDI0IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjx0aXRsZT5PcGVuUm91dGVyPC90aXRsZT48cGF0aCBkPSJNMTYuODA0IDEuOTU3bDcuMjIgNC4xMDV2LjA4N0wxNi43MyAxMC4yMWwuMDE3LTIuMTE3LS44MjEtLjAzYy0xLjA1OS0uMDI4LTEuNjExLjAwMi0yLjI2OC4xMS0xLjA2NC4xNzUtMi4wMzguNTc3LTMuMTQ3IDEuMzUyTDguMzQ1IDExLjAzYy0uMjg0LjE5NS0uNDk1LjMzNi0uNjguNDU1bC0uNTE1LjMyMi0uMzk3LjIzNC4zODUuMjMuNTMuMzM4Yy40NzYuMzE0IDEuMTcuNzk2IDIuNzAxIDEuODY2IDEuMTEuNzc1IDIuMDgzIDEuMTc3IDMuMTQ3IDEuMzUybC4zLjA0NWMuNjk0LjA5MSAxLjM3NS4wOTQgMi44MjUuMDMzbC4wMjItMi4xNTkgNy4yMiA0LjEwNXYuMDg3TDE2LjU4OSAyMmwuMDE0LTEuODYyLS42MzUuMDIyYy0xLjM4Ni4wNDItMi4xMzcuMDAyLTMuMTM4LS4xNjItMS42OTQtLjI4LTMuMjYtLjkyNi00Ljg4MS0yLjA1OWwtMi4xNTgtMS41YTIxLjk5NyAyMS45OTcgMCAwMC0uNzU1LS40OThsLS40NjctLjI4YTU1LjkyNyA1NS45MjcgMCAwMC0uNzYtLjQzQzIuOTA4IDE0LjczLjU2MyAxNC4xMTYgMCAxNC4xMTZWOS44ODhsLjE0LjAwNGMuNTY0LS4wMDcgMi45MS0uNjIyIDMuODA5LTEuMTI0bDEuMDE2LS41OC40MzgtLjI3NGMuNDI4LS4yOCAxLjA3Mi0uNzI2IDIuNjg2LTEuODUzIDEuNjIxLTEuMTMzIDMuMTg2LTEuNzggNC44ODEtMi4wNTkgMS4xNTItLjE5IDEuOTc0LS4yMTMgMy44MTQtLjEzOGwuMDItMS45MDd6Ij48L3BhdGg+PC9zdmc+Cg=="
+        },
+        "displayName": "OpenRouter Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1310,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agentTool",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Tools"
+              ],
+              "Tools": [
+                "Recommended Tools"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent Tool",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent Tool",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 29,
+        "name": "SecOps"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

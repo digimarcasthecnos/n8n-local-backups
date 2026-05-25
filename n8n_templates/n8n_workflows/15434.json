@@ -1,0 +1,1235 @@
+{
+  "workflow": {
+    "id": 15434,
+    "name": "Extract earnings call highlights with GPT-4o-mini and WayinVideo Find Moments",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-05-02T08:02:05.971Z",
+    "description": "### Description\n\nSubmit an earnings call recording URL along with the company name, ticker, quarter, and the financial topics you want to extract — and the workflow scans the recording automatically. WayinVideo's Find Moments API locates up to 8 relevant moments in the call, each with a title, description, timestamp, and relevance score. GPT-4o-mini then analyzes every moment and writes an 8-section investor highlight including topic category, investor summary, key metrics mentioned, why it matters, sentiment with reasoning, and flags for attention. One Notion page is created per highlight in your Investor Intelligence database. Built for investment analysts, fund managers, IR teams, and financial content creators who want to organize earnings call intelligence without manually scrubbing through recordings.\n\n---\n\n## What This Workflow Does\n\n- **Finds up to 8 financial moments per call** — WayinVideo's Find Moments API scans the full recording and returns the most relevant timestamped moments matching your financial topics query\n- **Returns relevance scores per moment** — Each matched moment includes a score out of 100 so you can see at a glance which highlights are the strongest matches\n- **Assigns a topic category to every highlight** — GPT categorizes each moment into one of nine categories: Revenue and Growth, Guidance and Outlook, Profitability and Margins, Product and Innovation, Risk Factors, Competitive Landscape, Management Commentary, Capital Allocation, or Other\n- **Writes an 8-section investor analysis per moment** — Each highlight includes an investor summary, key metrics, why it matters, sentiment label, sentiment reasoning, and flags for analyst attention\n- **Generates pre-formatted Notion page content** — GPT writes the full Notion page body alongside the structured analysis so the page is readable immediately after creation\n- **Creates one Notion page per highlight** — Every matching moment becomes its own page in your Investor Intelligence database with the page title formatted as Company Ticker — Quarter — Category — Highlight N\n- **Polls automatically until results are ready** — Waits 90 seconds then checks every 30 seconds until [WayinVideo](https://wayin.ai/api/) finishes scanning the recording\n\n---\n\n## Setup Requirements\n\n### Tools Needed\n- n8n instance (self-hosted or cloud)\n- WayinVideo account with API access\n- OpenAI account with GPT-4o-mini API access\n- Notion account with a database set up\n\n### Credentials Required\n- WayinVideo API key (pasted into **2. WayinVideo — Submit Find Moments** and **4. WayinVideo — Get Moments Results**)\n- OpenAI API key\n- Notion OAuth2 credential\n\n&gt; ⚠️ **WayinVideo API key appears in 2 steps** — replace `YOUR_WAYINVIDEO_API_KEY` in both **2. WayinVideo — Submit Find Moments** and **4. WayinVideo — Get Moments Results**. Missing either one will cause the workflow to fail.\n\n**Estimated Setup Time: 20–25 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Import the workflow** — Open n8n → Workflows → Import from JSON → paste the workflow JSON → click Import\n\n2. **Get your WayinVideo API key** — Log in to your WayinVideo account → go to Account Settings → copy your API key\n\n3. **Add your WayinVideo API key to node 2** — Open node **2. WayinVideo — Submit Find Moments** → find the `Authorization` header value `Bearer YOUR_WAYINVIDEO_API_KEY` → replace `YOUR_WAYINVIDEO_API_KEY` with your actual key\n\n4. **Add your WayinVideo API key to node 4** — Open node **4. WayinVideo — Get Moments Results** → find the same `Authorization` header → replace `YOUR_WAYINVIDEO_API_KEY` with the same key\n\n5. **Connect OpenAI** — Open node **9. OpenAI — GPT-4o-mini Model** → click the credential dropdown → add your OpenAI API key → test the connection\n\n6. **Create your Notion database** — In Notion, create a new database named **Investor Intelligence** → add these properties: `Title` (title), `Company` (text), `Ticker Symbol` (text), `Quarter` (text), `Topic Category` (select), `Sentiment` (select), `Timestamp` (text), `Relevance Score` (number), `Recording URL` (url), `Call Date` (date), `Status` (select — add \"New\" as a default option)\n\n7. **Get your Notion database ID** — Open your Investor Intelligence database in Notion in a browser → the database ID is the 32-character string in the URL between the last `/` and the `?` — it looks like `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`\n\n8. **Connect Notion and set the database** — Open node **11. Notion — Create Highlight Page** → click the credential dropdown → add Notion OAuth2 → complete the OAuth flow to authorize n8n → in the `pageId` field, paste your Notion database URL or ID → make sure your Notion integration has access to the database (go to the database in Notion → three-dot menu → Add connections → find your n8n integration)\n\n9. **Activate the workflow** — Toggle the workflow to Active → copy the Form URL from node **1. Form — Earnings Call + Details** → open it in a browser to submit your first earnings call\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Form: Earnings Call + Details**\nYou open the form URL in a browser and fill in seven fields: the earnings call recording URL (Zoom, YouTube, Vimeo, or any direct link), the company name, the ticker symbol, the quarter or period (e.g. Q1 2025, FY2025), the call date, the financial topics you want to extract (e.g. \"revenue growth guidance profit margin\"), and optionally your investment thesis context (e.g. \"Long-term growth play\" or \"Risk assessment\"). Submitting the form starts the workflow.\n\n**Step 2 — HTTP: WayinVideo — Submit Find Moments**\nThe recording URL and your financial topics query are sent to WayinVideo's Find Moments API. The request asks for up to 8 matching moments with export disabled since you only need the metadata. A project name is auto-generated from the company name, ticker, and quarter. WayinVideo accepts the job and returns a task ID.\n\n**Step 3 — Wait: 90 Seconds**\nThe workflow pauses for 90 seconds before the first status check, giving WayinVideo time to scan the full recording. Earnings calls are typically 60–90 minutes long and benefit from this initial processing window.\n\n**Step 4 — HTTP: WayinVideo — Get Moments Results**\nA GET request checks the WayinVideo find-moments results endpoint using the task ID from step 2. It returns the current processing status and, once complete, the full clips array with title, description, timestamp, relevance score, and tags for each matched moment.\n\n**Step 5 — IF: Find Moments Complete?**\nThis is the polling gate. If the status equals `SUCCEEDED` (YES path), the moments are ready and the workflow moves forward to clip extraction. If still processing (NO path), the workflow routes to **6. Wait — 30 Seconds Retry** which pauses 30 seconds then loops back to step 4 to check again. This repeats until SUCCEEDED.\n\n**Step 6 — Wait: 30 Seconds Retry**\nWhen results are not yet ready, the workflow waits 30 seconds then returns to step 4 for another check. The loop continues automatically.\n\n**Step 7 — Code: Extract Highlight Clips**\nThe clips array from WayinVideo is read and split into individual rows — one per matching moment. If no clips are returned, the step throws a clear error with a suggestion to try a broader query. Millisecond timestamps are converted to MM:SS format. The total clip count is also tracked and passed forward so GPT knows which highlight number it is writing (e.g. \"Highlight 3 of 7\"). All form inputs are carried forward alongside each clip's data.\n\n**Step 8 — AI Agent: Generate Investor Highlight**\nGPT-4o-mini receives the earnings call context and the specific moment's metadata: company, ticker, quarter, call date, financial topics, investment thesis, the moment title, description, timestamp range, relevance score, and tags. It writes eight labeled sections: TOPIC_CATEGORY, INVESTOR_SUMMARY, KEY_METRICS_MENTIONED, WHY_IT_MATTERS, SENTIMENT, SENTIMENT_REASONING, FLAGS_FOR_ATTENTION, and NOTION_PAGE_CONTENT. The Notion page content section is a fully formatted readable version of all other sections combined.\n\n**Step 9 — OpenAI: GPT-4o-mini Model**\nThis is the language model powering the investor analysis. It runs with default settings for structured, consistent financial output.\n\n**Step 10 — Code: Parse Investor Analysis**\nAll eight labeled sections are extracted from the AI output using regex. A Notion page title is assembled in the format `Company Ticker — Quarter — TopicCategory — Highlight N`. All fields are packaged and ready for the Notion API call.\n\n**Step 11 — Notion: Create Highlight Page**\nOne Notion page is created in your Investor Intelligence database per financial highlight. The page title uses the structured format built in step 10. The full formatted Notion page content from GPT is written into the page body. Each page created corresponds to one timestamped moment from the earnings call.\n\nThe final result is up to 8 Notion pages — one per financial highlight found — each containing the investor summary, key metrics, sentiment, flags for attention, and the full page body ready to read, annotate, and share.\n\n---\n\n## Key Features\n\n✅ **Find Moments API — no full transcription** — WayinVideo semantically searches the recording to find relevant moments directly, which is faster than transcribing and then text-searching the full call\n✅ **Up to 8 highlights per call** — More moments per call than most WayinVideo workflows — suited for longer earnings calls with multiple important topics\n✅ **Nine financial topic categories — auto-assigned** — Every highlight is automatically tagged with a category so your Notion database is filterable and sortable by topic type across all calls\n✅ **Investment thesis personalization** — The optional investment thesis field is passed to GPT so the \"Why It Matters\" and \"Flags\" sections are framed around your specific analysis angle\n✅ **Sentiment with reasoning included** — GPT assigns one of five sentiment labels and explains why — giving you a one-line justification you can include in your notes or investment memo\n✅ **Structured Notion page title** — Every page is titled as `Company Ticker — Quarter — Category — Highlight N` so your Notion database is sortable and scannable without opening individual pages\n✅ **Highlight index passed to GPT** — GPT knows it is writing \"Highlight 3 of 7\" so the analysis can reference position and relative importance within the full set of moments found\n\n---\n\n## Customisation Options\n\n**Increase the number of moments returned** — In node **2. WayinVideo — Submit Find Moments**, change `\"limit\": 8` to a higher number such as `12` to find more matching moments per call — useful for very long conference call recordings covering many topics.\n\n**Add a retry limit to stop infinite polling** — Before node **6. Wait — 30 Seconds Retry**, add a Set step that increments a poll counter, then add a second IF check to stop after 15 polls and send a Gmail or Slack error notification instead of looping indefinitely.\n\n**Add Notion database properties per page** — After node **11. Notion — Create Highlight Page**, add a Notion update step that sets the database properties (Company, Ticker Symbol, Quarter, Sentiment, Topic Category, etc.) on the newly created page using the page ID returned — making your database filterable without opening each page.\n\n**Send a summary email after all highlights are created** — After node **11. Notion — Create Highlight Page** (on the last clip), add a Gmail step that sends a plain-text email listing all highlight titles, sentiments, and Notion page URLs so you have the full digest in your inbox.\n\n**Search for multiple topic queries in one run** — In the form, allow comma-separated financial topics in the Financial Topics to Extract field, then add a code step after the form that submits a separate Find Moments request per topic and merges the results — covering revenue, margins, and risk in a single form submission.\n\n---\n\n## Troubleshooting\n\n**WayinVideo returning an error on submission:**\n- Confirm `YOUR_WAYINVIDEO_API_KEY` in node **2. WayinVideo — Submit Find Moments** is replaced with your actual API key — not the placeholder\n- Confirm the same replacement was made in node **4. WayinVideo — Get Moments Results** — both steps require the key\n- Check the execution log of node 2 for the raw error — a 401 means wrong key, a 422 means the URL or query format is invalid\n\n**No moments found (empty clips array):**\n- The financial topics query may be too short or too specific — try broader phrases like \"revenue guidance margin\" instead of \"Q3 gross margin beat consensus by 200 basis points\"\n- Check that the recording URL is publicly accessible without login — private Zoom recordings or expired links will not be processed\n- The recording may need clearer audio — low-quality recordings or those with heavy background noise reduce WayinVideo's moment detection accuracy\n\n**Workflow stuck in the polling loop:**\n- Open the execution log of node **4. WayinVideo — Get Moments Results** and inspect the raw response — WayinVideo may have returned FAILED with a specific error message\n- Check that the recording URL is a direct video link and not a landing page, login wall, or a link that requires account access\n- If the loop runs indefinitely, deactivate the workflow, fix the URL or query, and resubmit\n\n**Notion pages not being created:**\n- Confirm the Notion OAuth2 credential in node **11. Notion — Create Highlight Page** is connected and that your n8n integration has been added to the Investor Intelligence database in Notion — go to the database → three-dot menu → Add connections\n- Confirm the `pageId` field in node 11 points to a valid Notion database — this must be a database, not a regular page\n- Check the execution log of node 11 for the Notion API error — a 404 means the database ID is wrong, a 403 means the integration does not have access\n\n**GPT not generating all eight sections:**\n- Confirm the API key is connected in node **9. OpenAI — GPT-4o-mini Model** and your account has available credits\n- Check the execution log of node **8. AI Agent — Generate Investor Highlight** for the raw GPT output — if any labeled sections are missing, the regex in node **10. Code — Parse Investor Analysis** returns empty strings for those fields\n- If the clip description from WayinVideo is very short (under 10 words), GPT may produce a minimal analysis — this is expected for very low-score moments\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email:[info@isawow.com](info@isawow.com)\n🌐 Website:[https://isawow.com](https://isawow.com)",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "ab09ff2b-e6c6-4218-8d40-e4eab6eab2d8",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -608,
+            -800
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 508,
+            "height": 1092,
+            "content": "## Earnings Call to Investor Highlight Reel to Notion — WayinVideo Find Moments + GPT-4o-mini + Notion\n\nFor investment analysts, fund managers, IR teams, and financial content creators who regularly review earnings calls and want to automatically extract and organize the most important financial moments — without manually scrubbing through recordings. Submit an earnings call URL and your financial topics query via the form. WayinVideo Find Moments API scans the full recording and returns up to 8 matching moments with titles, descriptions, timestamps, and relevance scores. GPT-4o-mini analyzes each moment and generates an 8-section investor highlight including topic category, investor summary, key metrics mentioned, why it matters, sentiment with reasoning, flags for attention, and pre-formatted Notion page content. One Notion page is created per highlight in your Investor Intelligence database.\n\n## How it works\n- **1. Form — Earnings Call + Details** collects the recording URL, company name, ticker, quarter, call date, financial topics query, and optional investment thesis\n- **2. WayinVideo — Submit Find Moments** submits the URL and topics query to Find Moments API — up to 8 matching moments returned\n- **3. Wait — 90 Seconds** gives the API initial processing time\n- **4. WayinVideo — Get Moments Results** polls the find-moments results endpoint\n- **5. IF — Find Moments Complete?** checks for SUCCEEDED — if not, retries via 30-second wait\n- **7. Code — Extract Highlight Clips** reads the clips array, converts millisecond timestamps, passes totalClips for AI context, and returns one item per clip\n- **8. AI Agent — Generate Investor Highlight** uses GPT-4o-mini to write an 8-section investor analysis including pre-formatted Notion page content\n- **10. Code — Parse Investor Analysis** extracts all 8 sections via regex, builds the Notion page title, and assembles the final record\n- **11. Notion — Create Highlight Page** creates one Notion page per financial highlight in your Investor Intelligence database\n\n## Set up steps\n1. In **2. WayinVideo — Submit Find Moments** and **4. WayinVideo — Get Moments Results** — replace YOUR_WAYINVIDEO_API_KEY\n2. In **9. OpenAI — GPT-4o-mini Model** — connect your OpenAI credential\n3. In **11. Notion — Create Highlight Page** — connect your Notion OAuth2 credential and set the parent database ID\n4. Create a Notion database named Investor Intelligence with properties: Title (title), Company (text), Ticker Symbol (text), Quarter (text), Topic Category (select), Sentiment (select), Timestamp (text), Relevance Score (number), Recording URL (url), Call Date (date), Status (select — default New)"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9bfa1461-fe64-4f81-916f-eaa0ae93a63a",
+          "name": "Section — Form Input",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -16,
+            -512
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 324,
+            "height": 372,
+            "content": "## Form Input\nAnalyst submits earnings call URL, company name, ticker symbol, quarter, call date, financial topics query, and optional investment thesis. The topics query drives which moments WayinVideo finds — be specific for better results."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "863d21fe-f8e1-46d2-bfae-6aa880816cb0",
+          "name": "Section — Find Moments Submit and Poll",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            352,
+            -512
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 692,
+            "height": 388,
+            "content": "## WayinVideo Find Moments Submit and Poll\nSubmits the earnings call URL and financial topics query to the Find Moments API — returning up to 8 matching moments with titles, descriptions, timestamps, and relevance scores. Waits 90 seconds then polls until SUCCEEDED."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f282a979-16c5-4837-bb07-ed83760e8dc3",
+          "name": "Section — Status Check and Retry Loop",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1088,
+            -704
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 308,
+            "height": 900,
+            "content": "## Find Moments Status Check and Retry Loop\nIF checks for SUCCEEDED status. TRUE proceeds to clip extraction. FALSE waits 30 seconds and polls again. Loop continues until results are ready."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "97662931-2875-4a27-83ee-e67e2190f758",
+          "name": "Section — Clip Extraction and AI Investor Analysis",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1472,
+            -640
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 468,
+            "height": 708,
+            "content": "## Clip Extraction and AI Investor Analysis\nSplits clips into one item per moment and passes totalClips for AI context. GPT-4o-mini writes an 8-section investor highlight: topic category, investor summary, key metrics, why it matters, sentiment, reasoning, flags for attention, and pre-formatted Notion page content."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "88e7b820-f15e-47a3-b9b5-4976fa54877e",
+          "name": "Section — Investor Analysis Parse and Notion Page Creation",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2000,
+            -560
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 532,
+            "height": 500,
+            "content": "## Investor Analysis Parse and Notion Page Creation\nRegex extracts all 8 sections. Builds the Notion page title as Company Ticker — Quarter — Category — Highlight N. Creates one Notion page per highlight in the Investor Intelligence database."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ef3ba07e-7e22-41b8-a273-650ca72c6416",
+          "name": "1. Form — Earnings Call + Details",
+          "type": "n8n-nodes-base.formTrigger",
+          "position": [
+            112,
+            -320
+          ],
+          "webhookId": "00f8af64-d5ee-450f-9db4-5a008b311f11",
+          "parameters": {
+            "options": {},
+            "formTitle": "Earnings Call Investor Highlight Extractor",
+            "formFields": {
+              "values": [
+                {
+                  "fieldLabel": "Earnings Call Recording URL",
+                  "placeholder": "https://zoom.us/rec/xxxxxxx or YouTube/Vimeo link",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Company Name",
+                  "placeholder": "e.g. Apple Inc, Tesla, Microsoft",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Ticker Symbol",
+                  "placeholder": "e.g. AAPL, TSLA, MSFT",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Quarter / Period",
+                  "placeholder": "e.g. Q1 2025, FY2025, H2 2024",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Call Date",
+                  "placeholder": "e.g. 2025-04-29",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Financial Topics to Extract",
+                  "placeholder": "e.g. revenue growth guidance profit margin / product launch update / risk factors / competitive landscape",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Your Investment Thesis",
+                  "placeholder": "e.g. Long-term growth play / Short-term momentum / Risk assessment / Competitive positioning"
+                }
+              ]
+            },
+            "formDescription": "Paste your earnings call or investor recording URL. AI will find the most important financial moments and save structured investor highlights to your Notion database."
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "b37e3f5a-3b1a-4ffb-96de-8b24b61de019",
+          "name": "2. WayinVideo — Submit Find Moments",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            400,
+            -320
+          ],
+          "parameters": {
+            "url": "https://wayinvideo-api.wayin.ai/api/v2/clips/find-moments",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"video_url\": \"{{ $json['Earnings Call Recording URL'] }}\",\n  \"query\": \"{{ $json['Financial Topics to Extract'] }}\",\n  \"project_name\": \"{{ $json['Company Name'] }} {{ $json['Ticker Symbol'] }} {{ $json['Quarter / Period'] }}\",\n  \"limit\": 8,\n  \"enable_export\": false,\n  \"target_lang\": \"en\"\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer YOUR_TOKEN_HERE"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "17894ac4-b5e9-43b3-97b9-8335fc07162a",
+          "name": "3. Wait — 90 Seconds",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            672,
+            -320
+          ],
+          "webhookId": "wait-earnings-90s",
+          "parameters": {
+            "amount": 90
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "977941b0-dffe-4e88-9ae7-da98fbd1279f",
+          "name": "4. WayinVideo — Get Moments Results",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            912,
+            -320
+          ],
+          "parameters": {
+            "url": "=https://wayinvideo-api.wayin.ai/api/v2/clips/find-moments/results/{{ $('2. WayinVideo — Submit Find Moments').item.json.data.id }}",
+            "options": {},
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer YOUR_TOKEN_HERE"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "2c3558b0-d1a9-43d4-920a-84ea3c5c09d7",
+          "name": "5. IF — Find Moments Complete?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            1184,
+            -320
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "status-check",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ $json.data.status }}",
+                  "rightValue": "SUCCEEDED"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "e4fd3b72-203a-4ab8-8de8-9c08e5fb9a64",
+          "name": "6. Wait — 30 Seconds Retry",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            1184,
+            -112
+          ],
+          "webhookId": "wait-earnings-retry-30s",
+          "parameters": {
+            "amount": 30
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "6ff85db5-9471-4f98-8385-3cb1884c4e97",
+          "name": "7. Code — Extract Highlight Clips",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1504,
+            -336
+          ],
+          "parameters": {
+            "jsCode": "// Extract highlight clips from WayinVideo Find Moments\nconst clips = $('4. WayinVideo — Get Moments Results').item.json.data?.clips || [];\n\nif (clips.length === 0) {\n  throw new Error('No financial moments found in this recording. Try a broader search query or verify the recording URL is accessible.');\n}\n\n// Get form data\nconst companyName = $('1. Form — Earnings Call + Details').item.json['Company Name'];\nconst tickerSymbol = $('1. Form — Earnings Call + Details').item.json['Ticker Symbol'];\nconst quarter = $('1. Form — Earnings Call + Details').item.json['Quarter / Period'];\nconst callDate = $('1. Form — Earnings Call + Details').item.json['Call Date'];\nconst financialTopics = $('1. Form — Earnings Call + Details').item.json['Financial Topics to Extract'];\nconst investmentThesis = $('1. Form — Earnings Call + Details').item.json['Your Investment Thesis'] || 'General analysis';\nconst recordingUrl = $('1. Form — Earnings Call + Details').item.json['Earnings Call Recording URL'];\n\n// Split into individual items — one per highlight moment\nreturn clips.map((clip, index) => ({\n  json: {\n    clipIndex: index + 1,\n    totalClips: clips.length,\n    clipTitle: clip.title || `Financial Highlight ${index + 1}`,\n    clipDescription: clip.desc || '',\n    clipScore: clip.score || 0,\n    clipTags: Array.isArray(clip.tags) ? clip.tags.join(', ') : '',\n    beginMs: clip.begin_ms || 0,\n    endMs: clip.end_ms || 0,\n    timestampStart: `${Math.floor((clip.begin_ms || 0) / 60000)}:${String(Math.floor(((clip.begin_ms || 0) % 60000) / 1000)).padStart(2, '0')}`,\n    timestampEnd: `${Math.floor((clip.end_ms || 0) / 60000)}:${String(Math.floor(((clip.end_ms || 0) % 60000) / 1000)).padStart(2, '0')}`,\n    companyName,\n    tickerSymbol,\n    quarter,\n    callDate,\n    financialTopics,\n    investmentThesis,\n    recordingUrl\n  }\n}));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "74a0feeb-921d-4a5c-8860-0a999987d468",
+          "name": "8. AI Agent — Generate Investor Highlight",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            1680,
+            -336
+          ],
+          "parameters": {
+            "text": "=You are an expert investment analyst who specializes in analyzing earnings calls and extracting structured investor intelligence.\n\nA video AI tool has identified and extracted a specific financial moment from an earnings call recording. Your job is to analyze this moment and write a structured investor highlight for the Notion database.\n\n---\n\n## EARNINGS CALL CONTEXT\n- Company: {{ $json.companyName }} ({{ $json.tickerSymbol }})\n- Quarter / Period: {{ $json.quarter }}\n- Call Date: {{ $json.callDate }}\n- Topics Being Analyzed: {{ $json.financialTopics }}\n- Investment Thesis Context: {{ $json.investmentThesis }}\n- Highlight {{ $json.clipIndex }} of {{ $json.totalClips }}\n\n## MOMENT FOUND BY WAYINVIDEO\n- Moment Title: {{ $json.clipTitle }}\n- Description: {{ $json.clipDescription }}\n- Timestamp: {{ $json.timestampStart }} — {{ $json.timestampEnd }}\n- Relevance Score: {{ $json.clipScore }}/100\n- Tags: {{ $json.clipTags }}\n\n---\n\n## YOUR TASK\nAnalyze this financial moment and write a structured investor highlight.\n\n## RULES\n1. Base analysis ONLY on the moment description provided — no outside knowledge about this company\n2. Be specific and numbers-focused where possible\n3. Sentiment must reflect the tone of what was said\n4. Why It Matters must connect directly to investor decision-making\n5. Keep each section concise — 2-3 sentences maximum\n\n---\n\n## OUTPUT FORMAT\nReturn in this exact structure:\n\nTOPIC_CATEGORY:\n[Choose one: Revenue and Growth / Guidance and Outlook / Profitability and Margins / Product and Innovation / Risk Factors / Competitive Landscape / Management Commentary / Capital Allocation / Other]\n\nINVESTOR_SUMMARY:\n[2-3 sentences summarizing what was said in plain investor-friendly language]\n\nKEY_METRICS_MENTIONED:\n[List any specific numbers, percentages, or figures mentioned — or 'No specific metrics mentioned']\n\nWHY_IT_MATTERS:\n[2 sentences explaining why this moment is significant for investors]\n\nSENTIMENT:\n[Choose one: Very Bullish / Bullish / Neutral / Bearish / Very Bearish]\n\nSENTIMENT_REASONING:\n[1 sentence explaining why you chose this sentiment]\n\nFLAGS_FOR_ATTENTION:\n[Any red flags, positive surprises, or follow-up questions an analyst should note — or 'None identified']\n\nNOTION_PAGE_CONTENT:\n[Write the full Notion page content in clean readable format — include all sections above formatted nicely for readability]",
+            "options": {},
+            "promptType": "define"
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "4e4fd765-c326-4784-8ea3-dfbd8d3688b2",
+          "name": "9. OpenAI — GPT-4o-mini Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            1680,
+            -128
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini"
+            },
+            "options": {},
+            "builtInTools": {}
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "2a77abc5-c872-4156-80de-93ef4ad8ce29",
+          "name": "10. Code — Parse Investor Analysis",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2096,
+            -336
+          ],
+          "parameters": {
+            "jsCode": "// Parse AI investor analysis output\nconst output = $input.first().json.output || '';\n\n// Extract each section\nconst topicCategoryMatch = output.match(/TOPIC_CATEGORY:\\s*([\\s\\S]*?)(?=\\nINVESTOR_SUMMARY:|$)/);\nconst summaryMatch = output.match(/INVESTOR_SUMMARY:\\s*([\\s\\S]*?)(?=\\nKEY_METRICS_MENTIONED:|$)/);\nconst metricsMatch = output.match(/KEY_METRICS_MENTIONED:\\s*([\\s\\S]*?)(?=\\nWHY_IT_MATTERS:|$)/);\nconst whyMattersMatch = output.match(/WHY_IT_MATTERS:\\s*([\\s\\S]*?)(?=\\nSENTIMENT:|$)/);\nconst sentimentMatch = output.match(/SENTIMENT:\\s*([\\s\\S]*?)(?=\\nSENTIMENT_REASONING:|$)/);\nconst sentimentReasoningMatch = output.match(/SENTIMENT_REASONING:\\s*([\\s\\S]*?)(?=\\nFLAGS_FOR_ATTENTION:|$)/);\nconst flagsMatch = output.match(/FLAGS_FOR_ATTENTION:\\s*([\\s\\S]*?)(?=\\nNOTION_PAGE_CONTENT:|$)/);\nconst notionContentMatch = output.match(/NOTION_PAGE_CONTENT:\\s*([\\s\\S]*)$/);\n\nconst topicCategory = topicCategoryMatch ? topicCategoryMatch[1].trim() : 'Other';\nconst investorSummary = summaryMatch ? summaryMatch[1].trim() : '';\nconst keyMetrics = metricsMatch ? metricsMatch[1].trim() : 'No specific metrics mentioned';\nconst whyItMatters = whyMattersMatch ? whyMattersMatch[1].trim() : '';\nconst sentiment = sentimentMatch ? sentimentMatch[1].trim() : 'Neutral';\nconst sentimentReasoning = sentimentReasoningMatch ? sentimentReasoningMatch[1].trim() : '';\nconst flagsForAttention = flagsMatch ? flagsMatch[1].trim() : 'None identified';\nconst notionContent = notionContentMatch ? notionContentMatch[1].trim() : investorSummary;\n\n// Get clip data from previous step\nconst clipData = $('7. Code — Extract Highlight Clips').item.json;\n\n// Build Notion page title\nconst pageTitle = `${clipData.companyName} ${clipData.tickerSymbol} — ${clipData.quarter} — ${topicCategory} — Highlight ${clipData.clipIndex}`;\n\nreturn [{\n  json: {\n    pageTitle,\n    topicCategory,\n    investorSummary,\n    keyMetrics,\n    whyItMatters,\n    sentiment,\n    sentimentReasoning,\n    flagsForAttention,\n    notionContent,\n    companyName: clipData.companyName,\n    tickerSymbol: clipData.tickerSymbol,\n    quarter: clipData.quarter,\n    callDate: clipData.callDate,\n    timestamp: `${clipData.timestampStart} — ${clipData.timestampEnd}`,\n    relevanceScore: clipData.clipScore,\n    clipTitle: clipData.clipTitle,\n    recordingUrl: clipData.recordingUrl,\n    clipIndex: clipData.clipIndex\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "a88caf6f-8548-498b-a343-9ee4f9fc5fee",
+          "name": "11. Notion — Create Highlight Page",
+          "type": "n8n-nodes-base.notion",
+          "position": [
+            2336,
+            -336
+          ],
+          "parameters": {
+            "title": "={{ $json.pageTitle }}",
+            "pageId": {
+              "__rl": true,
+              "mode": "url",
+              "value": ""
+            },
+            "blockUi": {
+              "blockValues": [
+                {
+                  "textContent": "={{ $json.notionContent }}"
+                }
+              ]
+            },
+            "options": {}
+          },
+          "typeVersion": 2.2
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "3. Wait — 90 Seconds": {
+          "main": [
+            [
+              {
+                "node": "4. WayinVideo — Get Moments Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. Wait — 30 Seconds Retry": {
+          "main": [
+            [
+              {
+                "node": "4. WayinVideo — Get Moments Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "9. OpenAI — GPT-4o-mini Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "8. AI Agent — Generate Investor Highlight",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. IF — Find Moments Complete?": {
+          "main": [
+            [
+              {
+                "node": "7. Code — Extract Highlight Clips",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "6. Wait — 30 Seconds Retry",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Form — Earnings Call + Details": {
+          "main": [
+            [
+              {
+                "node": "2. WayinVideo — Submit Find Moments",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. Code — Extract Highlight Clips": {
+          "main": [
+            [
+              {
+                "node": "8. AI Agent — Generate Investor Highlight",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "10. Code — Parse Investor Analysis": {
+          "main": [
+            [
+              {
+                "node": "11. Notion — Create Highlight Page",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "2. WayinVideo — Submit Find Moments": {
+          "main": [
+            [
+              {
+                "node": "3. Wait — 90 Seconds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "4. WayinVideo — Get Moments Results": {
+          "main": [
+            [
+              {
+                "node": "5. IF — Find Moments Complete?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. AI Agent — Generate Investor Highlight": {
+          "main": [
+            [
+              {
+                "node": "10. Code — Parse Investor Analysis",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 17,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 2
+        },
+        "n8n-nodes-base.wait": {
+          "count": 2
+        },
+        "n8n-nodes-base.notion": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.formTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "isaWOW",
+      "username": "isawow",
+      "bio": "",
+      "verified": true,
+      "links": [
+        ""
+      ],
+      "avatar": "https://gravatar.com/avatar/8e8c1f17a2be80c0d1b0248585660dff3062cefeda523bbafeafcdb813f52ffa?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 487,
+        "icon": "file:notion.svg",
+        "name": "n8n-nodes-base.notion",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.notion/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/notion/"
+                }
+              ]
+            },
+            "categories": [
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Notion"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik03LjU4Mjc2IDYuOTc2NzlDOC44MjA0NyA3Ljk4MjM4IDkuMjg0NzkgNy45MDU2NiAxMS42MDkxIDcuNzUwNTdMMzMuNTIwNiA2LjQzNDg4QzMzLjk4NTMgNi40MzQ4OCAzMy41OTg5IDUuOTcxMjcgMzMuNDQzOSA1Ljg5NDIzTDI5LjgwNDkgMy4yNjM0OEMyOS4xMDc2IDIuNzIyMTMgMjguMTc4NiAyLjEwMjE3IDI2LjM5ODIgMi4yNTcyNkw1LjE4MTE1IDMuODA0NzZDNC40MDczNiAzLjg4MTQ4IDQuMjUyODIgNC4yNjgzNyA0LjU2MDk2IDQuNTc4NDdMNy41ODI3NiA2Ljk3Njc5Wk04Ljg5ODI5IDEyLjA4MzNWMzUuMTM4MUM4Ljg5ODI5IDM2LjM3NzEgOS41MTc0NiAzNi44NDA3IDEwLjkxMSAzNi43NjRMMzQuOTkxOSAzNS4zNzA2QzM2LjM4NjIgMzUuMjkzOSAzNi41NDE1IDM0LjQ0MTcgMzYuNTQxNSAzMy40MzUyVjEwLjUzNTFDMzYuNTQxNSA5LjUzMDE5IDM2LjE1NDkgOC45ODgyOSAzNS4zMDE0IDkuMDY1NjRMMTAuMTM2NyAxMC41MzUxQzkuMjA3OTkgMTAuNjEzMSA4Ljg5ODIxIDExLjA3NzcgOC44OTgyMSAxMi4wODMzSDguODk4MjlaTTMyLjY3MDggMTMuMzJDMzIuODI1MiAxNC4wMTcgMzIuNjcwOCAxNC43MTMzIDMxLjk3MjUgMTQuNzkxN0wzMC44MTIzIDE1LjAyMjlWMzIuMDQzNEMyOS44MDQ5IDMyLjU4NDggMjguODc1OSAzMi44OTQ0IDI4LjEwMTggMzIuODk0NEMyNi44NjI1IDMyLjg5NDQgMjYuNTUyMSAzMi41MDcyIDI1LjYyMzcgMzEuMzQ3NEwxOC4wMzQzIDE5LjQzMjlWMzAuOTYwNUwyMC40MzU5IDMxLjUwMjRDMjAuNDM1OSAzMS41MDI0IDIwLjQzNTkgMzIuODk0NCAxOC40OTgzIDMyLjg5NDRMMTMuMTU2OCAzMy4yMDQyQzEzLjAwMTYgMzIuODk0NCAxMy4xNTY4IDMyLjEyMTQgMTMuNjk4NiAzMS45NjY1TDE1LjA5MjUgMzEuNTgwMlYxNi4zMzg1TDEzLjE1NzIgMTYuMTgzNEMxMy4wMDE5IDE1LjQ4NjQgMTMuMzg4NSAxNC40ODE0IDE0LjQ3MzMgMTQuNDAzNUwyMC4yMDM1IDE0LjAxNzJMMjguMTAxOCAyNi4wODY4VjE1LjQwOTdMMjYuMDg4MSAxNS4xNzg2QzI1LjkzMzUgMTQuMzI2NSAyNi41NTIxIDEzLjcwNzggMjcuMzI2NSAxMy42MzExTDMyLjY3MDggMTMuMzJaTTMuMzk5NzMgMS43MTU5OEwyNS40Njg4IDAuMDkwNzQ1N0MyOC4xNzkgLTAuMTQxNjg4IDI4Ljg3NjMgMC4wMTQwMjQ1IDMwLjU3OTYgMS4yNTEzNUwzNy42MjQzIDYuMjAyNzZDMzguNzg2NyA3LjA1NDIxIDM5LjE3NDIgNy4yODYwMiAzOS4xNzQyIDguMjE0MTlWMzUuMzcwNkMzOS4xNzQyIDM3LjA3MjYgMzguNTU0MiAzOC4wNzkxIDM2LjM4NjUgMzguMjMzMUwxMC43NTc3IDM5Ljc4MDdDOS4xMzA0OSAzOS44NTgzIDguMzU2MDcgMzkuNjI2NCA3LjUwMzkyIDM4LjU0MjZMMi4zMTYwOCAzMS44MTE3QzEuMzg2NTggMzAuNTcyNiAxIDI5LjY0NTcgMSAyOC41NjEzVjQuNDIyODNDMSAzLjAzMTA1IDEuNjIwMTkgMS44NzAwNSAzLjM5OTczIDEuNzE1OThWMS43MTU5OFoiIGZpbGw9ImJsYWNrIi8+Cjwvc3ZnPgo="
+        },
+        "displayName": "Notion",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1225,
+        "icon": "file:form.svg",
+        "name": "n8n-nodes-base.formTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "table",
+              "submit",
+              "post"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.formtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Other Trigger Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "On form submission"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NiIgaGVpZ2h0PSI0MCIgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iIzAwQjdCQyIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMzQuOTc4IDM3LjczMmExLjU2IDEuNTYgMCAwIDEtMS41NjIgMS41NjNINi4yNmExLjU2IDEuNTYgMCAwIDEtMS41NjMtMS41NjNWOS42MDdjMC0uNDA1LjE1Ny0uNzk0LjQzOC0xLjA4Nmw2LjMwNC02LjUzMXY1LjM0NEg4LjIxM2ExLjE3MiAxLjE3MiAwIDEgMCAwIDIuMzQzaDQuNDNhMS4xNyAxLjE3IDAgMCAwIDEuMTcxLTEuMTcxVi4yMzJoMTkuNjAyYTEuNTYgMS41NiAwIDAgMSAxLjU2MiAxLjU2M3YxMC4zMjdsLTIuODYgMi44Ni04LjI1MiA4LjI3NmE0MTMuMDA2IDQxMy4wMDYgMCAwIDEtMS42NTQgMS42NjJsLS4zMzcuMzM3YTIgMiAwIDAgMC0uNTU3IDEuMDhMMjAuMyAzMS45MjJjLS4xMDguNjM4LS4yMTUgMS4wNzkuMjExIDEuNDE4LjQwMy4zMi45LjE3NCAxLjU0LjA2Nmw1LjQwOC0uOTI4YTIgMiAwIDAgMCAxLjA4LS41NTZsNi40NC02LjQyOXptLTI0LjAzLTIxLjI2NWExLjE4IDEuMTggMCAwIDAgMS4xNzEgMS4xNzJoMTMuMTYzYTEuMTcyIDEuMTcyIDAgMSAwIDAtMi4zNDRIMTIuMTE5YTEuMTcgMS4xNyAwIDAgMC0xLjE3MiAxLjE3Mm03LjI5NCAxNC43NjZhMS4xNyAxLjE3IDAgMCAwLTEuMTcyLTEuMTcySDEyLjEyYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNC45NTFhMS4xNyAxLjE3IDAgMCAwIDEuMTcyLTEuMTcybS44Ni03LjM5MWExLjE3IDEuMTcgMCAwIDAtMS4xNzItMS4xNzJoLTUuODExYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNS44MWExLjE2NCAxLjE2NCAwIDAgMCAxLjE3My0xLjE3MSIgY2xpcC1ydWxlPSJldmVub2RkIi8+PHBhdGggZmlsbD0iIzAwQjdCQyIgZD0ibTMzLjUzMiAxNi4zOTcgNC4yODktNC4yODkgMy43NTggMy43MSAxLjYxNy0xLjYxNiAyLjI1OCAyLjI1N2MuMjE4LjIxOC4zNC41MTMuMzQzLjgyLS4wMDIuMzExLS4xMjUuNjA4LS4zNDQuODNsLTYuODA0IDYuNzk2YTEuMTMgMS4xMyAwIDAgMS0uODI4LjM0MyAxLjE1IDEuMTUgMCAwIDEtLjgyOC0uMzQzIDEuMTggMS4xOCAwIDAgMSAwLTEuNjU3bDUuOTc2LTUuOTY4LTEuMzEyLTEuMzEzLTEuMzgzIDEuNDE0LTEzLjE0OSAxMy4xMjUtNC42MTcuNzgyLjc4Mi00LjYxNy4zMzYtLjMzNyAyLjU2MiAyLjU1NWExLjEgMS4xIDAgMCAwIC44MjguMzQ0Yy4zMTIuMDA1LjYxMi0uMTIuODI4LS4zNDRhMS4xOCAxLjE4IDAgMCAwIDAtMS42NTZsLTIuNTYyLTIuNTYyek00NC43MzYgMTIuMjRjMCAuNDE0LS4xNjMuODEtLjQ1NCAxLjEwMmwtLjkyMi45MTQtMy44NTItMy44MjguOTMtLjkzYTEuNTYzIDEuNTYzIDAgMCAxIDIuMjAzIDBsMS42NCAxLjY0MWMuMjkxLjI5My40NTUuNjkuNDU1IDEuMTAyIi8+PC9zdmc+"
+        },
+        "displayName": "n8n Form Trigger",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 32,
+        "name": "Market Research"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

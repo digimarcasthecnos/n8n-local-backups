@@ -1,0 +1,1570 @@
+{
+  "workflow": {
+    "id": 15040,
+    "name": "Create LinkedIn post drafts from Fireflies meetings with GPT-4o-mini, Drive and Slack",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-14T11:37:36.250Z",
+    "description": "### Description\n\nConnect Fireflies to this workflow once and every meeting you record becomes a LinkedIn post draft automatically. The moment Fireflies finishes transcribing a call, it fires a signal to the workflow — which fetches the full transcript, extracts real insights, and uses GPT-4o-mini to write a 180–280 word scroll-stopping post with a hook, key learnings, and hashtags. The finished draft is saved to Google Drive and previewed in Slack so you can review and publish when ready. Built for founders, consultants, and sales leaders who want a consistent LinkedIn presence without spending time writing from scratch after every call.\n\n---\n\n## What This Workflow Does\n\n- **Triggers automatically when a call ends** — Fireflies sends a signal the moment transcription completes, so no manual input is ever needed\n- **Validates every incoming signal** — Checks that the signal contains a valid meeting ID and silently discards invalid or test pings\n- **Extracts real meeting insights** — Pulls speaker dialogue, Fireflies-detected pricing and question sentences, keywords, overview, and sentiment from the full transcript\n- **Writes a structured LinkedIn post** — GPT-4o-mini produces a hook, a specific insight paragraph, 3–5 emoji learnings, a closing question, and hashtags — all grounded in your actual meeting content\n- **Saves a complete Google Doc** — Stores the post alongside meeting reference details, participants, keywords, action items, and a link back to the Fireflies transcript\n- **Previews the post in Slack** — Posts the first 350 characters of the draft to your Slack channel so your team can review before the post goes live\n- **Exits cleanly for incomplete transcripts** — If Fireflies hasn't finished processing yet, the workflow stops silently without errors\n\n---\n\n## Setup Requirements\n\n### Tools Needed\n- n8n instance (self-hosted or cloud)\n- Fireflies.ai account with webhook access\n- OpenAI account with GPT-4o-mini API access\n- Google Drive (one folder where posts will be saved)\n- Slack workspace with OAuth2 app configured\n\n### Credentials Required\n- Fireflies API key (pasted directly into **5. Set — Config Values**)\n- OpenAI API key\n- Google Drive OAuth2\n- Slack OAuth2\n\n**Estimated Setup Time: 15–20 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Import the workflow** — Open n8n → Workflows → Import from JSON → paste the workflow JSON → click Import\n\n2. **Activate the workflow and copy the webhook URL** — Toggle the workflow to Active → click on node **1. Webhook — Fireflies Transcript Done** → copy the webhook URL shown\n\n3. **Register the webhook in Fireflies** — Log in to fireflies.ai → go to Settings → Developer Settings → Webhooks → paste the webhook URL → save\n\n4. **Get your Fireflies API key** — In Fireflies, go to Settings → Integrations → copy your API key\n\n5. **Fill in Config Values** — Open node **5. Set — Config Values** → replace all placeholders:\n\n| Field | What to enter |\n|---|---|\n| `YOUR_FIREFLIES_API_KEY` | Your Fireflies API key from step 4 |\n| `YOUR_GOOGLE_DRIVE_FOLDER_ID` | The folder ID from your Google Drive URL (the string after `/folders/` in the URL when you open the folder) |\n| `#content-team` | Your Slack channel name including the `#` |\n| `YOUR FULL NAME` | The author's full name (used in the post sign-off) |\n| `YOUR JOB TITLE` | The author's job title (e.g. CEO, SEO Consultant) |\n| `YOUR COMPANY NAME` | Your company name (used in the AI prompt) |\n\n6. **Connect OpenAI** — Open node **11. OpenAI — GPT-4o-mini Model** → click the credential dropdown → add your OpenAI API key → test the connection\n\n7. **Connect Google Drive** — Open node **13. Google Drive — Save LinkedIn Post** → click the credential dropdown → add Google Drive OAuth2 → sign in with your Google account → authorize access\n\n8. **Connect Slack** — Open node **14. Slack — Send Post Preview** → click the credential dropdown → connect your Slack workspace via OAuth2 → invite the n8n bot to your channel in Slack (`/invite @n8n`)\n\n&gt; ⚠️ **The workflow must be Active before registering the webhook in Fireflies.** An inactive workflow will not receive signals from Fireflies. Activate first, then paste the URL.\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Webhook: Fireflies Transcript Done**\nThis step listens for a signal from Fireflies. Every time Fireflies finishes transcribing a meeting, it sends a POST request to this webhook URL containing the meeting ID. No manual trigger is needed — it fires automatically after every recorded call.\n\n**Step 2 — Code: Extract Meeting ID**\nThe meeting ID is extracted from the incoming signal. Fireflies can send the payload in several different formats, so this step checks all possible locations and pulls the ID safely. If no meeting ID is found at all, a flag is set to mark the signal as invalid.\n\n**Step 3 — IF: Valid Meeting ID?**\nThis is the first gate check. If a valid meeting ID was found (YES path), the workflow continues to fetch the transcript. If the signal was invalid or contained no meeting ID (NO path), the workflow routes to **4. Set — Invalid Webhook Skip** and stops cleanly.\n\n**Step 4 — Set: Invalid Webhook Skip**\nThis step handles the invalid signal case. It sets a brief message confirming the webhook was skipped and the workflow ends here for that trigger.\n\n**Step 5 — Set: Config Values**\nYour Fireflies API key, Google Drive folder ID, Slack channel, author name, author title, and company name are stored here. The validated meeting ID from step 2 is also carried forward so the transcript fetch can use it directly.\n\n**Step 6 — HTTP: Fetch Transcript**\nA request is sent to the Fireflies API using your API key and the meeting ID. It retrieves the complete transcript including all sentences with speaker labels, AI-detected pricing and task sentences, keyword summary, overview, gist, bullet points, and sentiment percentages.\n\n**Step 7 — Code: Process Transcript Data**\nThe raw transcript is processed into clean, usable fields. All sentences are combined into a readable text block (limited to 5,000 characters for GPT efficiency). Fireflies-flagged pricing sentences, question sentences, and task sentences are extracted separately. Sentiment percentages, keywords, action items, and overview are all pulled out. A formatted document title is generated automatically using the meeting name and date. If the transcript is empty or not yet available, a flag is set for the next gate check.\n\n**Step 8 — IF: Transcript Ready?**\nThis is the second gate check. If transcript data is available (YES path), the workflow moves to AI post writing. If Fireflies hasn't finished processing the transcript yet (NO path), the workflow routes to **9. Set — Transcript Not Ready Skip** and stops cleanly without errors.\n\n**Step 9 — Set: Transcript Not Ready Skip**\nThis step handles the not-ready case. It logs the meeting ID and a message confirming the transcript was skipped. The workflow ends here for that run.\n\n**Step 10 — AI Agent: Write LinkedIn Post**\nGPT-4o-mini receives the author details, meeting context, Fireflies summary, bullet points, keywords, action items, questions raised in the call, and the transcript excerpt. It writes a 180–280 word LinkedIn post following a fixed structure: a scroll-stopping hook (not starting with \"I\" or \"We\"), a specific insight paragraph in first person, 3–5 emoji key learnings pulled from real transcript content, a closing question or call to action, and 4–5 hashtags. A sign-off with the author's name and title is added at the end.\n\n**Step 11 — OpenAI: GPT-4o-mini Model**\nThis is the language model powering the writing step. It runs at temperature 0.8 for creative, varied output and is capped at 700 tokens to keep the post within the target word count.\n\n**Step 12 — Code: Build Doc and Slack Message**\nThe AI-generated post is assembled into a complete Google Doc with the post text at the top, followed by meeting reference details: title, date, duration, participants, Fireflies transcript link, keywords, and action items. A Slack preview is also built here — the first 350 characters of the post plus meeting details and a link back to the Fireflies transcript.\n\n**Step 13 — Google Drive: Save LinkedIn Post**\nThe complete document is saved to your specified Google Drive folder. The file is named automatically using the meeting title and date (e.g. \"LinkedIn Post — Client Strategy Call — 14 Apr 2025\").\n\n**Step 14 — Slack: Send Post Preview**\nThe preview message is posted to your Slack channel at the same time the Google Doc is being saved. Your team sees the post hook and first paragraph instantly, with the full document link available in Drive for review before publishing.\n\n---\n\n## Key Features\n\n✅ **Fully automatic — zero manual trigger** — Fireflies fires the workflow the moment any call transcript is ready, no human action needed\n✅ **Two validation gates** — Invalid webhook signals and unready transcripts both exit cleanly without causing errors or empty posts\n✅ **Grounded in real content** — The AI prompt feeds actual transcript sentences, keywords, bullet points, and action items so posts are specific, not generic\n✅ **Fixed post structure every time** — Hook, insight paragraph, emoji learnings, closing CTA, hashtags, and sign-off are enforced on every run\n✅ **Auto-named Google Docs** — Files are named by meeting title and date automatically so your Drive folder stays organized without any manual renaming\n✅ **Slack preview before publishing** — Your team sees the draft before it goes live — one review step, no surprises\n✅ **Handles all Fireflies payload formats** — The extraction step checks every possible payload structure so the webhook never silently fails due to a format change\n✅ **Temperature tuned for creative writing** — GPT runs at 0.8 so each post has a natural, human tone rather than a repetitive AI pattern\n\n---\n\n## Customisation Options\n\n**Change the post length target** — In node **10. AI Agent — Write LinkedIn Post**, edit the instruction from \"180 to 280 words\" to a different range. Also adjust `maxTokens` in node **11. OpenAI — GPT-4o-mini Model** accordingly (e.g. set to 900 for longer posts).\n\n**Add a second post format** — After node **10. AI Agent — Write LinkedIn Post**, add a second AI Agent step with a different prompt structure (e.g. a short 3-sentence insight post or a carousel-style numbered list) to generate two post options per call instead of one.\n\n**Route posts by meeting type** — In node **5. Set — Config Values**, add a `postCategory` field. Then add an IF check after step 7 that reads the meeting title — if it contains \"demo\" or \"sales\", use a sales-focused prompt; if it contains \"team\" or \"internal\", use a thought leadership prompt.\n\n**Save to a dated subfolder in Drive** — In node **12. Code — Build Doc and Slack Message**, generate a folder path string using the meeting date (e.g. `2025/April`) and use the Google Drive step to create or find that subfolder before saving, keeping your Drive organized by month automatically.\n\n**Add a Notion database entry** — After node **13. Google Drive — Save LinkedIn Post**, add a Notion API HTTP request to create a new row in a content calendar database with the post title, meeting date, status (Draft), and Google Drive link for content planning visibility.\n\n---\n\n## Troubleshooting\n\n**Workflow not triggering when a call ends:**\n- Confirm the workflow is Active before expecting Fireflies to fire it — inactive workflows do not receive webhooks\n- Log in to Fireflies → Settings → Developer Settings → Webhooks → confirm the webhook URL is saved correctly and matches the URL from node **1. Webhook — Fireflies Transcript Done**\n- Check that your Fireflies plan includes webhook support — some plans restrict this feature\n\n**Fireflies API key error or empty transcript:**\n- Confirm `YOUR_FIREFLIES_API_KEY` in node **5. Set — Config Values** is replaced with your actual key — not the placeholder text\n- Get your key from fireflies.ai → Settings → Integrations → API Key\n- If the transcript returns empty, the call may not have been processed yet by Fireflies — the workflow exits cleanly via **9. Set — Transcript Not Ready Skip** in this case\n\n**OpenAI not generating the post:**\n- Confirm the API key is connected in node **11. OpenAI — GPT-4o-mini Model** and your account has available credits\n- Check the execution log of node **10. AI Agent — Write LinkedIn Post** for the raw error message\n- If the post is under 50 characters, node **12. Code — Build Doc and Slack Message** catches this and outputs a failure message instead of a broken doc\n\n**Google Drive not saving the file:**\n- Confirm the Google Drive OAuth2 credential in node **13. Google Drive — Save LinkedIn Post** is connected and not expired — re-authorize if needed\n- Check that `YOUR_GOOGLE_DRIVE_FOLDER_ID` in node **5. Set — Config Values** is the folder ID from your Drive URL, not the full URL — copy only the string after `/folders/`\n- Make sure the Google account you authorized has write access to the target folder\n\n**Slack preview not arriving:**\n- Confirm the Slack OAuth2 credential in node **14. Slack — Send Post Preview** is connected and authorized\n- Check that the channel name in node **5. Set — Config Values** includes the `#` prefix and matches your Slack channel exactly\n- Type `/invite @n8n` in the target Slack channel to ensure the bot has permission to post\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email: [info@incrementors.com](info@incrementors.com)\n🌐 Website: [https://www.incrementors.com/](https://www.incrementors.com/)",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "fb351597-01ca-435e-b623-c769e8ef3867",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -5008,
+            -448
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 556,
+            "height": 1160,
+            "content": "## LinkedIn Post Generator — Fireflies + GPT-4o-mini + Google Drive + Slack\n\nFor founders, consultants, and sales leaders who want to turn every client call or meeting into a LinkedIn post automatically. When Fireflies finishes transcribing a meeting, it fires a webhook to this workflow. The transcript is fetched from the Fireflies API, processed for key insights, and passed to GPT-4o-mini which writes a scroll-stopping LinkedIn post with a hook, key learnings with emojis, a closing question, and hashtags. The post is saved as a Google Doc and previewed in Slack for review before publishing.\n\n## How it works\n- **1. Webhook — Fireflies Transcript Done** receives the meetingId from Fireflies when transcription completes\n- **2. Code — Extract Meeting ID** safely extracts the meetingId from all possible Fireflies payload structures\n- **3. IF — Valid Meeting ID?** validates the meetingId — invalid webhooks exit cleanly\n- **5. Set — Config Values** stores your Fireflies API key, Drive folder ID, Slack channel, author name, title, and company\n- **6. HTTP — Fetch Transcript** calls the Fireflies GraphQL API to get the full transcript with sentences, summaries, and sentiment\n- **7. Code — Process Transcript Data** extracts conversation text, pricing and task sentences, keywords, and meeting metadata\n- **8. IF — Transcript Ready?** checks if transcript data is available — not-ready transcripts exit cleanly\n- **10. AI Agent — Write LinkedIn Post** uses GPT-4o-mini to write a 180–280 word LinkedIn post from real meeting insights\n- **12. Code — Build Doc and Slack Message** assembles the full Google Doc content and Slack preview\n- **13. Google Drive — Save LinkedIn Post** saves the post as a document to your Drive folder\n- **14. Slack — Send Post Preview** posts a 350-character preview to your Slack channel for review\n\n## Set up steps\n1. In **5. Set — Config Values** — replace YOUR_FIREFLIES_API_KEY, YOUR_GOOGLE_DRIVE_FOLDER_ID, Slack channel, author name, author title, and company name\n2. Activate the workflow and copy the webhook URL from node 1\n3. In Fireflies — go to Settings, Developer Settings, Webhooks, and paste the URL\n4. In **11. OpenAI — GPT-4o-mini Model** — connect your OpenAI credential\n5. In **13. Google Drive — Save LinkedIn Post** — connect your Google Drive OAuth2 credential\n6. In **14. Slack — Send Post Preview** — connect your Slack OAuth2 credential and invite the bot to your channel"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "45267bbe-2310-4e10-be3b-31afaefb25cc",
+          "name": "Section — Webhook Receipt and Validation",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -4368,
+            -384
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 804,
+            "height": 900,
+            "content": "## Webhook Receipt and Validation\nFireflies POSTs a meetingId here when transcription completes. A Code node safely extracts the meetingId from any payload structure. The IF node validates it — invalid webhooks exit cleanly via the Set node below."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "91a1814c-02a6-4636-99b3-07fcb69dc426",
+          "name": "Section — Config, Transcript Fetch, and Processing",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -3536,
+            -384
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 916,
+            "height": 884,
+            "content": "## Config, Transcript Fetch, and Processing\nConfig stores all credentials and author details. Fireflies GraphQL API fetches the complete transcript. A Code node extracts sentences, ai_filter tags, keywords, sentiment, and metadata. A second IF gates on transcript availability."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "3be446ed-9260-41fd-b47c-5242190572e4",
+          "name": "Section — AI LinkedIn Post Writing",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2544,
+            -400
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 360,
+            "height": 900,
+            "content": "## AI LinkedIn Post Writing\nGPT-4o-mini (temperature 0.8) writes a 180–280 word LinkedIn post using real transcript content. Structure: scroll-stopping hook, specific paragraph, 3–5 emoji learnings, closing question or CTA, hashtags, author sign-off."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "348e8b38-5ad2-4aae-a6a3-c58f87b67ee8",
+          "name": "Section — Doc Assembly and Delivery",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2112,
+            -400
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 644,
+            "height": 900,
+            "content": "## Doc Assembly and Delivery\nBuilds a complete Google Doc with the post, meeting reference, keywords, and Fireflies link. Saved to Drive and previewed in Slack simultaneously for team review before publishing."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "23f2fa98-8166-49bc-b124-1589c215c695",
+          "name": "1. Webhook — Fireflies Transcript Done",
+          "type": "n8n-nodes-base.webhook",
+          "position": [
+            -4320,
+            -48
+          ],
+          "webhookId": "ff-linkedin-v2-001",
+          "parameters": {
+            "path": "fireflies-transcript-done",
+            "options": {},
+            "httpMethod": "POST"
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "f4753deb-a752-4b7c-b772-fe9a2fed3d9d",
+          "name": "2. Code — Extract Meeting ID",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -4064,
+            -48
+          ],
+          "parameters": {
+            "jsCode": "// Safely extract meetingId from Fireflies webhook\n// Fireflies can send payload in different structures\nconst raw = $input.first().json;\n\n// Handle all possible payload structures\nconst meetingId =\n  raw.meetingId ||\n  raw.body?.meetingId ||\n  raw.data?.meetingId ||\n  raw.payload?.meetingId ||\n  '';\n\nconst eventType =\n  raw.eventType ||\n  raw.body?.eventType ||\n  raw.data?.eventType ||\n  'Transcription completed';\n\nif (!meetingId) {\n  return [{\n    json: {\n      isValid: false,\n      error: 'No meetingId found in webhook payload',\n      rawPayload: JSON.stringify(raw).substring(0, 200)\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    isValid: true,\n    meetingId: meetingId.trim(),\n    eventType\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "a89b2910-8a67-456f-bc1f-c7865e3c76e8",
+          "name": "3. IF — Valid Meeting ID?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -3840,
+            -48
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-valid",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $json.isValid }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "b6ca83bf-18df-49da-b1b5-9495e92337e7",
+          "name": "4. Set — Invalid Webhook Skip",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -3776,
+            288
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "skip-001",
+                  "name": "result",
+                  "type": "string",
+                  "value": "Invalid webhook — no meetingId. Skipped."
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "d1382001-9c58-49f1-928b-1be64f9d7f22",
+          "name": "5. Set — Config Values",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -3472,
+            -80
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "cfg-001",
+                  "name": "firefliesApiKey",
+                  "type": "string",
+                  "value": "YOUR_FIREFLIES_API_KEY"
+                },
+                {
+                  "id": "cfg-002",
+                  "name": "googleDriveFolderId",
+                  "type": "string",
+                  "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID"
+                },
+                {
+                  "id": "cfg-003",
+                  "name": "slackChannel",
+                  "type": "string",
+                  "value": "#content-team"
+                },
+                {
+                  "id": "cfg-004",
+                  "name": "authorName",
+                  "type": "string",
+                  "value": "YOUR FULL NAME"
+                },
+                {
+                  "id": "cfg-005",
+                  "name": "authorTitle",
+                  "type": "string",
+                  "value": "YOUR JOB TITLE"
+                },
+                {
+                  "id": "cfg-006",
+                  "name": "companyName",
+                  "type": "string",
+                  "value": "YOUR COMPANY NAME"
+                },
+                {
+                  "id": "cfg-007",
+                  "name": "meetingId",
+                  "type": "string",
+                  "value": "={{ $('2. Code — Extract Meeting ID').item.json.meetingId }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "c753e123-483c-4ee8-9600-ac1d96be0dba",
+          "name": "6. HTTP — Fetch Transcript",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -3264,
+            -80
+          ],
+          "parameters": {
+            "url": "https://api.fireflies.ai/graphql",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"query\": \"query GetTranscript($id: String!) { transcript(id: $id) { id title date duration participants host_email transcript_url sentences { speaker_name text ai_filters { task pricing question } } summary { keywords action_items overview gist bullet_gist } analytics { sentiments { positive_pct negative_pct } } } }\",\n  \"variables\": {\n    \"id\": \"{{ $json.meetingId }}\"\n  }\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $json.firefliesApiKey }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "06d91bbf-c85a-48fa-8555-3ec0068098eb",
+          "name": "7. Code — Process Transcript Data",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -3040,
+            -80
+          ],
+          "parameters": {
+            "jsCode": "const response = $input.first().json;\nconst config = $('5. Set — Config Values').item.json;\n\nconst transcript = response?.data?.transcript;\n\nif (!transcript || !transcript.id) {\n  return [{\n    json: {\n      hasData: false,\n      meetingId: config.meetingId,\n      error: 'Transcript not found or not yet ready in Fireflies'\n    }\n  }];\n}\n\n// Build full conversation text from sentences\nconst sentences = transcript.sentences || [];\nlet fullText = '';\nconst taskLines = [];\nconst pricingLines = [];\nconst questionLines = [];\n\nsentences.forEach(s => {\n  const speaker = s.speaker_name || 'Speaker';\n  const text = (s.text || '').trim();\n  if (text) {\n    fullText += `${speaker}: ${text}\\n`;\n    if (s.ai_filters?.task && text.length > 15) taskLines.push(text);\n    if (s.ai_filters?.pricing && text.length > 15) pricingLines.push(text);\n    if (s.ai_filters?.question && text.length > 15) questionLines.push(text);\n  }\n});\n\n// Limit transcript text to 5000 chars for GPT token safety\nconst transcriptExcerpt = fullText.substring(0, 5000);\n\n// Summary fields from Fireflies\nconst summary = transcript.summary || {};\nconst keywords = (summary.keywords || []).slice(0, 12).join(', ') || 'None';\nconst actionItems = (summary.action_items || []).slice(0, 5).join(' | ') || 'None';\nconst overview = (summary.overview || '').substring(0, 800);\nconst gist = summary.gist || '';\nconst bulletPoints = (summary.bullet_gist || []).slice(0, 6).join('\\n') || '';\n\n// Date formatting\nconst meetingDate = transcript.date\n  ? new Date(transcript.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })\n  : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });\n\nconst meetingTitle = transcript.title || 'Untitled Meeting';\nconst durationMin = Math.round((transcript.duration || 0) / 60);\nconst participants = (transcript.participants || []).join(', ') || 'Not listed';\nconst transcriptUrl = transcript.transcript_url || 'Not available';\n\nconst positivePct = Math.round(transcript.analytics?.sentiments?.positive_pct || 0);\nconst negativePct = Math.round(transcript.analytics?.sentiments?.negative_pct || 0);\n\nconst logDate = new Date().toISOString().replace('T', ' ').substring(0, 16);\nconst docTitle = `LinkedIn Post — ${meetingTitle} — ${meetingDate}`;\n\nreturn [{\n  json: {\n    hasData: true,\n    meetingId: transcript.id,\n    meetingTitle,\n    meetingDate,\n    durationMin,\n    participants,\n    transcriptUrl,\n    transcriptExcerpt,\n    keywords,\n    actionItems,\n    overview,\n    gist,\n    bulletPoints,\n    taskLines: taskLines.slice(0, 3).join(' | ') || 'None',\n    pricingLines: pricingLines.slice(0, 3).join(' | ') || 'None',\n    questionLines: questionLines.slice(0, 3).join(' | ') || 'None',\n    positivePct,\n    negativePct,\n    docTitle,\n    logDate,\n    authorName: config.authorName,\n    authorTitle: config.authorTitle,\n    companyName: config.companyName,\n    googleDriveFolderId: config.googleDriveFolderId,\n    slackChannel: config.slackChannel\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "f49ba821-f034-4081-9a98-57c313f378c4",
+          "name": "8. IF — Transcript Ready?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -2816,
+            -80
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-has-data",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $json.hasData }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "c142f426-9e9d-4c90-a819-9e63511495cd",
+          "name": "9. Set — Transcript Not Ready Skip",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -2800,
+            224
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "skip-002",
+                  "name": "result",
+                  "type": "string",
+                  "value": "=Transcript not ready for meetingId: {{ $json.meetingId }}. Skipped."
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "55d411ad-9219-4c4d-865a-caf9968f9411",
+          "name": "10. AI Agent — Write LinkedIn Post",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            -2496,
+            -112
+          ],
+          "parameters": {
+            "text": "=You are a LinkedIn ghostwriter for {{ $json.authorName }}, {{ $json.authorTitle }} at {{ $json.companyName }}.\n\nWrite a LinkedIn post based on insights from a real business meeting or client call.\n\nMEETING CONTEXT:\nMeeting Title: {{ $json.meetingTitle }}\nDate: {{ $json.meetingDate }}\nDuration: {{ $json.durationMin }} minutes\nParticipants: {{ $json.participants }}\nCall Sentiment: {{ $json.positivePct }}% positive\n\nFIREFLIES SUMMARY:\nOverview: {{ $json.overview }}\nGist: {{ $json.gist }}\n\nKEY POINTS:\n{{ $json.bulletPoints }}\n\nKEYWORDS DISCUSSED: {{ $json.keywords }}\n\nACTION ITEMS FROM CALL: {{ $json.actionItems }}\n\nQUESTIONS RAISED IN CALL: {{ $json.questionLines }}\n\nTRANSCRIPT EXCERPT:\n{{ $json.transcriptExcerpt }}\n\nWRITE THE LINKEDIN POST NOW:\n\nFollow this exact structure:\n\nLINE 1: Strong hook. Surprising insight, bold statement, or counterintuitive lesson from this meeting. Must stop the scroll. Do NOT start with the word I or We. Maximum 12 words.\n\nLINE 2: Blank line.\n\nPARAGRAPH: 2 to 3 sentences expanding on the hook. Use first person as {{ $json.authorName }}. Be specific — reference real things from this meeting. Not generic advice.\n\nLINE BREAK.\n\n3 TO 5 KEY LEARNINGS: Each on its own line. Start each with a relevant emoji. Pull from real transcript content. Be specific, not generic.\n\nLINE BREAK.\n\nCLOSING: One sentence — either a thought-provoking question for the audience OR a call to action. Keep it conversational.\n\nLINE BREAK.\n\nHASHTAGS: 4 to 5 relevant hashtags on one line.\n\nLINE BREAK.\n\nSIGN OFF: — {{ $json.authorName }}, {{ $json.authorTitle }}\n\nRULES:\n- Total length 180 to 280 words\n- Plain text only — no asterisks, no markdown\n- Tone: human, professional, conversational — not corporate\n- Do NOT mention the meeting was recorded or transcribed\n- Do NOT fabricate any facts not present in the transcript\n- Write as if this is a genuine personal reflection",
+            "options": {},
+            "promptType": "define"
+          },
+          "typeVersion": 1.7
+        },
+        {
+          "id": "9f0c6bce-408b-4a72-98e7-8fbe7461a86e",
+          "name": "11. OpenAI — GPT-4o-mini Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            -2496,
+            112
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini"
+            },
+            "options": {
+              "maxTokens": 700,
+              "temperature": 0.8
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "98faeed6-9f31-48ce-852c-aa0f8a12e96e",
+          "name": "12. Code — Build Doc and Slack Message",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -2064,
+            -112
+          ],
+          "parameters": {
+            "jsCode": "// Read AI output and prepare final fields for Drive + Slack\nconst aiPost = $input.first().json.output || '';\nconst data = $('7. Code — Process Transcript Data').item.json;\n\nif (!aiPost || aiPost.length < 50) {\n  return [{\n    json: {\n      linkedinPost: 'Post generation failed. Please check OpenAI credentials.',\n      docTitle: data.docTitle,\n      folderId: data.googleDriveFolderId,\n      slackChannel: data.slackChannel,\n      slackMessage: 'LinkedIn post generation failed for: ' + data.meetingTitle,\n      meetingTitle: data.meetingTitle,\n      meetingDate: data.meetingDate,\n      transcriptUrl: data.transcriptUrl\n    }\n  }];\n}\n\n// Full document content for Google Drive\nconst docContent =\n  'LINKEDIN POST DRAFT\\n' +\n  'Meeting: ' + data.meetingTitle + '\\n' +\n  'Date: ' + data.meetingDate + '\\n' +\n  'Author: ' + data.authorName + ', ' + data.authorTitle + '\\n' +\n  'Company: ' + data.companyName + '\\n' +\n  'Generated: ' + data.logDate + '\\n' +\n  '\\n' +\n  '============================================================\\n' +\n  'LINKEDIN POST — READY TO COPY AND PASTE\\n' +\n  '============================================================\\n' +\n  '\\n' +\n  aiPost +\n  '\\n\\n' +\n  '============================================================\\n' +\n  'MEETING REFERENCE\\n' +\n  '============================================================\\n' +\n  'Title: ' + data.meetingTitle + '\\n' +\n  'Date: ' + data.meetingDate + '\\n' +\n  'Duration: ' + data.durationMin + ' minutes\\n' +\n  'Participants: ' + data.participants + '\\n' +\n  'Fireflies Link: ' + data.transcriptUrl + '\\n' +\n  'Keywords: ' + data.keywords + '\\n' +\n  'Action Items: ' + data.actionItems + '\\n' +\n  '\\n' +\n  'Auto-generated by n8n + Fireflies.ai + GPT-4o-mini';\n\n// Slack preview — first 350 chars of post\nconst preview = aiPost.length > 350 ? aiPost.substring(0, 350) + '...' : aiPost;\n\nconst slackMessage =\n  '*New LinkedIn Post Draft Ready*\\n' +\n  '\\n' +\n  '*Meeting:* ' + data.meetingTitle + '\\n' +\n  '*Date:* ' + data.meetingDate + '   *Duration:* ' + data.durationMin + ' min\\n' +\n  '*Author:* ' + data.authorName + ', ' + data.authorTitle + '\\n' +\n  '\\n' +\n  '*POST PREVIEW:*\\n' +\n  preview +\n  '\\n\\n' +\n  '_Full post saved to Google Drive_\\n' +\n  '_Fireflies transcript: ' + data.transcriptUrl + '_';\n\nreturn [{\n  json: {\n    linkedinPost: aiPost,\n    docContent,\n    docTitle: data.docTitle,\n    folderId: data.googleDriveFolderId,\n    slackChannel: data.slackChannel,\n    slackMessage,\n    meetingTitle: data.meetingTitle,\n    meetingDate: data.meetingDate\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "b4a8fec2-fe2f-4389-b37f-e7db1c811415",
+          "name": "13. Google Drive — Save LinkedIn Post",
+          "type": "n8n-nodes-base.googleDrive",
+          "position": [
+            -1728,
+            -272
+          ],
+          "parameters": {
+            "operation": "create"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "c87dfa34-f185-43db-85e2-d135a970dc17",
+          "name": "14. Slack — Send Post Preview",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            -1728,
+            64
+          ],
+          "webhookId": "d0db220b-b6f2-4bff-b535-43ba197e8509",
+          "parameters": {
+            "text": "={{ $json.slackMessage }}",
+            "otherOptions": {
+              "mrkdwn": true
+            },
+            "authentication": "oAuth2"
+          },
+          "typeVersion": 2.2
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "5. Set — Config Values": {
+          "main": [
+            [
+              {
+                "node": "6. HTTP — Fetch Transcript",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "3. IF — Valid Meeting ID?": {
+          "main": [
+            [
+              {
+                "node": "5. Set — Config Values",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "4. Set — Invalid Webhook Skip",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. IF — Transcript Ready?": {
+          "main": [
+            [
+              {
+                "node": "10. AI Agent — Write LinkedIn Post",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "9. Set — Transcript Not Ready Skip",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. HTTP — Fetch Transcript": {
+          "main": [
+            [
+              {
+                "node": "7. Code — Process Transcript Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "2. Code — Extract Meeting ID": {
+          "main": [
+            [
+              {
+                "node": "3. IF — Valid Meeting ID?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "11. OpenAI — GPT-4o-mini Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "10. AI Agent — Write LinkedIn Post",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. Code — Process Transcript Data": {
+          "main": [
+            [
+              {
+                "node": "8. IF — Transcript Ready?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "10. AI Agent — Write LinkedIn Post": {
+          "main": [
+            [
+              {
+                "node": "12. Code — Build Doc and Slack Message",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Webhook — Fireflies Transcript Done": {
+          "main": [
+            [
+              {
+                "node": "2. Code — Extract Meeting ID",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "12. Code — Build Doc and Slack Message": {
+          "main": [
+            [
+              {
+                "node": "13. Google Drive — Save LinkedIn Post",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "14. Slack — Send Post Preview",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 19,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 2
+        },
+        "n8n-nodes-base.set": {
+          "count": 3
+        },
+        "n8n-nodes-base.code": {
+          "count": 3
+        },
+        "n8n-nodes-base.slack": {
+          "count": 1
+        },
+        "n8n-nodes-base.webhook": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 5
+        },
+        "n8n-nodes-base.googleDrive": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Incrementors",
+      "username": "incrementors",
+      "bio": "",
+      "verified": true,
+      "links": [
+        "https://www.incrementors.com/"
+      ],
+      "avatar": "https://gravatar.com/avatar/e09b4b6a8c5a00f886a9eedf3be23a4af5a50cc216cd6b2aee2a12c2dfba99dd?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 47,
+        "icon": "file:webhook.svg",
+        "name": "n8n-nodes-base.webhook",
+        "codex": {
+          "data": {
+            "alias": [
+              "HTTP",
+              "API",
+              "Build",
+              "WH"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-custom-incident-response-workflows-with-n8n/",
+                  "label": "How to automate every step of an incident response workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Webhook"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTM1IDM3Yy0yLjIgMC00LTEuOC00LTRzMS44LTQgNC00IDQgMS44IDQgNC0xLjggNC00IDQiLz48cGF0aCBmaWxsPSIjMzc0NzRmIiBkPSJNMzUgNDNjLTMgMC01LjktMS40LTcuOC0zLjdsMy4xLTIuNWMxLjEgMS40IDIuOSAyLjMgNC43IDIuMyAzLjMgMCA2LTIuNyA2LTZzLTIuNy02LTYtNmMtMSAwLTIgLjMtMi45LjdsLTEuNyAxTDIzLjMgMTZsMy41LTEuOSA1LjMgOS40YzEtLjMgMi0uNSAzLS41IDUuNSAwIDEwIDQuNSAxMCAxMFM0MC41IDQzIDM1IDQzIi8+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTE0IDQzQzguNSA0MyA0IDM4LjUgNCAzM2MwLTQuNiAzLjEtOC41IDcuNS05LjdsMSAzLjlDOS45IDI3LjkgOCAzMC4zIDggMzNjMCAzLjMgMi43IDYgNiA2czYtMi43IDYtNnYtMmgxNXY0SDIzLjhjLS45IDQuNi01IDgtOS44IDgiLz48cGF0aCBmaWxsPSIjZTkxZTYzIiBkPSJNMTQgMzdjLTIuMiAwLTQtMS44LTQtNHMxLjgtNCA0LTQgNCAxLjggNCA0LTEuOCA0LTQgNCIvPjxwYXRoIGZpbGw9IiMzNzQ3NGYiIGQ9Ik0yNSAxOWMtMi4yIDAtNC0xLjgtNC00czEuOC00IDQtNCA0IDEuOCA0IDQtMS44IDQtNCA0Ii8+PHBhdGggZmlsbD0iI2U5MWU2MyIgZD0ibTE1LjcgMzQtMy40LTIgNS45LTkuN2MtMi0xLjktMy4yLTQuNS0zLjItNy4zIDAtNS41IDQuNS0xMCAxMC0xMHMxMCA0LjUgMTAgMTBjMCAuOS0uMSAxLjctLjMgMi41bC0zLjktMWMuMS0uNS4yLTEgLjItMS41IDAtMy4zLTIuNy02LTYtNnMtNiAyLjctNiA2YzAgMi4xIDEuMSA0IDIuOSA1LjFsMS43IDF6Ii8+PC9zdmc+"
+        },
+        "displayName": "Webhook",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 58,
+        "icon": "file:googleDrive.svg",
+        "name": "n8n-nodes-base.googleDrive",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googledrive/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Google Drive"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgODEgNzMiPjx1c2UgeGxpbms6aHJlZj0iI2EiIHg9Ii41IiB5PSIuNSIvPjxzeW1ib2wgaWQ9ImEiIG92ZXJmbG93PSJ2aXNpYmxlIj48ZyBmaWxsLXJ1bGU9Im5vbnplcm8iIHN0cm9rZT0ibm9uZSI+PHBhdGggZmlsbD0iIzAwNjZkYSIgZD0ibTYuMDQ4IDYxLjI2IDMuNTI4IDYuMDk0Yy43MzMgMS4yODMgMS43ODcgMi4yOTEgMy4wMjQgMy4wMjRsMTIuNi0yMS44MUgwYTguMyA4LjMgMCAwIDAgMS4xIDQuMTI0eiIvPjxwYXRoIGZpbGw9IiMwMGFjNDciIGQ9Ik00MCAyMi45MSAyNy40IDEuMWMtMS4yMzcuNzMzLTIuMjkxIDEuNzQxLTMuMDI0IDMuMDI0TDEuMSA0NC40NDVBOC4zIDguMyAwIDAgMCAwIDQ4LjU2OGgyNS4yeiIvPjxwYXRoIGZpbGw9IiNlYTQzMzUiIGQ9Ik02Ny40IDcwLjM3OGMxLjIzNy0uNzMzIDIuMjkxLTEuNzQxIDMuMDI0LTMuMDI0bDEuNDY2LTIuNTIgNy4wMS0xMi4xNDJhOC4zIDguMyAwIDAgMCAxLjEtNC4xMjRINTQuNzk4bDUuMzYzIDEwLjUzOHoiLz48cGF0aCBmaWxsPSIjMDA4MzJkIiBkPSJNNDAgMjIuOTEgNTIuNiAxLjFDNTEuMzYzLjM2NyA0OS45NDMgMCA0OC40NzcgMEgzMS41MjRjLTEuNDY2IDAtMi44ODcuNDEyLTQuMTI0IDEuMXoiLz48cGF0aCBmaWxsPSIjMjY4NGZjIiBkPSJNNTQuNzk5IDQ4LjU2OEgyNS4ybC0xMi42IDIxLjgxYzEuMjM3LjczMyAyLjY1NyAxLjEgNC4xMjQgMS4xaDQ2LjU1MmMxLjQ2NiAwIDIuODg3LS40MTIgNC4xMjQtMS4xeiIvPjxwYXRoIGZpbGw9IiNmZmJhMDAiIGQ9Ik02Ny4yNjIgMjQuMjg0IDU1LjYyNCA0LjEyNEM1NC44OTEgMi44NDEgNTMuODM3IDEuODMzIDUyLjYgMS4xTDQwIDIyLjkxbDE0LjggMjUuNjU5aDI1LjE1NWE4LjMgOC4zIDAgMCAwLTEuMS00LjEyNHoiLz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Google Drive",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 31,
+        "name": "Content Creation"
+      },
+      {
+        "id": 51,
+        "name": "Multimodal AI"
+      }
+    ],
+    "image": []
+  }
+}

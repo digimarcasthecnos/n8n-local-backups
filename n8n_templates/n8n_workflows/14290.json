@@ -1,0 +1,1840 @@
+{
+  "workflow": {
+    "id": 14290,
+    "name": "Create and publish AI videos from Telegram with VEED and Blotato",
+    "views": 4,
+    "recentViews": 1,
+    "totalViews": 4,
+    "createdAt": "2026-03-24T13:07:27.842Z",
+    "description": "# Create & Publish AI Videos from Telegram Chat with VEED and Blotato\n\n## Overview\n\nThis n8n workflow creates a **conversational AI video agent** accessible through Telegram. Users chat with a bot to request AI-generated talking-head videos using VEED's MCP tools, then optionally **publish to 9 social media platforms** via Blotato with a single approval tap.\n\n**Output**: AI-generated talking-head videos delivered in Telegram and published to TikTok, YouTube, Instagram, LinkedIn, Facebook, X, Threads, Bluesky, and Pinterest.\n\n---\n\n## What It Does\n\n```\nUser Message (Telegram) → AI Agent → VEED MCP tools create video → Response sent via Telegram\n                           ↕ Memory     ↓ (if video URL detected)\n                                     Approval prompt (Approve/Reject)\n                                        ↓ Approved\n                                     Upload to Blotato → Publish to 9 platforms in parallel\n                                        ↓\n                                     Merge results → Summary sent via Telegram\n```\n\n### Flow Breakdown\n\n| Step | Component | What Happens |\n|------|-----------|--------------|\n| 1. Message Received | 📩 Telegram Trigger | User sends a text message to the bot |\n| 2. AI Processing | 🤖 AI Video Agent (gpt-5-nano) | Interprets request, decides which VEED tools to use |\n| 3. Context Retention | 💾 Conversation Memory | Maintains conversation history per chat (20-message window) |\n| 4. Video Creation | 🎬 VEED MCP Tools | Lists characters/voices, confirms details, creates video via VEED Fabric |\n| 5. Response Delivery | 📤 Send Agent Response | Sends agent text back to user in Telegram |\n| 6. URL Extraction | 📋 Extract Video URL | Detects the `VIDEO_READY:` marker in agent output |\n| 7. Approval Prompt | 📩 Publish to Social Media? | Telegram sendAndWait with Approve/Reject buttons (24h timeout) |\n| 8. Upload | 📤 Upload Video to Blotato | Uploads video file to Blotato CDN, returns hosted URL |\n| 9. Publish | TikTok, YouTube, Instagram, LinkedIn, Facebook, X, Threads, Bluesky, Pinterest | All 9 platform nodes post in parallel using the Blotato URL |\n| 10. Summary | 📤 Send Publish Summary | Confirms publication back to user in Telegram |\n\n---\n\n## Required Connections\n\n### n8n Credentials\n\n| Node | Credential Type | Where to Get |\n|------|-----------------|--------------|\n| **📩 Telegram Trigger** | Telegram Bot API | Create bot via @BotFather in Telegram |\n| **🧠 OpenAI Chat Model** | OpenAI API Key | https://platform.openai.com/api-keys |\n| **🎬 VEED MCP Tools** | MCP OAuth2 | Your VEED OAuth2 client credentials |\n| **📤 Send Agent Response** | Telegram Bot API | Same bot token as trigger |\n| **📩 Publish to Social Media?** | Telegram Bot API | Same bot token as trigger |\n| **📤 Upload Video to Blotato** | Blotato API | https://my.blotato.com/settings → API |\n| **TikTok / YouTube / Instagram / ...** | Blotato API | Same Blotato credential as upload |\n\n### Community Node Required\n\nInstall `@blotato/n8n-nodes-blotato` via **Settings → Community Nodes → Install** in n8n.\n\n---\n\n## Configuration Options\n\n### AI Agent System Prompt\n\nThe AI Agent's behavior is defined by its system prompt. Edit the **🤖 AI Video Agent** node to customize:\n\n```\nYou are a friendly AI video creation assistant powered by VEED.\nYou help users create professional talking-head videos with AI avatars through Telegram.\n\nVideo Creation Flow:\n1. Understand their need - Ask what video they want\n2. Choose a character - Show available AI avatars\n3. Choose a voice - Ask preferred language/locale\n4. Confirm details - Summarize before creating\n5. Create the video - Generate with confirmed parameters\n6. Track progress - Poll generation status\n7. Deliver result - Share the video URL with VIDEO_READY: marker\n```\n\n### Agent Configuration\n\n| Field | Default | Description |\n|-------|---------|-------------|\n| Model | `gpt-5-nano` | OpenAI model used for reasoning |\n| Max Iterations | `15` | Maximum tool-calling rounds per message |\n| Memory Window | `20` messages | How many past messages the agent remembers |\n| Session Key | `{{ $json.message.chat.id }}` | Isolates memory per Telegram chat |\n\n### Available VEED MCP Tools\n\n| Tool | Required Parameters | Description |\n|------|---------------------|-------------|\n| `list_workspaces` | — | Show available workspaces |\n| `list_characters` | — (optional: gender) | Browse AI avatar characters |\n| `list_voices` | locale (e.g. `\"en\"`) | Browse voices (optional: gender filter) |\n| `confirm_fabric_video` | script, voiceId, characterId | Preview video details before creating |\n| `create_fabric_video` | script, voiceId, characterId | Create a talking-head video (optional: aspectRatio) |\n| `get_generation_status` | jobId | Check video generation progress |\n| `get_credit_balance` | — | Check remaining VEED credits |\n\n### Blotato Platform Configuration\n\nEach platform node needs its `accountId` configured (select from dropdown after connecting Blotato credentials):\n\n| Platform | Extra Configuration |\n|----------|-------------------|\n| TikTok | — |\n| YouTube | Title, privacy status (`private` by default), notify subscribers |\n| Instagram | — |\n| LinkedIn | — |\n| Facebook | Page ID (select from dropdown) |\n| Twitter / X | — |\n| Threads | — |\n| Bluesky | — |\n| Pinterest | Board ID |\n\nDisable any platform node you don't use.\n\n### Caption Configuration\n\nEdit the **⚙️ Set Caption** node to customize what gets posted:\n- `caption`: defaults to first 200 characters of the agent's response\n- `video_url`: automatically extracted from the `VIDEO_READY:` marker\n\n---\n\n## Conversation Examples\n\n| User Says | Agent Does |\n|-----------|-----------|\n| \"Hi, what can you do?\" | Introduces itself and explains video creation capabilities |\n| \"Create a video about AI trends\" | Asks about character/voice preferences, then guides through creation flow |\n| \"Show me available characters\" | Calls `list_characters`, formats results for easy selection |\n| \"Use a female English voice\" | Calls `list_voices` with locale `\"en\"` and gender filter, shows options |\n| \"Yes, create it!\" | Calls `create_fabric_video`, then immediately checks `get_generation_status` |\n| \"Is my video ready?\" | Calls `get_generation_status` with the last jobId from memory |\n| *Taps \"Approve\"* | Video uploads to Blotato, publishes to all 9 platforms, summary sent |\n| *Taps \"Reject\"* | \"No problem! Your video won't be published to social media.\" |\n\n---\n\n## Output\n\n### Per Video Generated\n\n| Asset | Format | Delivered Via |\n|-------|--------|---------------|\n| Video URL | VEED hosted MP4 link | Telegram message |\n| Approval prompt | Approve/Reject buttons | Telegram sendAndWait |\n| Social media posts | Video + caption | TikTok, YouTube, Instagram, LinkedIn, Facebook, X, Threads, Bluesky, Pinterest |\n| Publish summary | Text confirmation | Telegram message |\n\n---\n\n## Estimated Costs Per Video\n\n| Service | Usage | Approximate Cost |\n|---------|-------|------------------|\n| OpenAI gpt-5-nano | ~1-3K tokens per conversation turn | ~$0.005-0.02 |\n| VEED Fabric | 1 video render (~8 credits/sec) | ~$0.10-0.20 |\n| Blotato | Media upload + 9 platform posts | Included in paid plan |\n| Telegram Bot API | Messages | Free |\n| **Total** | | **~$0.10-0.25 per video** |\n\n&gt; Costs vary based on conversation length, video duration, and current API pricing.\n\n---\n\n## Setup Checklist\n\n### Step 1: Import Workflow\n- [ ] Import `create-and-publish-ai-videos-from-telegram-chat-with-veed-and-blotato.json` into n8n\n\n### Step 2: Install Blotato Community Node\n- [ ] Go to **Settings → Community Nodes → Install**\n- [ ] Enter `@blotato/n8n-nodes-blotato` and install\n\n### Step 3: Create Telegram Bot\n- [ ] Open Telegram and message [@BotFather](https://t.me/BotFather)\n- [ ] Send `/newbot` and follow the prompts to create your bot\n- [ ] Copy the bot token provided by BotFather\n\n### Step 4: Configure n8n Credentials\n- [ ] Click on **📩 Telegram Trigger** node → Add Telegram Bot credential with your token\n- [ ] Click on **🧠 OpenAI Chat Model** node → Add OpenAI API Key credential\n- [ ] Click on **🎬 VEED MCP Tools** node → Add MCP OAuth2 credential with your VEED OAuth2 client credentials\n- [ ] Click on **📤 Send Agent Response** node → Select the same Telegram Bot credential\n- [ ] Click on **📩 Publish to Social Media?** node → Select the same Telegram Bot credential\n- [ ] Click on **📤 Upload Video to Blotato** node → Add Blotato API credential (from blotato.com settings)\n\n### Step 5: Configure Blotato Platforms\n- [ ] Open each platform node (TikTok, YouTube, Instagram, etc.)\n- [ ] Select your connected account from the `accountId` dropdown\n- [ ] For YouTube: set title and privacy preferences\n- [ ] For Facebook: select your Page from the dropdown\n- [ ] For Pinterest: set Board ID\n- [ ] Disable any platform nodes you don't need\n\n### Step 6: Activate & Test\n- [ ] Activate the workflow by clicking **Publish** and toggling it active\n- [ ] Send a test message to your bot in Telegram (e.g., \"Hi, what can you do?\")\n- [ ] Verify the bot responds with its capabilities\n- [ ] Create a video and test the full flow including the approval prompt\n- [ ] Approve publishing and verify posts appear on your social accounts\n\n---\n\n## Limitations & Notes\n\n### Technical Limitations\n\n- **Telegram activation**: The workflow must be published and active — simply executing it is not enough for the Telegram trigger to receive messages.\n- **Memory window**: Only the last 20 messages are retained per conversation. Older context is lost.\n- **VEED processing**: Video generation takes 1-5 minutes. The agent reports status but the user must wait.\n- **Concurrent users**: Multiple users are supported — each Telegram chat gets independent conversation memory keyed by `chat.id`.\n- **Approval timeout**: The publish prompt expires after 24 hours if not answered.\n- **VIDEO_READY marker**: The agent must include `VIDEO_READY: &lt;url&gt;` in its response for the publishing flow to trigger. This is enforced via the system prompt.\n- **Blotato paid plan**: API access requires a paid Blotato subscription.\n\n### Content Considerations\n\n- The AI agent autonomously decides which VEED tools to use based on the user's request\n- Users can request specific characters, voices, and scripts through natural conversation\n- The agent cannot edit or modify videos after creation\n- Video output depends on available VEED characters and voices\n- Each second of generated video costs approximately 8 VEED credits\n- Published captions default to the first 200 characters of the agent's response — edit the **⚙️ Set Caption** node to customize\n\n### Best Practices\n\n1. **Set bot commands**: Use @BotFather's `/setcommands` to add help commands for your users\n2. **Test with simple requests first**: Start with \"list available characters\" before attempting full video creation\n3. **Monitor token usage**: Longer conversations consume more OpenAI tokens per turn\n4. **Customize the system prompt**: Tailor the agent's persona, default locale, and guidelines to your use case\n5. **Disable unused platforms**: Disable platform nodes you haven't connected to avoid errors\n6. **YouTube defaults to private**: Videos are published as private by default — change in the YouTube node if needed\n\n---\n\n## Troubleshooting\n\n| Issue | Solution |\n|-------|----------|\n| Bot not responding | Ensure workflow is **published and active**, not just executed manually |\n| \"Unauthorized\" from Telegram | Verify bot token is correct in n8n Telegram credential |\n| VEED MCP connection failed | Re-authorize the VEED OAuth2 credential in n8n |\n| Agent doesn't use VEED tools | Verify 🎬 VEED MCP Tools node is connected to the AI Agent node |\n| Memory not working across messages | Confirm session key expression `{{ $('📩 Telegram Trigger').item.json.message.chat.id }}` is correct |\n| Video generation timeout | VEED processing can take up to 5 minutes — agent should poll `get_generation_status` |\n| \"Model not found\" error | Verify OpenAI API key has access to gpt-5-nano model |\n| No approval prompt after video | Check the agent includes `VIDEO_READY:` marker — verify system prompt is intact |\n| Blotato upload fails | Verify Blotato API credential is valid and plan is active |\n| Platform publish fails | Ensure `accountId` is configured in the failing platform node |\n| \"Can't parse entities\" error | The Send Agent Response node should have no `parse_mode` set (plain text) |\n| Blotato node not found | Install `@blotato/n8n-nodes-blotato` via Settings → Community Nodes |\n\n---\n\n## Version History\n\n| Version | Date | Changes |\n|---------|------|---------|\n| 1.0 | Mar 2026 | Initial release with Telegram bot, AI Agent, VEED MCP integration, conversation memory |\n| 2.0 | Apr 2026 | Added Blotato multiplatform publishing (9 platforms), Telegram approval flow, video URL extraction, caption configuration |\n\n---\n\n## Credits\n\nBuilt with:\n- **n8n** - Workflow automation\n- **OpenAI** - AI agent reasoning (gpt-5-nano)\n- **VEED** - AI video generation (via MCP)\n- **Blotato** - Multiplatform social media publishing\n- **Telegram** - Chat interface & approval flow\n- **LangChain** - Agent framework and memory\n",
+    "workflow": {
+      "id": "BDtNdohn_cl8c4GUuiLXF",
+      "meta": {
+        "instanceId": "2620326101292319b5c051ce7cd93e3ad3214bee01eb32fdaef2a9731045a4e4",
+        "templateCredsSetupCompleted": true
+      },
+      "name": "Create & Publish AI Videos from Telegram Chat with VEED and Blotato",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "c7200268-e44e-40bd-99f3-8451e231c008",
+          "name": "Sticky Note - Setup",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            784,
+            -224
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 500,
+            "height": 1352,
+            "content": "# Create Telegram AI Video Agent with VEED MCP\n\nA conversational AI video agent accessible through Telegram. Users chat with a bot to create AI talking-head videos using VEED's MCP tools, then optionally publish to social media via Blotato.\n\n## How It Works\n1. **Message**: User sends a message to the Telegram bot\n2. **AI Agent**: OpenAI-powered agent interprets the request and maintains conversation context\n3. **VEED Tools**: Agent uses VEED MCP tools to browse characters/voices and create videos\n4. **Response**: Agent sends the result back via Telegram\n5. **Approval**: If a video URL is detected, user is asked to approve publishing\n6. **Upload**: Video is uploaded to Blotato\n7. **Publish**: Video is posted to 9 platforms in parallel (TikTok, YouTube, Instagram, LinkedIn, Facebook, X, Threads, Bluesky, Pinterest)\n\n## Requirements\n- Telegram Bot Token (via @BotFather)\n- OpenAI API Key\n- VEED MCP OAuth2 credentials\n- Blotato: Install `@blotato/n8n-nodes-blotato` community node + API key (paid plan required)\n\n**Author:** VEED.io"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "19562635-8dea-43a1-ac0e-d879bae17613",
+          "name": "Sticky Note - How It Works",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1328,
+            -224
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 452,
+            "height": 400,
+            "content": "## Conversation Flow\n\nThe AI agent guides users through a video creation flow:\n\n1. User describes the video they want to create\n2. Agent lists available AI characters using `list_characters`\n3. User picks a character\n4. Agent lists voices using `list_voices` (filtered by locale)\n5. User picks a voice\n6. Agent confirms details using `confirm_fabric_video`\n7. Agent creates the video using `create_fabric_video`\n8. Agent tracks progress with `get_generation_status`\n9. Agent delivers the video URL when complete\n10. User is asked: \"Publish to social media?\"\n11. If approved, video is uploaded to Blotato then posted to all platforms in parallel\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "65578691-e4af-4066-a007-cf7d2d97f5b8",
+          "name": "Sticky Note - VEED Tools",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1328,
+            192
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 448,
+            "height": 224,
+            "content": "\n## Available VEED MCP Tools\n- `list_workspaces` - Show available workspaces\n- `list_characters` - Browse AI avatar characters\n- `list_voices` - Browse voices by locale\n- `confirm_fabric_video` - Preview video before creating\n- `create_fabric_video` - Create a talking-head video\n- `get_generation_status` - Check video progress\n- `get_credit_balance` - Check remaining credits"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "329e1034-edec-45c1-b56b-4c57bfe12b1c",
+          "name": "Sticky Note - Blotato Setup",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2976,
+            -240
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 420,
+            "height": 620,
+            "content": "## Blotato Setup\n\n1. Install the `@blotato/n8n-nodes-blotato` community node in n8n\n2. Sign up at [blotato.com](https://blotato.com) (paid plan required)\n3. Connect your social media accounts in the Blotato dashboard\n4. Go to Settings > API and copy your API key\n5. In n8n, create Blotato API credentials with your key\n6. Configure each platform node with your `accountId` (select from the dropdown list)\n\n## Pre-configured Platforms\nAll 9 platforms are wired and ready. Configure the `accountId` in each platform node:\n- TikTok\n- YouTube (also set title & privacy)\n- Instagram\n- LinkedIn\n- Facebook (also set Page ID)\n- Twitter / X\n- Threads\n- Bluesky\n- Pinterest (also set Board ID)\n\nDisable any platform node you don't need."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f5f15fb6-4494-43b0-9128-a4302585ba81",
+          "name": "Sticky Note - Approval Flow",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2528,
+            -32
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 420,
+            "height": 424,
+            "content": "## Approval & Publishing Flow\n\nAfter the AI agent responds, the workflow checks if the output contains a VEED video URL using the `VIDEO_READY:` marker.\n\nIf a video is found:\n1. Telegram sends an approval prompt with Approve/Reject buttons\n2. Workflow pauses and waits up to 24 hours for a response\n3. **Approve**: Video is uploaded to Blotato, then posted to all 9 platforms in parallel\n4. **Reject**: User gets a confirmation that publishing was skipped\n\nThe caption is extracted from the first 200 characters of the agent's response. Edit the **Set Caption** node to customize."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "59b6e3b1-0a7b-48dd-aeb2-5fd81b1e486f",
+          "name": "📩 Telegram Trigger",
+          "type": "n8n-nodes-base.telegramTrigger",
+          "position": [
+            1328,
+            448
+          ],
+          "webhookId": "00000000-0000-0000-0000-000000000001",
+          "parameters": {
+            "updates": [
+              "message"
+            ],
+            "additionalFields": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "5d5af7e1-c89f-456a-8c05-9fec7015f6ed",
+          "name": "🤖 AI Video Agent",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            1536,
+            448
+          ],
+          "parameters": {
+            "text": "={{ $json.message.text }}",
+            "options": {
+              "maxIterations": 15,
+              "systemMessage": "You are a friendly AI video creation assistant powered by VEED. You help users create professional talking-head videos with AI avatars through Telegram.\n\n## Your Capabilities\nYou have access to VEED's video creation tools:\n- list_workspaces - Show available workspaces\n- list_characters - Browse AI avatar characters (optional filter: gender male/female)\n- list_voices - Browse voices (requires locale e.g. \"en\", optional filter: gender Female/Male/Neutral)\n- confirm_fabric_video - Preview video details before creating (requires script, voiceId, characterId)\n- create_fabric_video - Create a video (requires script, voiceId, characterId; optional aspectRatio: square/landscape/portrait)\n- get_generation_status - Check video progress (requires jobId)\n- get_credit_balance - Check remaining credits\n\n## Video Creation Flow\nGuide users through these steps:\n1. Understand their need - Ask what video they want to create and what the script should say\n2. Choose a character - Show available AI avatars using list_characters. Let them pick.\n3. Choose a voice - Ask preferred language/locale, show voices using list_voices. Let them pick.\n4. Confirm details - Use confirm_fabric_video to summarize before creating\n5. Create the video - Use create_fabric_video with confirmed parameters\n6. Track progress - IMMEDIATELY call get_generation_status with the returned jobId\n7. Deliver result - Share the video URL when complete\n\n## Important Guidelines\n- Always confirm the script with the user before creating a video\n- Video generation takes 1-5 minutes. Tell the user to be patient.\n- Each video costs ~8 credits per second. Offer to check balance with get_credit_balance if asked.\n- If a user greets you, introduce yourself and explain what you can do\n- Keep responses concise for Telegram readability\n- Default locale to \"en\" if user doesn't specify\n- After create_fabric_video returns a jobId, ALWAYS immediately call get_generation_status\n\n## Video URL Output Rule\nWhen a video has finished generating and you have the final video URL from get_generation_status, include it on its own line prefixed with the exact marker VIDEO_READY: followed by the URL. Example:\nVIDEO_READY: https://www.veed.io/view/abc123\nThis marker is used by the downstream publishing flow. ONLY use this marker for the final completed video URL, NEVER for thumbnails, previews, workspace links, or any other URLs.\n\n## Telegram Formatting Rules\nYou are responding inside Telegram which has limited formatting support.\n\nNEVER use:\n- Markdown tables (no | pipes)\n- Headers (no # symbols)\n- Horizontal rules\n\nALWAYS use:\n- *bold* for names and labels\n- `backticks` for IDs that users need to copy\n- [text](url) for clickable links\n- Numbered lists (1. 2. 3.) for selections\n\nWhen listing characters, use this format (one line per character):\n1. *Name* (Gender) - `character-id` [Preview](thumbnail_url)\n\nWhen listing voices, use this format (one line per voice):\n1. *Name* (Gender, Locale) - `voice-id`\n\nIf a list exceeds 20 items, show only the first 20 and tell the user how many more are available, asking them to narrow by gender or locale.\n\nEnd every selection list with: \"Reply with the number to select.\""
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "3900e223-007e-4e74-bddb-6bf80b1924dd",
+          "name": "🧠 OpenAI Chat Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            1440,
+            672
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-5-nano",
+              "cachedResultName": "gpt-5-nano"
+            },
+            "options": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "39387542-5b8e-477a-8257-108fdad1fe21",
+          "name": "💾 Conversation Memory",
+          "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+          "position": [
+            1600,
+            672
+          ],
+          "parameters": {
+            "sessionKey": "={{ $('📩 Telegram Trigger').item.json.message.chat.id }}",
+            "sessionIdType": "customKey",
+            "contextWindowLength": 20
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "3f18584c-021a-46ec-bbbd-811b88075bd4",
+          "name": "🎬 VEED MCP Tools",
+          "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
+          "position": [
+            1760,
+            672
+          ],
+          "parameters": {
+            "options": {},
+            "endpointUrl": "https://www.veed.io/api/v1/mcp",
+            "authentication": "mcpOAuth2Api"
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "17588487-0f31-445f-9b34-2b71cc0beab2",
+          "name": "📤 Send Agent Response",
+          "type": "n8n-nodes-base.telegram",
+          "onError": "continueRegularOutput",
+          "position": [
+            1872,
+            448
+          ],
+          "webhookId": "cf37ac67-32b7-4639-b409-2423255a94f0",
+          "parameters": {
+            "text": "={{ $json.output }}",
+            "chatId": "={{ $('📩 Telegram Trigger').item.json.message.chat.id }}",
+            "additionalFields": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "a1f14a33-3112-4508-b526-f33d8597e78c",
+          "name": "📋 Extract Video URL",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            2096,
+            448
+          ],
+          "parameters": {
+            "jsCode": "const output = $('🤖 AI Video Agent').item.json.output;\nconst markerMatch = output.match(/VIDEO_READY:\\s*(https?:\\/\\/[^\\s)>\\]]+)/i);\nreturn [{\n  json: {\n    video_url: markerMatch ? markerMatch[1] : null,\n    has_video: !!markerMatch,\n    agent_output: output,\n    chat_id: $('📩 Telegram Trigger').item.json.message.chat.id\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "0f96e340-6426-42a1-8e38-0930595b8e9d",
+          "name": "✅ Has Video URL?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            2304,
+            448
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 2,
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "check-has-video",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json.has_video }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "41b40be3-7e35-4e11-91a9-b5b1ab2ee0b4",
+          "name": "📩 Publish to Social Media?",
+          "type": "n8n-nodes-base.telegram",
+          "position": [
+            2528,
+            432
+          ],
+          "webhookId": "00000000-0000-0000-0000-000000000002",
+          "parameters": {
+            "chatId": "={{ $json.chat_id }}",
+            "message": "={{ \"Your video is ready!\\n\\n\" + $json.video_url + \"\\n\\nWould you like to publish it to social media via Blotato?\" }}",
+            "options": {
+              "limitWaitTime": {
+                "values": {
+                  "resumeAmount": 24
+                }
+              }
+            },
+            "operation": "sendAndWait",
+            "approvalOptions": {
+              "values": {
+                "approvalType": "double"
+              }
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "4f5b76b1-2d05-4459-bdf3-a1c431626f39",
+          "name": "✅ Approved?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            2752,
+            432
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 2,
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "check-approved",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json.data.approved }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "fc21e072-460d-4fa8-95f9-40d19f4e5219",
+          "name": "📤 Send Skipped Message",
+          "type": "n8n-nodes-base.telegram",
+          "position": [
+            2976,
+            672
+          ],
+          "webhookId": "211020a3-9aae-4736-8b3c-533f70955cdf",
+          "parameters": {
+            "text": "No problem! Your video won't be published to social media. You can still share it manually using the link above.",
+            "chatId": "={{ $('📋 Extract Video URL').item.json.chat_id }}",
+            "additionalFields": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "e013af82-e304-4c0d-91e2-0b1da2869b1c",
+          "name": "⚙️ Set Caption",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            2976,
+            416
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "set-caption",
+                  "name": "caption",
+                  "type": "string",
+                  "value": "={{ $('📋 Extract Video URL').item.json.agent_output.substring(0, 200) }}"
+                },
+                {
+                  "id": "set-video-url",
+                  "name": "video_url",
+                  "type": "string",
+                  "value": "={{ $('📋 Extract Video URL').item.json.video_url }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "dfe122c7-9112-456b-9a44-c2da1bfdbd79",
+          "name": "📤 Upload Video to Blotato",
+          "type": "@blotato/n8n-nodes-blotato.blotato",
+          "position": [
+            3184,
+            416
+          ],
+          "parameters": {
+            "mediaUrl": "={{ $json.video_url }}",
+            "resource": "media"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "d70caf4c-cc1e-4cbe-8d61-bd0e21ccd337",
+          "name": "TikTok",
+          "type": "@blotato/n8n-nodes-blotato.blotato",
+          "position": [
+            3504,
+            -144
+          ],
+          "parameters": {
+            "options": {},
+            "platform": "tiktok",
+            "accountId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": "Select your TikTok account"
+            },
+            "postContentText": "={{ $('⚙️ Set Caption').item.json.caption }}",
+            "postContentMediaUrls": "={{ $json.url }}"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "360fdb93-44ee-4b57-bc0c-3effe4a617a2",
+          "name": "YouTube",
+          "type": "@blotato/n8n-nodes-blotato.blotato",
+          "position": [
+            3504,
+            0
+          ],
+          "parameters": {
+            "options": {},
+            "platform": "youtube",
+            "accountId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": "Select your YouTube account"
+            },
+            "postContentText": "={{ $('⚙️ Set Caption').item.json.caption }}",
+            "postContentMediaUrls": "={{ $json.url }}",
+            "postCreateYoutubeOptionTitle": "={{ $('⚙️ Set Caption').item.json.caption.substring(0, 100) }}",
+            "postCreateYoutubeOptionPrivacyStatus": "private",
+            "postCreateYoutubeOptionShouldNotifySubscribers": false
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "d673fa52-18e3-4067-b23b-9a1a96d4559b",
+          "name": "Instagram",
+          "type": "@blotato/n8n-nodes-blotato.blotato",
+          "position": [
+            3504,
+            144
+          ],
+          "parameters": {
+            "options": {},
+            "accountId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": "Select your Instagram account"
+            },
+            "postContentText": "={{ $('⚙️ Set Caption').item.json.caption }}",
+            "postContentMediaUrls": "={{ $json.url }}"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "8fef3bf1-5095-4cb5-afe6-90a4f74b3549",
+          "name": "LinkedIn",
+          "type": "@blotato/n8n-nodes-blotato.blotato",
+          "position": [
+            3504,
+            272
+          ],
+          "parameters": {
+            "options": {},
+            "platform": "linkedin",
+            "accountId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": "Select your LinkedIn account"
+            },
+            "postContentText": "={{ $('⚙️ Set Caption').item.json.caption }}",
+            "postContentMediaUrls": "={{ $json.url }}"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "aebaf671-f8e9-4d10-9268-ef68e4346b5c",
+          "name": "Facebook",
+          "type": "@blotato/n8n-nodes-blotato.blotato",
+          "position": [
+            3504,
+            416
+          ],
+          "parameters": {
+            "options": {},
+            "platform": "facebook",
+            "accountId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": "Select your Facebook account"
+            },
+            "facebookPageId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": "Select your Facebook Page"
+            },
+            "postContentText": "={{ $('⚙️ Set Caption').item.json.caption }}",
+            "postContentMediaUrls": "={{ $json.url }}"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "a9273b66-c125-49fe-a953-9bbbb85b3a7f",
+          "name": "Twitter (X)",
+          "type": "@blotato/n8n-nodes-blotato.blotato",
+          "position": [
+            3504,
+            560
+          ],
+          "parameters": {
+            "options": {},
+            "platform": "twitter",
+            "accountId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": "Select your X account"
+            },
+            "postContentText": "={{ $('⚙️ Set Caption').item.json.caption }}",
+            "postContentMediaUrls": "={{ $json.url }}"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "19c5cb56-fb44-4f39-a833-08583d412ae6",
+          "name": "Threads",
+          "type": "@blotato/n8n-nodes-blotato.blotato",
+          "position": [
+            3504,
+            704
+          ],
+          "parameters": {
+            "options": {},
+            "platform": "threads",
+            "accountId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": "Select your Threads account"
+            },
+            "postContentText": "={{ $('⚙️ Set Caption').item.json.caption }}",
+            "postContentMediaUrls": "={{ $json.url }}"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "a84a9f54-6cfc-4c22-9835-a96b8e3e5002",
+          "name": "Bluesky",
+          "type": "@blotato/n8n-nodes-blotato.blotato",
+          "position": [
+            3504,
+            832
+          ],
+          "parameters": {
+            "options": {},
+            "platform": "bluesky",
+            "accountId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": "Select your Bluesky account"
+            },
+            "postContentText": "={{ $('⚙️ Set Caption').item.json.caption }}",
+            "postContentMediaUrls": "={{ $json.url }}"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "19ca265b-53a0-4484-8c30-5e5c5a090f35",
+          "name": "Pinterest",
+          "type": "@blotato/n8n-nodes-blotato.blotato",
+          "position": [
+            3504,
+            976
+          ],
+          "parameters": {
+            "options": {},
+            "platform": "pinterest",
+            "accountId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": "Select your Pinterest account"
+            },
+            "postContentText": "={{ $('⚙️ Set Caption').item.json.caption }}",
+            "pinterestBoardId": {
+              "__rl": true,
+              "mode": "id",
+              "value": ""
+            },
+            "postContentMediaUrls": "={{ $json.url }}"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "45e2ede8-4136-42a7-93bc-7716bdc4136e",
+          "name": "Merge",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            3760,
+            304
+          ],
+          "parameters": {
+            "mode": "chooseBranch",
+            "numberInputs": 9
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "92fab343-deac-418d-95bf-7088fecf37f4",
+          "name": "📤 Send Publish Summary",
+          "type": "n8n-nodes-base.telegram",
+          "position": [
+            3984,
+            416
+          ],
+          "webhookId": "725746c5-b6e7-4919-94da-c70e093e5500",
+          "parameters": {
+            "text": "={{ 'Your video has been published to all configured platforms via Blotato!\\n\\nVideo: ' + $('📋 Extract Video URL').item.json.video_url }}",
+            "chatId": "={{ $('📋 Extract Video URL').item.json.chat_id }}",
+            "additionalFields": {}
+          },
+          "typeVersion": 1.2
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "binaryMode": "separate",
+        "availableInMCP": false,
+        "executionOrder": "v1"
+      },
+      "versionId": "599af6c6-e7ed-494f-b69a-59acefd36312",
+      "connections": {
+        "Merge": {
+          "main": [
+            [
+              {
+                "node": "📤 Send Publish Summary",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "TikTok": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Bluesky": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 7
+              }
+            ]
+          ]
+        },
+        "Threads": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 6
+              }
+            ]
+          ]
+        },
+        "YouTube": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 1
+              }
+            ]
+          ]
+        },
+        "Facebook": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 4
+              }
+            ]
+          ]
+        },
+        "LinkedIn": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 3
+              }
+            ]
+          ]
+        },
+        "Instagram": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 2
+              }
+            ]
+          ]
+        },
+        "Pinterest": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 8
+              }
+            ]
+          ]
+        },
+        "Twitter (X)": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 5
+              }
+            ]
+          ]
+        },
+        "✅ Approved?": {
+          "main": [
+            [
+              {
+                "node": "⚙️ Set Caption",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "📤 Send Skipped Message",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "⚙️ Set Caption": {
+          "main": [
+            [
+              {
+                "node": "📤 Upload Video to Blotato",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "✅ Has Video URL?": {
+          "main": [
+            [
+              {
+                "node": "📩 Publish to Social Media?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "🎬 VEED MCP Tools": {
+          "ai_tool": [
+            [
+              {
+                "node": "🤖 AI Video Agent",
+                "type": "ai_tool",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "🤖 AI Video Agent": {
+          "main": [
+            [
+              {
+                "node": "📤 Send Agent Response",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "📩 Telegram Trigger": {
+          "main": [
+            [
+              {
+                "node": "🤖 AI Video Agent",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "📋 Extract Video URL": {
+          "main": [
+            [
+              {
+                "node": "✅ Has Video URL?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "🧠 OpenAI Chat Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "🤖 AI Video Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "💾 Conversation Memory": {
+          "ai_memory": [
+            [
+              {
+                "node": "🤖 AI Video Agent",
+                "type": "ai_memory",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "📤 Send Agent Response": {
+          "main": [
+            [
+              {
+                "node": "📋 Extract Video URL",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "📤 Upload Video to Blotato": {
+          "main": [
+            [
+              {
+                "node": "TikTok",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "YouTube",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Instagram",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "LinkedIn",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Facebook",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Twitter (X)",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Threads",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Bluesky",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Pinterest",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "📩 Publish to Social Media?": {
+          "main": [
+            [
+              {
+                "node": "✅ Approved?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 29,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 2
+        },
+        "n8n-nodes-base.set": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 1
+        },
+        "n8n-nodes-base.merge": {
+          "count": 1
+        },
+        "n8n-nodes-base.telegram": {
+          "count": 4
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 5
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "n8n-nodes-base.telegramTrigger": {
+          "count": 1
+        },
+        "@blotato/n8n-nodes-blotato.blotato": {
+          "count": 10
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.mcpClientTool": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.memoryBufferWindow": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "VEED",
+      "username": "veed",
+      "bio": "VEED is an ai video creation platform used by 75% of Fortune 500 companies. Our N8N templates help marketers and creators to generate talking videos directly within their n8n workflows — unlocking use cases across marketing automation, personalized video generation, and content creation pipelines.",
+      "verified": true,
+      "links": [
+        "www.veed.io"
+      ],
+      "avatar": "https://gravatar.com/avatar/0f7f1db2a9431b2d05ff987882ad3c68629aec97e576012689032baf760700ae?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 24,
+        "icon": "file:merge.svg",
+        "name": "n8n-nodes-base.merge",
+        "codex": {
+          "data": {
+            "alias": [
+              "Join",
+              "Concatenate",
+              "Wait"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-sync-data-between-two-systems/",
+                  "icon": "🏬",
+                  "label": "How to synchronize data between two systems (one-way vs. two-way sync"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.merge/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Merge"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTc3XzUxOCkiPgo8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTAgNDhDMCAyMS40OTAzIDIxLjQ5MDMgMCA0OCAwSDExMkMxMzguNTEgMCAxNjAgMjEuNDkwMyAxNjAgNDhWNTZIMTk2LjI1MkMyNDAuNDM1IDU2IDI3Ni4yNTIgOTEuODE3MiAyNzYuMjUyIDEzNlYxOTJDMjc2LjI1MiAyMTQuMDkxIDI5NC4xNjEgMjMyIDMxNi4yNTIgMjMySDM1MlYyMjRDMzUyIDE5Ny40OSAzNzMuNDkgMTc2IDQwMCAxNzZINDY0QzQ5MC41MSAxNzYgNTEyIDE5Ny40OSA1MTIgMjI0VjI4OEM1MTIgMzE0LjUxIDQ5MC41MSAzMzYgNDY0IDMzNkg0MDBDMzczLjQ5IDMzNiAzNTIgMzE0LjUxIDM1MiAyODhWMjgwSDMxNi4yNTJDMjk0LjE2MSAyODAgMjc2LjI1MiAyOTcuOTA5IDI3Ni4yNTIgMzIwVjM3NkMyNzYuMjUyIDQyMC4xODMgMjQwLjQzNSA0NTYgMTk2LjI1MiA0NTZIMTYwVjQ2NEMxNjAgNDkwLjUxIDEzOC41MSA1MTIgMTEyIDUxMkg0OEMyMS40OTAzIDUxMiAwIDQ5MC41MSAwIDQ2NFY0MDBDMCAzNzMuNDkgMjEuNDkwMyAzNTIgNDggMzUySDExMkMxMzguNTEgMzUyIDE2MCAzNzMuNDkgMTYwIDQwMFY0MDhIMTk2LjI1MkMyMTMuOTI1IDQwOCAyMjguMjUyIDM5My42NzMgMjI4LjI1MiAzNzZWMzIwQzIyOC4yNTIgMjk0Ljc4NCAyMzguODU5IDI3Mi4wNDQgMjU1Ljg1MyAyNTZDMjM4Ljg1OSAyMzkuOTU2IDIyOC4yNTIgMjE3LjIxNiAyMjguMjUyIDE5MlYxMzZDMjI4LjI1MiAxMTguMzI3IDIxMy45MjUgMTA0IDE5Ni4yNTIgMTA0SDE2MFYxMTJDMTYwIDEzOC41MSAxMzguNTEgMTYwIDExMiAxNjBINDhDMjEuNDkwMyAxNjAgMCAxMzguNTEgMCAxMTJWNDhaTTEwNCA0OEMxMDguNDE4IDQ4IDExMiA1MS41ODE3IDExMiA1NlYxMDRDMTEyIDEwOC40MTggMTA4LjQxOCAxMTIgMTA0IDExMkg1NkM1MS41ODE3IDExMiA0OCAxMDguNDE4IDQ4IDEwNFY1NkM0OCA1MS41ODE3IDUxLjU4MTcgNDggNTYgNDhIMTA0Wk00NTYgMjI0QzQ2MC40MTggMjI0IDQ2NCAyMjcuNTgyIDQ2NCAyMzJWMjgwQzQ2NCAyODQuNDE4IDQ2MC40MTggMjg4IDQ1NiAyODhINDA4QzQwMy41ODIgMjg4IDQwMCAyODQuNDE4IDQwMCAyODBWMjMyQzQwMCAyMjcuNTgyIDQwMy41ODIgMjI0IDQwOCAyMjRINDU2Wk0xMTIgNDA4QzExMiA0MDMuNTgyIDEwOC40MTggNDAwIDEwNCA0MDBINTZDNTEuNTgxNyA0MDAgNDggNDAzLjU4MiA0OCA0MDhWNDU2QzQ4IDQ2MC40MTggNTEuNTgxNyA0NjQgNTYgNDY0SDEwNEMxMDguNDE4IDQ2NCAxMTIgNDYwLjQxOCAxMTIgNDU2VjQwOFoiIGZpbGw9IiM1NEI4QzkiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTc3XzUxOCI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Merge",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 49,
+        "icon": "file:telegram.svg",
+        "name": "n8n-nodes-base.telegram",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-telegram-bots-with-n8n-a-no-code-platform/",
+                  "icon": "💬",
+                  "label": "Creating Telegram Bots with n8n, a No-Code Platform"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.telegram/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/telegram/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Telegram"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgNjYgNjYiPjx1c2UgeGxpbms6aHJlZj0iI2EiIHg9Ii41IiB5PSIuNSIvPjxzeW1ib2wgaWQ9ImEiIG92ZXJmbG93PSJ2aXNpYmxlIj48ZyBmaWxsLXJ1bGU9Im5vbnplcm8iIHN0cm9rZT0ibm9uZSI+PHBhdGggZmlsbD0iIzM3YWVlMiIgZD0iTTAgMzJjMCAxNy42NzMgMTQuMzI3IDMyIDMyIDMyczMyLTE0LjMyNyAzMi0zMlM0OS42NzMgMCAzMiAwIDAgMTQuMzI3IDAgMzIiLz48cGF0aCBmaWxsPSIjYzhkYWVhIiBkPSJtMjEuNjYxIDM0LjMzOCAzLjc5NyAxMC41MDhzLjQ3NS45ODMuOTgzLjk4MyA4LjA2OC03Ljg2NCA4LjA2OC03Ljg2NGw4LjQwNy0xNi4yMzctMjEuMTE5IDkuODk4eiIvPjxwYXRoIGZpbGw9IiNhOWM2ZDgiIGQ9Im0yNi42OTUgMzcuMDM0LS43MjkgNy43NDZzLS4zMDUgMi4zNzMgMi4wNjggMGw0LjY0NC00LjIwMyIvPjxwYXRoIGQ9Im0yMS43MyAzNC43MTItNy44MDktMi41NDVzLS45MzItLjM3OC0uNjMzLTEuMjM3Yy4wNjItLjE3Ny4xODYtLjMyOC41NTktLjU4OCAxLjczMS0xLjIwNiAzMi4wMjgtMTIuMDk2IDMyLjAyOC0xMi4wOTZzLjg1Ni0uMjg4IDEuMzYxLS4wOTdjLjIzMS4wODguMzc4LjE4Ny41MDMuNTQ4LjA0NS4xMzIuMDcxLjQxMS4wNjguNjg5LS4wMDMuMjAxLS4wMjcuMzg2LS4wNDUuNjc4LS4xODQgMi45NzgtNS43MDYgMjUuMTk4LTUuNzA2IDI1LjE5OHMtLjMzIDEuMy0xLjUxNCAxLjM0NWMtLjQzMi4wMTYtLjk1Ni0uMDcxLTEuNTgyLS42MS0yLjMyMy0xLjk5OC0xMC4zNTItNy4zOTQtMTIuMTI2LTguNThhLjM0LjM0IDAgMCAxLS4xNDYtLjIzOWMtLjAyNS0uMTI1LjEwOC0uMjguMTA4LS4yOHMxMy45OC0xMi40MjcgMTQuMzUyLTEzLjczMWMuMDI5LS4xMDEtLjA3OS0uMTUxLS4yMjYtLjEwNy0uOTI5LjM0Mi0xNy4wMjUgMTAuNTA2LTE4LjgwMSAxMS42MjktLjEwNC4wNjYtLjM5NS4wMjMtLjM5NS4wMjMiLz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Telegram",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 50,
+        "icon": "file:telegram.svg",
+        "name": "n8n-nodes-base.telegramTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-telegram-bots-with-n8n-a-no-code-platform/",
+                  "icon": "💬",
+                  "label": "Creating Telegram Bots with n8n, a No-Code Platform"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/trigger-nodes/n8n-nodes-base.telegramtrigger/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/telegram/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Telegram Trigger"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgNjYgNjYiPjx1c2UgeGxpbms6aHJlZj0iI2EiIHg9Ii41IiB5PSIuNSIvPjxzeW1ib2wgaWQ9ImEiIG92ZXJmbG93PSJ2aXNpYmxlIj48ZyBmaWxsLXJ1bGU9Im5vbnplcm8iIHN0cm9rZT0ibm9uZSI+PHBhdGggZmlsbD0iIzM3YWVlMiIgZD0iTTAgMzJjMCAxNy42NzMgMTQuMzI3IDMyIDMyIDMyczMyLTE0LjMyNyAzMi0zMlM0OS42NzMgMCAzMiAwIDAgMTQuMzI3IDAgMzIiLz48cGF0aCBmaWxsPSIjYzhkYWVhIiBkPSJtMjEuNjYxIDM0LjMzOCAzLjc5NyAxMC41MDhzLjQ3NS45ODMuOTgzLjk4MyA4LjA2OC03Ljg2NCA4LjA2OC03Ljg2NGw4LjQwNy0xNi4yMzctMjEuMTE5IDkuODk4eiIvPjxwYXRoIGZpbGw9IiNhOWM2ZDgiIGQ9Im0yNi42OTUgMzcuMDM0LS43MjkgNy43NDZzLS4zMDUgMi4zNzMgMi4wNjggMGw0LjY0NC00LjIwMyIvPjxwYXRoIGQ9Im0yMS43MyAzNC43MTItNy44MDktMi41NDVzLS45MzItLjM3OC0uNjMzLTEuMjM3Yy4wNjItLjE3Ny4xODYtLjMyOC41NTktLjU4OCAxLjczMS0xLjIwNiAzMi4wMjgtMTIuMDk2IDMyLjAyOC0xMi4wOTZzLjg1Ni0uMjg4IDEuMzYxLS4wOTdjLjIzMS4wODguMzc4LjE4Ny41MDMuNTQ4LjA0NS4xMzIuMDcxLjQxMS4wNjguNjg5LS4wMDMuMjAxLS4wMjcuMzg2LS4wNDUuNjc4LS4xODQgMi45NzgtNS43MDYgMjUuMTk4LTUuNzA2IDI1LjE5OHMtLjMzIDEuMy0xLjUxNCAxLjM0NWMtLjQzMi4wMTYtLjk1Ni0uMDcxLTEuNTgyLS42MS0yLjMyMy0xLjk5OC0xMC4zNTItNy4zOTQtMTIuMTI2LTguNThhLjM0LjM0IDAgMCAxLS4xNDYtLjIzOWMtLjAyNS0uMTI1LjEwOC0uMjguMTA4LS4yOHMxMy45OC0xMi40MjcgMTQuMzUyLTEzLjczMWMuMDI5LS4xMDEtLjA3OS0uMTUxLS4yMjYtLjEwNy0uOTI5LjM0Mi0xNy4wMjUgMTAuNTA2LTE4LjgwMSAxMS42MjktLjEwNC4wNjYtLjM5NS4wMjMtLjM5NS4wMjMiLz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Telegram Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1163,
+        "icon": "fa:database",
+        "name": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.memorybufferwindow/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Memory"
+              ],
+              "Memory": [
+                "For beginners"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Simple Memory"
+        },
+        "iconData": {
+          "icon": "database",
+          "type": "icon"
+        },
+        "displayName": "Simple Memory",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1292,
+        "icon": "file:../mcp.svg",
+        "name": "@n8n/n8n-nodes-langchain.mcpClientTool",
+        "codex": {
+          "data": {
+            "alias": [
+              "Model Context Protocol",
+              "MCP Client"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.toolmcp/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Tools"
+              ],
+              "Tools": [
+                "Recommended Tools"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "MCP Client"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgdmlld0JveD0iMCAwIDE5NSAxOTUiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+Cgk8ZyBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMTIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+CgkJPHBhdGggZD0iTTI1IDk3Ljg1MjhMOTIuODgyMyAyOS45NzA2QzEwMi4yNTUgMjAuNTk4IDExNy40NTEgMjAuNTk4IDEyNi44MjMgMjkuOTcwNlYyOS45NzA2QzEzNi4xOTYgMzkuMzQzMSAxMzYuMTk2IDU0LjUzOTEgMTI2LjgyMyA2My45MTE3TDc1LjU1ODEgMTE1LjE3NyIvPgoJCTxwYXRoIGQ9Ik03Ni4yNjUzIDExNC40N0wxMjYuODIzIDYzLjkxMTdDMTM2LjE5NiA1NC41MzkxIDE1MS4zOTIgNTQuNTM5MSAxNjAuNzY1IDYzLjkxMTdMMTYxLjExOCA2NC4yNjUyQzE3MC40OTEgNzMuNjM3OCAxNzAuNDkxIDg4LjgzMzggMTYxLjExOCA5OC4yMDYzTDk5LjcyNDggMTU5LjZDOTYuNjAwNiAxNjIuNzI0IDk2LjYwMDYgMTY3Ljc4OSA5OS43MjQ4IDE3MC45MTNMMTEyLjMzMSAxODMuNTIiLz4KCQk8cGF0aCBkPSJNMTA5Ljg1MyA0Ni45NDExTDU5LjY0ODIgOTcuMTQ1N0M1MC4yNzU3IDEwNi41MTggNTAuMjc1NyAxMjEuNzE0IDU5LjY0ODIgMTMxLjA4N1YxMzEuMDg3QzY5LjAyMDggMTQwLjQ1OSA4NC4yMTY4IDE0MC40NTkgOTMuNTg5NCAxMzEuMDg3TDE0My43OTQgODAuODgyMiIvPgoJPC9nPgo8L3N2Zz4K"
+        },
+        "displayName": "MCP Client Tool",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 31,
+        "name": "Content Creation"
+      },
+      {
+        "id": 47,
+        "name": "AI Chatbot"
+      }
+    ],
+    "image": []
+  }
+}

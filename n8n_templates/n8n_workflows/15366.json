@@ -1,0 +1,1017 @@
+{
+  "workflow": {
+    "id": 15366,
+    "name": "Route and prioritize support emails to Slack channels with easybits",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-28T12:09:19.934Z",
+    "description": "## What This Workflow Does\nWatches your support inbox, classifies every incoming email by category, scores it for **priority** based on sentiment and urgency signals, and posts a clean summary to the matching Slack channel. Works equally well for **English and German** emails. Low-confidence classifications automatically fall through to the catch-all channel so nothing slips through, with the model's best guess preserved as a breadcrumb.\n\n## How It Works\n1. **Watch** – Gmail Trigger polls your support inbox for new mail\n2. **Prepare** – The email content is packaged into a format ready for extraction\n3. **Classify** – easybits returns category, summary, confidence, and priority in one call\n4. **Route** – Low-confidence emails are folded into \"Other\"; the rest go by category\n5. **Notify** – A formatted message lands in the matching Slack channel with priority emoji\n\n## Categories\n- 💳 **Billing** – invoices, payments, refunds, subscription changes\n- 🔧 **Technical** – bug reports, errors, login issues\n- 💼 **Sales** – pricing questions, demo requests, new prospects\n- 📥 **Other** – everything else, plus low-confidence fallbacks\n\n## Priority Levels\n- 🚨 **Urgent** – angry tone, things broken, hot leads, time-sensitive\n- 🟢 **Normal** – standard requests, no time pressure\n- ⚪ **Low** – casual inquiries, FYIs, vendor pitches\n\n## Setup Guide\n### 1. Install the easybits Extractor Node\nAlready available out of the box on **n8n Cloud**. On self-hosted instances: Settings → Community Nodes → Install `@easybits/n8n-nodes-extractor`.\n\n### 2. Connect Your Credentials\n- **Gmail** on the trigger node (OAuth)\n- **easybits** on the classify node (API key from easybits.tech)\n- **Slack** on all four channel nodes (one credential, reused four times)\n\n### 3. Set Up the Extractor Pipeline\nCreate an easybits pipeline with four fields. Copy each prompt below into the matching field's description:\n\n- 📂 [Category Classification Prompt](https://github.com/felix-sattler-easybits/n8n-workflows/blob/a62d2189ed8ee72424335454fdf82fc735c2b14a/easybits-support-inbox-router/easybits_category_classification_prompt.md)\n- 📝 [Summary Prompt](https://github.com/felix-sattler-easybits/n8n-workflows/blob/a62d2189ed8ee72424335454fdf82fc735c2b14a/easybits-support-inbox-router/easybits_summary_prompt.md)\n- 🎯 [Confidence Prompt](https://github.com/felix-sattler-easybits/n8n-workflows/blob/a62d2189ed8ee72424335454fdf82fc735c2b14a/easybits-support-inbox-router/easybits_confidence_prompt.md)\n- 🚦 [Priority Prompt](https://github.com/felix-sattler-easybits/n8n-workflows/blob/a62d2189ed8ee72424335454fdf82fc735c2b14a/easybits-support-inbox-router/easybits_priority_prompt.md)\n\n### 4. Set Up Slack Channels\nCreate four channels in your workspace and update each Slack node to point at the right one:\n- `#support-billing`\n- `#support-technical`\n- `#support-sales`\n- `#support-other`\n\n### 5. (Optional) Filter the Inbox\nOn the Gmail Trigger, add a label filter (e.g. `support`) so personal mail doesn't get classified.\n\n### 6. Activate & Test\nSend a few test emails covering different categories and tones. Verify they land in the right channels with sensible priority emoji before going live.\n\n## Notes\n- **Bilingual prompt** – works on English and German emails out of the box, with German summaries for German emails\n- **No confidence gate** – low-confidence emails route to `#support-other` with a flag noting the model's best guess, so reviewers can spot patterns without a separate channel\n- **One Extractor call** – classification, summary, confidence, and priority all come from a single pipeline call, keeping latency and cost low",
+    "workflow": {
+      "meta": {},
+      "name": "Support Inbox Router",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "fc76d961-5ceb-4f54-9cf3-27a709b93cc1",
+          "name": "New Support Email",
+          "type": "n8n-nodes-base.gmailTrigger",
+          "position": [
+            -112,
+            208
+          ],
+          "parameters": {
+            "simple": false,
+            "filters": {},
+            "options": {
+              "downloadAttachments": false
+            },
+            "pollTimes": {
+              "item": [
+                {
+                  "mode": "everyMinute"
+                }
+              ]
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "aa4e48cd-f983-4608-832e-a54838190a2e",
+          "name": "Route by Category",
+          "type": "n8n-nodes-base.switch",
+          "position": [
+            1248,
+            176
+          ],
+          "parameters": {
+            "rules": {
+              "values": [
+                {
+                  "conditions": {
+                    "options": {
+                      "version": 1,
+                      "leftValue": "",
+                      "caseSensitive": true,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "and",
+                    "conditions": [
+                      {
+                        "id": "ccc6cbfd-6759-4227-8bfa-6943faf39289",
+                        "operator": {
+                          "type": "string",
+                          "operation": "equals"
+                        },
+                        "leftValue": "={{ $json.data.category }}",
+                        "rightValue": "billing"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "conditions": {
+                    "options": {
+                      "version": 1,
+                      "leftValue": "",
+                      "caseSensitive": true,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "and",
+                    "conditions": [
+                      {
+                        "id": "d80d3596-0ffb-4100-9625-1945a4064a7b",
+                        "operator": {
+                          "type": "string",
+                          "operation": "equals"
+                        },
+                        "leftValue": "={{ $json.data.category }}",
+                        "rightValue": "technical"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "conditions": {
+                    "options": {
+                      "version": 1,
+                      "leftValue": "",
+                      "caseSensitive": true,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "and",
+                    "conditions": [
+                      {
+                        "id": "88120474-c4f5-4850-bbef-2a6412ecc8ab",
+                        "operator": {
+                          "type": "string",
+                          "operation": "equals"
+                        },
+                        "leftValue": "={{ $json.data.category }}",
+                        "rightValue": "sales"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "options": {
+              "fallbackOutput": "extra",
+              "renameFallbackOutput": "other"
+            }
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "16b11847-6651-4d2e-829b-6b6283dac334",
+          "name": "Slack: Billing",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            1600,
+            0
+          ],
+          "parameters": {
+            "text": "==:credit_card: {{ {\"urgent\": \"🚨\", \"normal\": \"🟢\", \"low\": \"⚪\"}[$('easybits: Classify & Score Email').item.json.data.priority] }} *{{ $('easybits: Classify & Score Email').item.json.data.priority.toUpperCase() }} priority — billing*\n*From:* {{ $('New Support Email').item.json.from.value[0].address }}\n*Subject:* {{ $('New Support Email').item.json.subject }}\n*Summary:* {{ $('easybits: Classify & Score Email').item.json.data.summary }}\n*Confidence:* {{ $('easybits: Classify & Score Email').item.json.data.confidence }}",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": ""
+            },
+            "otherOptions": {}
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "d6bf4180-b46c-4663-8785-e9aab75cd148",
+          "name": "Slack: Technical",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            1600,
+            160
+          ],
+          "parameters": {
+            "text": "==:wrench: {{ {\"urgent\": \"🚨\", \"normal\": \"🟢\", \"low\": \"⚪\"}[$('easybits: Classify & Score Email').item.json.data.priority] }} *{{ $('easybits: Classify & Score Email').item.json.data.priority.toUpperCase() }} priority — technical*\n*From:* {{ $('New Support Email').item.json.from.value[0].address }}\n*Subject:* {{ $('New Support Email').item.json.subject }}\n*Summary:* {{ $('easybits: Classify & Score Email').item.json.data.summary }}\n*Confidence:* {{ $('easybits: Classify & Score Email').item.json.data.confidence }}",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": ""
+            },
+            "otherOptions": {}
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "5dfd9c45-b7ae-4cb0-8599-f50e10e887f1",
+          "name": "Slack: Sales",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            1600,
+            320
+          ],
+          "parameters": {
+            "text": "==:briefcase: {{ {\"urgent\": \"🚨\", \"normal\": \"🟢\", \"low\": \"⚪\"}[$('easybits: Classify & Score Email').item.json.data.priority] }} *{{ $('easybits: Classify & Score Email').item.json.data.priority.toUpperCase() }} priority — sales*\n*From:* {{ $('New Support Email').item.json.from.value[0].address }}\n*Subject:* {{ $('New Support Email').item.json.subject }}\n*Summary:* {{ $('easybits: Classify & Score Email').item.json.data.summary }}\n*Confidence:* {{ $('easybits: Classify & Score Email').item.json.data.confidence }}",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": ""
+            },
+            "otherOptions": {}
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "d83b2eab-b2f0-461b-87e7-d4f60fd1a3d0",
+          "name": "Slack: Other",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            1600,
+            480
+          ],
+          "parameters": {
+            "text": "==:inbox_tray: {{ {\"urgent\": \"🚨\", \"normal\": \"🟢\", \"low\": \"⚪\"}[$('easybits: Classify & Score Email').item.json.data.priority] }} *{{ $('easybits: Classify & Score Email').item.json.data.priority.toUpperCase() }} priority — uncategorized*\n*From:* {{ $('New Support Email').item.json.from.value[0].address }}\n*Subject:* {{ $('New Support Email').item.json.subject }}\n*Summary:* {{ $('easybits: Classify & Score Email').item.json.data.summary }}\n*Confidence:* {{ $('easybits: Classify & Score Email').item.json.data.confidence }}{{ $('easybits: Classify & Score Email').item.json.data.confidence === 'low' ? ' ⚠️ _Routed here due to low confidence — model\\'s best guess was: ' + $('easybits: Classify & Score Email').item.json.data.category + '_' : '' }}",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "",
+              "cachedResultName": ""
+            },
+            "otherOptions": {}
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "03fbec4e-5b27-4455-bbd2-38b80838ac19",
+          "name": "easybits: Classify & Score Email",
+          "type": "@easybits/n8n-nodes-extractor.easybitsExtractor",
+          "position": [
+            560,
+            208
+          ],
+          "parameters": {},
+          "typeVersion": 2
+        },
+        {
+          "id": "824c968c-a5f5-4820-8856-9b7a01c4a4d1",
+          "name": "Reroute Low Confidence to Other",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            944,
+            208
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "1af5fc0c-e4b6-46e6-a434-4e8fd16b4bf1",
+                  "name": "data.category",
+                  "type": "string",
+                  "value": "={{ $json.data.confidence === 'low' ? 'other' : $json.data.category }}"
+                }
+              ]
+            },
+            "includeOtherFields": true
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "26675fb4-1990-44ca-80b0-8bf50fdb104a",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -208,
+            -48
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 288,
+            "height": 448,
+            "content": "## 📥 New Support Email\nPolls your support inbox for **new emails**. Set to **Every Minute** for testing – bump to Every 5 Minutes in production. Add a label filter (e.g. `support`) to keep personal mail out of the classifier."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "3c8eb649-8f6f-4cc5-824d-a84f86ed21d0",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            96,
+            -48
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 288,
+            "height": 448,
+            "content": "## 📄 Prepare Email for Extraction\nPackages the **email content** into a format that's ready to be processed by the Extractor pipeline. **Don't modify the code** – just paste it as-is. Handles long emails, weird characters, and missing fields safely."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "53b109d9-f664-459b-b118-f80817e2ce16",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            400,
+            -48
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 432,
+            "height": 448,
+            "content": "## 🤖 easybits: Classify & Score Email\nOne Extractor call returns four fields in a single pass:\n- **category** → billing / technical / sales / other\n- **summary** → 1–2 sentence factual summary (in the email's language)\n- **confidence** → high / mid / low\n- **priority** → urgent / normal / low (sentiment + urgency)\n\nBilingual prompts handle **English and German** emails with the same rigor."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "92142a6f-172d-430e-8c9f-bcbb77c28590",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            848,
+            -48
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 288,
+            "height": 448,
+            "content": "## 🛟 Reroute Low Confidence to Other\nSafety net step. If the Extractor returns **low confidence**, the category is rewritten to `other` so the email lands in the catch-all channel. The model's original best guess is preserved in the data and surfaced in the Slack message – useful for spotting prompts that need tuning."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "d2a74013-e6b5-493a-bb7a-be516ab9a964",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1152,
+            -48
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 288,
+            "height": 448,
+            "content": "## 🔀 Route by Category\nReads the (possibly rewritten) `category` field and sends the email down one of four paths. The fallback output catches **any unmatched value** – including everything routed here by the low-confidence override."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "6f0c7276-2413-485e-bdd2-895464a16dd6",
+          "name": "Sticky Note5",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1456,
+            -288
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 400,
+            "height": 944,
+            "content": "## 💬 Slack: Per-Category Channels\nFour channels, one Slack node each. Every message includes:\n- Priority badge (🚨 / 🟢 / ⚪) and label\n- Sender, subject, and 1–2 sentence summary\n- Confidence level\n- (For Other only) a breadcrumb showing the model's best guess if rerouted by low confidence\n\nReplace the channel field in each node with your real channel name or ID."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "3e135580-905b-4bc9-b0d3-7da730ec6890",
+          "name": "Sticky Note6",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1056,
+            -624
+          ],
+          "parameters": {
+            "width": 832,
+            "height": 1648,
+            "content": "# 📬 Support Inbox Router\n(powered by easybits)\n\n## What This Workflow Does\nWatches your support inbox, classifies every incoming email by category, scores it for **priority** based on sentiment and urgency signals, and posts a clean summary to the matching Slack channel. Works equally well for **English and German** emails. Low-confidence classifications automatically fall through to the catch-all channel so nothing slips through, with the model's best guess preserved as a breadcrumb.\n\n## How It Works\n1. **Watch** – Gmail Trigger polls your support inbox for new mail\n2. **Prepare** – The email content is packaged into a format ready for extraction\n3. **Classify** – easybits returns category, summary, confidence, and priority in one call\n4. **Route** – Low-confidence emails are folded into \"Other\"; the rest go by category\n5. **Notify** – A formatted message lands in the matching Slack channel with priority emoji\n\n## Categories\n- 💳 **Billing** – invoices, payments, refunds, subscription changes\n- 🔧 **Technical** – bug reports, errors, login issues\n- 💼 **Sales** – pricing questions, demo requests, new prospects\n- 📥 **Other** – everything else, plus low-confidence fallbacks\n\n## Priority Levels\n- 🚨 **Urgent** – angry tone, things broken, hot leads, time-sensitive\n- 🟢 **Normal** – standard requests, no time pressure\n- ⚪ **Low** – casual inquiries, FYIs, vendor pitches\n\n## Setup Guide\n### 1. Install the easybits Extractor Node\nAlready available out of the box on **n8n Cloud**. On self-hosted instances: Settings → Community Nodes → Install `@easybits/n8n-nodes-extractor`.\n\n### 2. Connect Your Credentials\n- **Gmail** on the trigger node (OAuth)\n- **easybits** on the classify node (API key from easybits.tech)\n- **Slack** on all four channel nodes (one credential, reused four times)\n\n### 3. Set Up the Extractor Pipeline\nCreate an easybits pipeline with four fields. Copy each prompt below into the matching field's description:\n\n- 📂 [Category Classification Prompt](https://github.com/felix-sattler-easybits/n8n-workflows/blob/a62d2189ed8ee72424335454fdf82fc735c2b14a/easybits-support-inbox-router/easybits_category_classification_prompt.md)\n- 📝 [Summary Prompt](https://github.com/felix-sattler-easybits/n8n-workflows/blob/a62d2189ed8ee72424335454fdf82fc735c2b14a/easybits-support-inbox-router/easybits_summary_prompt.md)\n- 🎯 [Confidence Prompt](https://github.com/felix-sattler-easybits/n8n-workflows/blob/a62d2189ed8ee72424335454fdf82fc735c2b14a/easybits-support-inbox-router/easybits_confidence_prompt.md)\n- 🚦 [Priority Prompt](https://github.com/felix-sattler-easybits/n8n-workflows/blob/a62d2189ed8ee72424335454fdf82fc735c2b14a/easybits-support-inbox-router/easybits_priority_prompt.md)\n\n### 4. Set Up Slack Channels\nCreate four channels in your workspace and update each Slack node to point at the right one:\n- `#support-billing`\n- `#support-technical`\n- `#support-sales`\n- `#support-other`\n\n### 5. (Optional) Filter the Inbox\nOn the Gmail Trigger, add a label filter (e.g. `support`) so personal mail doesn't get classified.\n\n### 6. Activate & Test\nSend a few test emails covering different categories and tones. Verify they land in the right channels with sensible priority emoji before going live.\n\n## Notes\n- **Bilingual prompt** – works on English and German emails out of the box, with German summaries for German emails\n- **No confidence gate** – low-confidence emails route to `#support-other` with a flag noting the model's best guess, so reviewers can spot patterns without a separate channel\n- **One Extractor call** – classification, summary, confidence, and priority all come from a single pipeline call, keeping latency and cost low"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "752bc6ba-a2f5-4313-ae1c-9e1678f9e4f3",
+          "name": "Prepare Email",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            176,
+            208
+          ],
+          "parameters": {
+            "mode": "runOnceForEachItem",
+            "jsCode": "// Packages the incoming email into a format that the easybits Extractor can read.\n// You don't need to understand or modify this — just paste it as-is.\n\nconst email = $input.item.json;\n\n// Pull the fields out of the Gmail node, with safe fallbacks\nconst subject = email.subject || '(no subject)';\nconst from = email.from?.value?.[0]?.address || email.from?.text || 'unknown sender';\nconst date = email.date || '';\nconst body = email.text || email.snippet || '(empty body)';\n\n// Build the document content\nconst content = `Subject: ${subject}\nFrom: ${from}\nDate: ${date}\n\n${body}`;\n\n// Escape characters that have special meaning in PDFs\nconst escape = (s) => s.replace(/\\\\/g, '\\\\\\\\').replace(/\\(/g, '\\\\(').replace(/\\)/g, '\\\\)');\n\n// Wrap long lines so they fit on the page\nconst lines = content.split('\\n').flatMap((line) => {\n  if (line.length === 0) return [''];\n  const wrapped = [];\n  for (let i = 0; i < line.length; i += 90) {\n    wrapped.push(line.slice(i, i + 90));\n  }\n  return wrapped;\n});\n\n// Build the text stream that the PDF will render\nlet stream = 'BT\\n/F1 10 Tf\\n50 780 Td\\n12 TL\\n';\nfor (const line of lines) {\n  stream += `(${escape(line)}) Tj\\nT*\\n`;\n}\nstream += 'ET';\n\nconst streamLength = Buffer.byteLength(stream, 'utf-8');\n\n// Assemble the PDF structure\nconst objects = [\n  '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',\n  '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',\n  '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj',\n  `4 0 obj << /Length ${streamLength} >> stream\\n${stream}\\nendstream endobj`,\n  '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj',\n];\n\n// Calculate byte offsets for the cross-reference table\nconst header = '%PDF-1.4\\n';\nconst offsets = [0];\nlet cursor = Buffer.byteLength(header, 'utf-8');\nfor (const obj of objects) {\n  offsets.push(cursor);\n  cursor += Buffer.byteLength(obj + '\\n', 'utf-8');\n}\n\n// Build the xref table\nlet xref = `xref\\n0 ${objects.length + 1}\\n+1234567890 f \\n`;\nfor (let i = 1; i <= objects.length; i++) {\n  xref += `${offsets[i].toString().padStart(10, '0')} 00000 n \\n`;\n}\n\nconst trailer = `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\\nstartxref\\n${cursor}\\n%%EOF`;\n\nconst pdf = header + objects.join('\\n') + '\\n' + xref + trailer;\n\n// Hand the document off to the next node as a binary file\nreturn {\n  json: { subject, from, date },\n  binary: {\n    data: {\n      data: Buffer.from(pdf, 'binary').toString('base64'),\n      mimeType: 'application/pdf',\n      fileName: 'email.pdf',\n    },\n  },\n};"
+          },
+          "typeVersion": 2
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "executionOrder": "v1"
+      },
+      "connections": {
+        "Prepare Email": {
+          "main": [
+            [
+              {
+                "node": "easybits: Classify & Score Email",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "New Support Email": {
+          "main": [
+            [
+              {
+                "node": "Prepare Email",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Route by Category": {
+          "main": [
+            [
+              {
+                "node": "Slack: Billing",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Slack: Technical",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Slack: Sales",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Slack: Other",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Reroute Low Confidence to Other": {
+          "main": [
+            [
+              {
+                "node": "Route by Category",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "easybits: Classify & Score Email": {
+          "main": [
+            [
+              {
+                "node": "Reroute Low Confidence to Other",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 16,
+      "nodeTypes": {
+        "n8n-nodes-base.set": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 1
+        },
+        "n8n-nodes-base.slack": {
+          "count": 4
+        },
+        "n8n-nodes-base.switch": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 7
+        },
+        "n8n-nodes-base.gmailTrigger": {
+          "count": 1
+        },
+        "@easybits/n8n-nodes-extractor.easybitsExtractor": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Felix",
+      "username": "easybits",
+      "bio": "Marketing Lead with a passion for automation and AI. I love working on smart workflows that automate repetitive manual tasks.",
+      "verified": true,
+      "links": [
+        "https://easybits.tech/"
+      ],
+      "avatar": "https://gravatar.com/avatar/af10d12444918e1d6cb3fd05bd68baa80b70744968fc8a216d369a58366eb634?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 112,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.switch",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "If",
+              "Path",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Branch",
+              "Case"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.switch/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Switch",
+          "color": "#506000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "Switch",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 824,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmailTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/trigger-nodes/n8n-nodes-base.gmailtrigger/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Gmail Trigger"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 41,
+        "name": "Ticket Management"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

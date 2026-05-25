@@ -1,0 +1,1486 @@
+{
+  "workflow": {
+    "id": 15222,
+    "name": "Fetch Telr payment reports to SQL and send daily email summaries",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-22T07:17:28.057Z",
+    "description": "#### Description \n\nThis workflow automates the full cycle of fetching, processing, and storing Telr payment gateway reports — and then notifying your team by email. It runs on a schedule, calls the Telr API twice (once for the raw file, once filtered by date), decompresses and extracts data from an XLS file, transforms it with JavaScript, inserts it into a SQL database, and sends a success email notification.\n\n\n#### Who it's for\n\nMerchants, developers, and finance analysts using the Telr payment gateway who want to automate transaction report collection, transform the raw XLS data, persist it to a database, and receive automated email confirmations — all without manual intervention.\n\n\n#### How it works:\n\n1. Schedule Trigger fires the workflow at your defined interval.\n2. Telr API fetches the raw transaction report.\n3. XML is converted to JSON for processing.\n4. Logic for Date calculates the relevant date range.\n5. Edit Fields maps and renames fields manually.\n6. Telr API with Date refetches with the computed date filter.\n7. Compression node decompresses the downloaded file.\n8. Extract from File reads the XLS content.\n9. Data Formation shapes the records for SQL.\n10. Code in JavaScript3 applies custom business logic.\n11. Data Insert SQL writes records to your database.\n12. Success Condition checks if the insert succeeded.\n\n13. Send Email dispatches a success notification.\n\n\n#### Setup requirements\n\n• Telr API credentials — add your Telr store ID and API key as n8n credentials (HTTP Header Auth).\n• Database credentials — configure a MySQL or PostgreSQL credential and update the table name in the SQL node.\n• Email credentials — set up SMTP or Gmail credentials for the Send Email node.\n• Schedule — adjust the cron expression in the Schedule Trigger to match your reporting frequency.\n• JavaScript node — review the Code in JavaScript3 node and adapt any field names or business logic to match your Telr account's XLS format.",
+    "workflow": {
+      "id": "uSfPeWNVJz8cA6qv",
+      "meta": {
+        "instanceId": "0d23259f4fbaf117ab30b859178c521571b391eb44ca65787327de7e24a9730b",
+        "templateCredsSetupCompleted": true
+      },
+      "name": "Daily Reconciliation - COPY",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "6d1243f3-03d5-464f-9e9e-bf171931543f",
+          "name": "Edit Fields",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -160,
+            -240
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "485712c6-e749-4452-b12c-4eddb625f592",
+                  "name": "Link",
+                  "type": "string",
+                  "value": "=https://secure.telr.com/tools/api/xml/report/{{ $json.id }}/file2"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "eac73b4b-7d0a-494b-b7a8-8fe94010e857",
+          "name": "Compression",
+          "type": "n8n-nodes-base.compression",
+          "position": [
+            256,
+            -240
+          ],
+          "parameters": {},
+          "typeVersion": 1.1
+        },
+        {
+          "id": "567ca84c-5add-4bb6-ac0d-74d7127e6fcd",
+          "name": "Extract from File",
+          "type": "n8n-nodes-base.extractFromFile",
+          "position": [
+            464,
+            -240
+          ],
+          "parameters": {
+            "options": {
+              "sheetName": "Authorised"
+            },
+            "operation": "xls",
+            "binaryPropertyName": "file_0"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "38fb4a85-3895-444c-98b0-a4e8da125cc7",
+          "name": "Code in JavaScript3",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -752,
+            -16
+          ],
+          "parameters": {
+            "jsCode": "return [\n  {\n    json: {\n      transactionsJson: JSON.stringify($json.transactions)\n    }\n  }\n];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "85288925-d942-415c-ad0c-bccbd40a7638",
+          "name": "Schedule Trigger",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            -992,
+            -240
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "triggerAtHour": 9
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "69b46d09-691a-463f-a1cf-d387cd74e74a",
+          "name": "Send email",
+          "type": "n8n-nodes-base.emailSend",
+          "position": [
+            -64,
+            -32
+          ],
+          "webhookId": "a7a0ebd4-ba5b-498d-9a2c-bf03df05f29b",
+          "parameters": {
+            "html": "=<!DOCTYPE html>\n<html>\n<head>\n    <meta charset=\"UTF-8\">\n</head>\n<body style=\"font-family: Arial, sans-serif; background:#f4f6f8; padding:20px;\">\n\n    <table width=\"600\" align=\"center\" cellpadding=\"0\" cellspacing=\"0\" \n           style=\"background:#ffffff; padding:30px; border-radius:8px;\">\n\n        <tr>\n            <td align=\"center\">\n                <h2 style=\"margin:0; color:#1f2937;\">\n                    📊 Daily Telr Summary\n                </h2>\n                <p style=\"color:#6b7280; font-size:14px;\">\n                    Date: <strong>{{ $now.toFormat(\"yyyy-MM-dd\") }}</strong>\n                </p>\n            </td>\n        </tr>\n\n        <tr>\n            <td style=\"padding-top:20px; text-align:center;\">\n                \n                <div style=\"font-size:16px; color:#374151;\">\n                    Total Transactions Today\n                </div>\n\n                <div style=\"font-size:32px; font-weight:bold; color:#2563eb; margin-top:10px;\">\n                    {{\n                        $('Extract from File').all().length\n                    }}\n                </div>\n\n            </td>\n        </tr>\n\n        <tr>\n            <td style=\"padding-top:30px; text-align:center; font-size:12px; color:#9ca3af;\">\n                Automated report generated by n8n\n            </td>\n        </tr>\n\n    </table>\n\n</body>\n</html>\n",
+            "options": {
+              "appendAttribution": false
+            },
+            "subject": "Daily Auto Insert Telr Data",
+            "toEmail": "user@example.com",
+            "fromEmail": "user@example.com"
+          },
+          "credentials": {
+            "smtp": {
+              "id": "credential-id",
+              "name": "Email"
+            }
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "05668922-02a9-44df-8bb6-11497940f3b3",
+          "name": "TELR API",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -784,
+            -240
+          ],
+          "parameters": {
+            "url": "https://secure.telr.com/tools/api/xml/report",
+            "options": {
+              "response": {
+                "response": {}
+              }
+            },
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpBasicAuth"
+          },
+          "credentials": {
+            "httpBasicAuth": {
+              "id": "credential-id",
+              "name": "Telr"
+            }
+          },
+          "typeVersion": 4.3
+        },
+        {
+          "id": "2e8a77f9-b817-4214-b76d-43b6d3873fa1",
+          "name": "Convert XML to JSON",
+          "type": "n8n-nodes-base.xml",
+          "position": [
+            -576,
+            -240
+          ],
+          "parameters": {
+            "options": {},
+            "dataPropertyName": "=data"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "05684b07-0d73-49b3-b67b-dfbaf29cafd6",
+          "name": "Logic for date",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -368,
+            -240
+          ],
+          "parameters": {
+            "jsCode": "// Get all reports\nconst reports = items[0].json.reports.report;\n\n// Calculate yesterday date in UTC\nconst yesterday = new Date();\nyesterday.setUTCDate(yesterday.getUTCDate() - 1);\n\n// Format YYYYMMDD\nconst yyyy = yesterday.getUTCFullYear();\nconst mm = String(yesterday.getUTCMonth() + 1).padStart(2, '0');\nconst dd = String(yesterday.getUTCDate()).padStart(2, '0');\nconst ymd = `${yyyy}${mm}${dd}`;\n\n// Filter yesterday's Daily transaction report\nconst result = reports.filter(r =>\n  r.description === 'Daily transaction report'&&\n  r.file2 &&\n  r.file2.includes(ymd)\n);\n\nreturn result.map(r => ({ json: r }));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "2c468a45-cafe-45aa-be73-c0c02ae5d0d0",
+          "name": "TELR API WITH DATE",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            48,
+            -240
+          ],
+          "parameters": {
+            "url": "={{ $json.Link }}",
+            "options": {},
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpBasicAuth"
+          },
+          "credentials": {
+            "httpBasicAuth": {
+              "id": "credential-id",
+              "name": "Telr"
+            }
+          },
+          "typeVersion": 4.3
+        },
+        {
+          "id": "ca45596b-4743-42df-82f2-1089d7874284",
+          "name": "Data Formation",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -960,
+            -16
+          ],
+          "parameters": {
+            "jsCode": "return [\n  {\n    json: {\n      transactions: items.map(i => ({\n        column1: i.json['column1'],\n        column2: i.json['column2'],\n        column3: i.json['column3'],\n        column4: i.json['column4']\n      }))\n    }\n  }\n];\n"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "98f88700-fc2c-4d4d-a427-0d535510ca30",
+          "name": "Data Insert SQL",
+          "type": "n8n-nodes-base.microsoftSql",
+          "position": [
+            -528,
+            -16
+          ],
+          "parameters": {
+            "query": "DECLARE @json NVARCHAR(MAX);\nSET @json = N'{{$json[\"transactionsJson\"]}}';\n\n-- IMPORTANT: terminate statement before OPENJSON\n;\n\nINSERT INTO authorised_transactions (\n    column1, column2, column3, column4 \n)\nSELECT\n    column1,\n    column2,\n    column3,\n    column4,\nFROM OPENJSON(@json)\nWITH (\n    column1 NVARCHAR(50),\n    column2 NVARCHAR(50),\n    column3 NVARCHAR(MAX),\n    column4 NVARCHAR(20)\n) t\nWHERE NOT EXISTS (\n    SELECT 1\n    FROM authorised_transactions_dates d\n    WHERE d.transaction_date = CONVERT(date, t.transaction_date, 103)\n);\n\nINSERT INTO authorised_transactions_dates (transaction_date)\nSELECT DISTINCT CONVERT(date, JSON_VALUE(value, '$.transaction_date'), 103)\nFROM OPENJSON(@json)\nWHERE NOT EXISTS (\n    SELECT 1 \n    FROM authorised_transactions_dates d \n    WHERE d.transaction_date = CONVERT(date, JSON_VALUE(value, '$.transaction_date'), 103)\n);\n\nSELECT 'SUCCESS' AS result;\n\n",
+            "operation": "executeQuery"
+          },
+          "credentials": {
+            "microsoftSql": {
+              "id": "credential-id",
+              "name": "DABS"
+            }
+          },
+          "executeOnce": false,
+          "typeVersion": 1.1
+        },
+        {
+          "id": "26465ebd-c8ca-4422-858c-de253d000fca",
+          "name": "Success Condition",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -320,
+            -16
+          ],
+          "parameters": {
+            "options": {
+              "ignoreCase": "={{ false }}"
+            },
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "c46d4a8a-9407-4150-bdb4-11ba9d42ad1e",
+                  "operator": {
+                    "type": "string",
+                    "operation": "contains"
+                  },
+                  "leftValue": "={{ $json.result }}",
+                  "rightValue": "SUCCESS"
+                }
+              ]
+            }
+          },
+          "executeOnce": true,
+          "typeVersion": 2.3
+        },
+        {
+          "id": "a9a8ceb7-da69-4763-a834-75df9b71df92",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1872,
+            -464
+          ],
+          "parameters": {
+            "width": 592,
+            "height": 576,
+            "content": "## Telr Scheduled Payment Report → SQL + Email\n\n\n**Who's it for**: Merchants and developers using Telr who need daily automated reconciliation of payment data stored to a SQL database.\n\n**What it does**: Fetches Telr transaction reports on a schedule, decompresses and parses the XLS file, transforms records with JavaScript, writes them to SQL, and sends a confirmation email.\n\n**How it works**:\n\n1. Schedule Trigger fires the workflow at your defined interval.\n2. Telr API fetches the raw transaction report.\n3. XML is converted to JSON for processing.\n4. Logic for Date calculates the relevant date range.\n5. Edit Fields maps and renames fields manually.\n6. Telr API with Date refetches with the computed date filter.\n7. Compression node decompresses the downloaded file.\n8. Extract from File reads the XLS content.\n9. Data Formation shapes the records for SQL.\n10. Code in JavaScript3 applies custom business logic.\n11. Data Insert SQL writes records to your database.\n12. Success Condition checks if the insert succeeded.\n13. Send Email dispatches a success notification."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "7f27cd1f-2005-4414-8967-3eb82158414d",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -720,
+            -736
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 400,
+            "height": 400,
+            "content": "## Telr API Data and Formatting\n\n\nHTTP GET to https://secure.telr.com/... to retrieve the transaction report. Requires your Telr API key set as a credential in n8n. Returns an XML response.\n\n\nParses the raw XML body from the Telr API into a structured JSON object so downstream nodes can access fields using dot notation.\n\nA Code or Function node that computes the target date range (e.g., yesterday's date) to pass into the second Telr API call. Uses JavaScript date manipulation to format the date string in Telr's required format.\n\n"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "5bdd8a4a-ca75-4f34-9ba4-b55e14cc988a",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            16,
+            -736
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 400,
+            "height": 400,
+            "content": "## Data modifications\n\n\nManually maps and renames fields from the JSON object. Use this to standardise field names, remove unwanted keys, or prepare the payload for the date-filtered API call.\n\nSecond call to the Telr API, this time including the computed date range as query parameters. This fetches only the transactions for the relevant period and returns a compressed XLS file download link or binary.\n\nDecompresses the downloaded archive (e.g., .zip or .gz) returned by Telr. The output is the raw XLS file binary ready for extraction."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "128ce8fa-692c-4aa2-8a2f-1622b044257d",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -768,
+            176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 400,
+            "height": 400,
+            "content": "## Data Inserting\n\n\nRestructures and formats the extracted row data into the exact shape expected by the SQL INSERT statement. Maps XLS column names to database column names.\n\nCustom JavaScript logic applied to all items — e.g., type casting, deduplication checks, amount normalisation, or filtering out header rows. This is where you adapt the workflow to your specific data format.\n\nExecutes an INSERT or UPSERT query against your database (MySQL, PostgreSQL, etc.) for each processed transaction record. Configure your DB credentials and table name here."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "c7e345b3-4d03-41b9-882b-ac37af962bfe",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            192,
+            48
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 400,
+            "height": 400,
+            "content": "## Notify after inserted\n\n\nAn IF node that checks the output of the SQL insert. Routes to the true branch (send email) on success, and to the false branch (optional error handler or no-op) on failure or empty result.\n\nSends a notification email confirming the report was processed and inserted successfully. Include a summary count of records inserted. Configure SMTP or Gmail credentials."
+          },
+          "typeVersion": 1
+        }
+      ],
+      "active": false,
+      "pinData": {},
+      "settings": {
+        "availableInMCP": false,
+        "executionOrder": "v1"
+      },
+      "versionId": "12b2d8e4-845b-411f-8a5d-ff764ba5a05a",
+      "connections": {
+        "TELR API": {
+          "main": [
+            [
+              {
+                "node": "Convert XML to JSON",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Compression": {
+          "main": [
+            [
+              {
+                "node": "Extract from File",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Edit Fields": {
+          "main": [
+            [
+              {
+                "node": "TELR API WITH DATE",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Data Formation": {
+          "main": [
+            [
+              {
+                "node": "Code in JavaScript3",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Logic for date": {
+          "main": [
+            [
+              {
+                "node": "Edit Fields",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Data Insert SQL": {
+          "main": [
+            [
+              {
+                "node": "Success Condition",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Schedule Trigger": {
+          "main": [
+            [
+              {
+                "node": "TELR API",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Extract from File": {
+          "main": [
+            [
+              {
+                "node": "Data Formation",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Success Condition": {
+          "main": [
+            [
+              {
+                "node": "Send email",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "TELR API WITH DATE": {
+          "main": [
+            [
+              {
+                "node": "Compression",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Code in JavaScript3": {
+          "main": [
+            [
+              {
+                "node": "Data Insert SQL",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Convert XML to JSON": {
+          "main": [
+            [
+              {
+                "node": "Logic for date",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 18,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.set": {
+          "count": 1
+        },
+        "n8n-nodes-base.xml": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 3
+        },
+        "n8n-nodes-base.emailSend": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 5
+        },
+        "n8n-nodes-base.compression": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 2
+        },
+        "n8n-nodes-base.microsoftSql": {
+          "count": 1
+        },
+        "n8n-nodes-base.extractFromFile": {
+          "count": 1
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Mohamed Abubakkar",
+      "username": "mohamed-abubakkar",
+      "bio": "I am a full stack developer focused on building AI-driven automation solutions for companies, founders, and business owners. I specialize in using tools like n8n to automate business analytics, daily reporting, alerts, and follow-ups, helping teams make faster, data-driven decisions. With strong experience across backend, frontend, databases, and AI integrations, I design end-to-end automation workflows that reduce manual work and deliver clear, actionable insights.\n\n📧 n8n.abubakkar@gmail.com",
+      "verified": true,
+      "links": [
+        "https://www.linkedin.com/in/mohammed-abubakkar/"
+      ],
+      "avatar": "https://gravatar.com/avatar/b12034cf490958bc1aa09d414eb0354b6d5d1eaac15e311312867aa98b9d4a8a?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 11,
+        "icon": "fa:envelope",
+        "name": "n8n-nodes-base.emailSend",
+        "codex": {
+          "data": {
+            "alias": [
+              "SMTP",
+              "email",
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.sendemail/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/sendemail/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Send Email",
+          "color": "#00bb88"
+        },
+        "iconData": {
+          "icon": "envelope",
+          "type": "icon"
+        },
+        "displayName": "Send Email",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 48,
+        "icon": "fa:file-code",
+        "name": "n8n-nodes-base.xml",
+        "codex": {
+          "data": {
+            "alias": [
+              "Parse"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.xml/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "XML",
+          "color": "#333377"
+        },
+        "iconData": {
+          "icon": "file-code",
+          "type": "icon"
+        },
+        "displayName": "XML",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 339,
+        "icon": "file:mssql.svg",
+        "name": "n8n-nodes-base.microsoftSql",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.microsoftsql/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/microsoftsql/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Data & Storage"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Microsoft SQL"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB3aWR0aD0iMzg1IiBoZWlnaHQ9IjM4NSI+PGRlZnM+PGxpbmVhckdyYWRpZW50IHhsaW5rOmhyZWY9IiNhIiBpZD0iZCIgeDE9Ii00MTEuNTI3IiB4Mj0iLTIzLjg0NyIgeTE9Ii0yOS44OSIgeTI9Ii0yNTguOTY0IiBncmFkaWVudFRyYW5zZm9ybT0idHJhbnNsYXRlKDQ4OC4yNTYgODExLjQ1NSlzY2FsZSguNjY5NzgpIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSIvPjxsaW5lYXJHcmFkaWVudCBpZD0iYSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjOTA5Y2E5Ii8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjZWRlZGVlIi8+PC9saW5lYXJHcmFkaWVudD48bGluZWFyR3JhZGllbnQgeGxpbms6aHJlZj0iI2IiIGlkPSJlIiB4MT0iLTQ0Ny43OTciIHgyPSItMTM1Ljg1OSIgeTE9Ii04ODkuMDU4IiB5Mj0iLTg4OS4wNTgiIGdyYWRpZW50VHJhbnNmb3JtPSJ0cmFuc2xhdGUoNDg4LjI1NiA4MTEuNDU1KXNjYWxlKC42Njk3OCkiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIi8+PGxpbmVhckdyYWRpZW50IGlkPSJiIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiM5MzlmYWIiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNkY2RlZTEiLz48L2xpbmVhckdyYWRpZW50PjxsaW5lYXJHcmFkaWVudCBpZD0iYyI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjZWUzNTJjIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjYTkxZDIyIi8+PC9saW5lYXJHcmFkaWVudD48cmFkaWFsR3JhZGllbnQgeGxpbms6aHJlZj0iI2MiIGlkPSJmIiBjeD0iLTEyNTkuMDk4IiBjeT0iLTI0NS40MjgiIHI9IjQxNC4xNTYiIGZ4PSItMTI1OS4wOTgiIGZ5PSItMjQ1LjQyOCIgZ3JhZGllbnRUcmFuc2Zvcm09Im1hdHJpeCgtLjY0MzUzIC0uMDk3MzEgLjE5NDM2IC0xLjI4NTI3IC0zNzcuMTU0IC00NC43NzcpIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSIvPjwvZGVmcz48cGF0aCBmaWxsPSJ1cmwoI2QpIiBkPSJtNDY5LjA0IDQ2MS45MDMtMTMyLjM0NSA0My4xNi0xMTUuMDU2IDUwLjgxOS0zMi4yMzMgOC41MThhODAxIDgwMSAwIDAgMS0yNi4wOCAyMy42OTRjLTEwLjE1MSA4LjgzNC0xOS42OTggMTYuODQtMjYuOTU4IDIyLjYyNi04LjA4NCA2LjQ0My0yMC4xMDMgMTguMzctMjYuMjQ3IDI2LjAxNy05LjE0IDExLjM3Ny0xNi4yODcgMjMuNTEtMTkuMzYgMzIuODQtNS41MyAxNi43ODYtMi44MzYgMzMuNzg4IDcuODI3IDQ5LjQ4IDEzLjYyMiAyMC4wNDQgNDAuNzM4IDQwLjQwOSA3Mi4yNzQgNTQuMjczIDE2LjA4NiA3LjA3MSA0My4yMzIgMTYuMTg4IDYzLjU4NyAyMS4zMjggMzMuOTIyIDguNTY2IDk5LjQ4MiAxNy44NzMgMTM1LjU4OCAxOS4yNTYgNy4zMjMuMjggMTcuMDcxLjI1NCAxNy41Mi0uMDQyLjc5Mi0uNTIzIDYuNDEzLTExLjE2NiAxMi45MzQtMjQuNDg5IDIyLjE5LTQ1LjMzIDM4LjI0NS04Ny44MjQgNDYuODg1LTEyNC4xMTggNS4yMzEtMjEuOTc2IDkuMzEtNTEuMjggMTEuOTUxLTg2LjAyNS43NC05LjczMyAxLjAwOS00Mi4xOTMuNDQtNTMuMjI2LS45MjYtMTcuOTU0LTIuNTA3LTMyLjU4Ny01LjA0NC00Ni45NDgtLjM3My0yLjEwNC0uNTEtMy45NTUtLjMxNC00LjEyMy4zNjgtLjMxNiAxLjYxOC0uNzE3IDE3Ljg3NC01LjQ0MnptLTMwLjI0NiAxNy43NWMxLjIwMyAwIDQuNDAxIDMwLjY3IDUuMjMzIDUwLjEyOC4xNzcgNC4xMzUuMTQxIDYuNzgyLS4xMDUgNi43ODItLjc5IDAtMTYuOTQ4LTkuNDg5LTI4LjQwMi0xNi42ODItMTAuMDAzLTYuMjgyLTI4Ljk4NS0xOC44OTYtMzIuMDAzLTIxLjI2NS0uOTUzLS43NDgtLjg1Mi0uNzg1IDcuMzI1LTMuNiAxMy45MTQtNC43OTIgNDYuOTAxLTE1LjM2NCA0Ny45NTItMTUuMzY0em0tNjcuNDE3IDIyLjEyM2MuODU1LS4wMDIgMy4xODMgMS4yODMgOC42ODYgNC43MyAyMC42NDIgMTIuOTMyIDQ4LjU5NSAyOC40OSA2MC41NzMgMzMuNzIgMy43MTQgMS42MjEgNC4xMzguOTkzLTQuNDE2IDYuODAyLTE4LjIzNCAxMi4zODItNDAuOTA0IDI0LjU1Ny02OC43MzYgMzYuOTIyLTQuODUxIDIuMTU0LTguOTYgMy45MTQtOS4xMjYgMy45MTRzLjM3Ni0yLjQ2MSAxLjE5My01LjQ4NGM2Ljc0My0yNC45NDEgMTAuNTQ3LTUwLjExNiAxMC42NTQtNzAuMzA2LjA1My05Ljk4NS4wNTUtMTAuMDM4IDEuMDA0LTEwLjI3N2ExIDEgMCAwIDEgLjE2OC0uMDJ6bS0xMy44NzcgNS4yOTZjLjU5Ny42LjE2NSAyMi45NzUtLjU2NSAyOS4wNzItMS43NTEgMTQuNjI3LTQuNjEzIDI4LjE1NS05LjE4OSA0My41MzYtMS4wOTMgMy42NzUtMi4xMTggNi44NDMtMi4yODEgNy4wMzItLjM5OC40NjEtMTQuMDgtMTIuODctMTguNjI4LTE4LjE0Ni03Ljc3Mi05LjAxNS0xMy45Mi0xNy45Ny0xOC4zOTgtMjYuNzkyLTIuMjc3LTQuNDgzLTUuOTA3LTEzLjMzOC01LjU2OC0xMy41ODQgMS41MzctMS4xMTYgNTQuMjUzLTIxLjQ5NiA1NC42MjktMjEuMTE4bS02NS4zNjYgMjUuNzY1Yy4xMjMuMDEyLjIxOC4wNDYuMjcyLjEwNS4xOTcuMjE3Ljg5NCAxLjg0MiAxLjU0OSAzLjYyIDMuMTg3IDguNjU3IDEwLjM1MyAyMS41MTcgMTYuNTc3IDI5Ljc0MyA2Ljc5NCA4Ljk4MSAxNS42NTMgMTguNTUxIDIzLjA2NSAyNC45MDggMi4zOCAyLjA0IDQuNiAzLjk0NSA0LjkxOSA0LjIyNy42MzUuNTYzLjg0OC40NjgtMTUuNDY4IDYuNjU2LTE4LjkxIDcuMTczLTM5LjUwMyAxNC4zNTUtNjMuMTQ3IDIxLjk5OC05LjAxIDIuOTEzLTE2LjYzNyA1LjM3NC0xNi45MzMgNS40ODQtLjkuMzM0LS42MjUtLjIyIDIuMDEtNC4zMzIgMTEuNzQ4LTE4LjM0MiAyOS41NDUtNTQuMjIyIDM5LjQ5NS03OS42IDEuNzI2LTQuNCAzLjM2OC04LjgxIDMuNjYzLTkuNzk1LjQzMy0xLjQ0OC44Ni0xLjk0IDIuMjE5LTIuNTUzLjc1Mi0uMzQgMS40MS0uNDk4IDEuNzc5LS40NnptLTIwLjAzIDguMjY4Yy4yNjUuMjM0LTQuODA3IDEwLjk0NS05Ljc5NiAyMC42OC05LjY3OCAxOC44NzktMjAuMzQ4IDM3LjQ1OC0zNC41MTUgNjAuMTMzLTIuNDQ0IDMuOTEyLTQuNjk3IDcuNDg5LTUuMDAyIDcuOTMyLS41MDQuNzMtLjcxLjQ5LTIuMjYtMi41OTUtMy4zOTItNi43NDUtNi4yMzQtMTUuMjU2LTcuNzAzLTIzLjE3LTEuNDU1LTcuODMzLTEuMjA3LTIxLjM5NC41NDQtMjkuODA1IDEuMzAxLTYuMjUgMS4yNDQtNi4xMTEgNC4xODYtNy42MiAxMi43MjItNi41MTkgNTQuMTMtMjUuOTIgNTQuNTQ1LTI1LjU1NXptMTcyLjUzIDcuMDExdjQuMjVjLS4wMjEgMjIuMzE2LTIuNDA0IDUyLjg2OC01Ljg2IDc1LjE2MS0uNjA3IDMuOTEyLTEuMTMzIDcuMTQtMS4xNzMgNy4xOC0uMDQuMDM5LTIuODYtLjc4OC02LjI1OC0xLjg0My0xNS4wMTYtNC42NjEtMzEuMjk3LTExLjYyNi00NS45ODQtMTkuNjc0LTkuNzI3LTUuMzMtMjMuNzk1LTEzLjk2NC0yMy40LTE0LjM1OS4xMDYtLjEwNyA0LjI1LTIuMzAzIDkuMjA5LTQuODc3IDE5LjY0LTEwLjE5NCAzOC40MDItMjEuMTg1IDU0LjcxMi0zMi4wODYgNi4xMi00LjA5IDE1LjI3Ny0xMC43MSAxNy4zMS0xMi40OTZ6bS0yNDguMDcgMjkuNTc1Yy40MDgtLjAyLjMwNS43NTUtLjMzNCA0LjQzOC0uNDQ1IDIuNTYxLS45NDcgNy40LTEuMTMgMTAuNzM3LS44MDUgMTQuNjI4IDEuNTY3IDI1LjQyIDguODMyIDQwLjE4NyAyLjAyIDQuMTA1IDMuNiA3LjUyOCAzLjUxNiA3LjU5OC0uNzI3LjYwOC02Ni44OCAxOS45NjctODcuNjc4IDI1LjY2LTYuMTY1IDEuNjg4LTExLjU1MyAzLjE3NS0xMS45OTMgMy4zMDgtLjcyMi4yMTctLjc4Ni4wNi0uNTIzLTEuNjMzIDIuMjc4LTE0LjY3NiAxMy40NzMtMzMuOTM4IDI5LjExNC01MC4xMDggMTAuNC0xMC43NSAxOC43MjUtMTcuMTE4IDMyLjg4Mi0yNS4yIDEwLjE2LTUuOCAyNS45NC0xNC41MDYgMjcuMTA1LTE0Ljk0NWEuNy43IDAgMCAxIC4yMS0uMDQyem0xNTYuMDM4IDI3Ljk0M2MuMDYzLS4wNzYgMi41MTQgMS4yMzYgNS40NDIgMi45MyAyMS4zNjggMTIuMzU3IDUxLjE4NSAyMy45NDggNzYuNjA2IDI5Ljc2M2wyLjMwMi41MjQtMy4xNiAxLjc1OGMtMTMuMjggNy4zNjktNTcuMDEzIDI1LjU2NS0xMDEuNjggNDIuMzIxLTYuNTIyIDIuNDQ3LTEyLjg4NCA0Ljg0NS0xNC4xMjkgNS4zMzgtMS4yNDUuNDkyLTIuMjYuODMtMi4yNi43MzJzMS44NDItMy42NDQgNC4xMDItNy44N2MxMi41NC0yMy40NDYgMjUuMDU2LTUxLjkzOCAzMS40OC03MS43MDguNjU0LTIuMDE1IDEuMjM0LTMuNzEzIDEuMjk3LTMuNzg4bS0xNS45MDcgNS4yMTFjLjA2OS4wNjktLjcxMyAyLjE3LTEuNzM3IDQuNjQ3LTguNzE4IDIxLjA4LTIwLjE0IDQ0LjA3Ni0zNC43MDMgNjkuOTA4LTMuNzA2IDYuNTc0LTYuODMgMTEuOTQxLTYuOTUgMTEuOTMtLjExOC0uMDEtMy4xMzItMS43OTQtNi42OTctMy45NzYtMjEuMjEzLTEyLjk4Ny0zOS45ODItMjguOTczLTUyLjMwNi00NC41MmwtMS43NTgtMi4xOTcgOS4xNDctMi41MTJjMzIuNjI1LTguOTM4IDYwLjI5My0xOC40OTYgODcuODA0LTMwLjM1IDMuODk1LTEuNjc4IDcuMTMxLTIuOTk4IDcuMi0yLjkzbTk4LjgxMyAzNC40OTRjLjA0Ny4wMS4wNjMuMDQzLjA2My4wODQgMCAyLjIyMy01LjA0NyAyMi44MDItOS4yNTEgMzcuNjk2LTMuNTI3IDEyLjQ5My02LjQ4OCAyMi4yNjUtMTEuOTczIDM5LjU4LTIuNDIyIDcuNjQ3LTQuNTAxIDEzLjg4OC00LjYyNSAxMy44NTZhMzUgMzUgMCAwIDAtMS4yOTgtLjI1MmMtMjkuNzItNS4zNzgtNTYuMzM4LTEyLjg3OC04MS4yNzMtMjIuODk4LTYuOTc3LTIuODAzLTE3LjA1LTcuMjY1LTE3LjU4Mi03Ljc4Ni0uMTgtLjE3NiA1Ljg0NC0zLjAxNCAxMy4zNzUtNi4zIDQ1LjU0MS0xOS44NyA5Mi43MjctNDIuNDk4IDEwOC44Ni01Mi4yIDEuOTQtMS4xNjggMy4zNzYtMS44NDggMy43MDQtMS43OG0tMjI4LjEwMSA3LjgwN2MuMjQ0LjIzMS0xMi40OTUgMTguNDY3LTMwLjI4NyA0My4zNjgtNi4xODQgOC42NTUtMTMuNDQ4IDE4Ljg1Ni0xNi4xMzcgMjIuNjY4YTQ3NyA0NzcgMCAwIDAtOS4wNjMgMTMuNDE3bC00LjIwNyA2LjQ4OC00LjQ4LTMuNzY3Yy01LjI1NS00LjQxMy0xNC40NTUtMTMuNzgyLTE4LjYyOC0xOC45ODQtOC41ODctMTAuNzA1LTE0LjQwNi0yMS45Ny0xNi43MDItMzIuMzE3LTEuMDYtNC43NzctMS4wOTItNy4yMS0uMDg0LTcuNTE0IDEuNDU2LS40MzkgMjguMTcyLTYuNzI4IDUzLjIyNi0xMi41MzggMTMuOTE3LTMuMjI3IDMwLjAwNy03LjAwNCAzNS43Ny04LjM5M3MxMC41MzUtMi40ODEgMTAuNTkyLTIuNDI4bTEyLjgxIDQuODk4IDMuMjIyIDMuNmMxNC40MTEgMTYuMDUzIDI5LjA2NyAyOC4wMzIgNDYuOTQ4IDM4LjM2NiAzLjE1NyAxLjgyNCA1LjU2MyAzLjQxIDUuMzU4IDMuNTM3LS43NDQuNDYtNjEuODMzIDIyLjE4LTkwLjA4NSAzMi4wMjQtMTUuOTMzIDUuNTUxLTI5LjAyMiAxMC4wNzgtMjkuMDk0IDEwLjA2N3MtLjk3NS0uNi0xLjk4OC0xLjMxOGwtMS44NDItMS4zMiAyLjg4OC00LjE2NWM5LjM3NC0xMy41NzggMjEuMTUyLTI4LjUxIDQ2LjkyNy01OS41Mjd6bTc5LjgyOCA1Ny4wNTdjLjA3MS0uMDg4IDQuNTM3IDEuNDk1IDkuOTQyIDMuNTE2IDEzLjAyOSA0Ljg3MiAyMy4yNTQgOC4wNDkgMzcuMDkgMTEuNTEyIDE2Ljk5MyA0LjI1MyA0MS41NSA4LjUwNyA1Ni4wOTQgOS43MzMgMi4yMzIuMTg4IDMuMzcyLjQ0MyAzLjAxNC42Ny0uNjc2LjQyNy0xNS40IDUuMzQ1LTI2LjIyNiA4Ljc0OC0xNy4xODUgNS40MDItNjkuNzAyIDIwLjkxNy0xMTIuNTIzIDMzLjIzOC03Ljk0NCAyLjI4Ni0xNC43MzYgNC4yMTctMTUuMDkxIDQuMjkxLS45Ni4yLTQuMzEyLS42OC00LjMxMi0xLjEzIDAtLjIxNCAyLjQwMS0zLjI1MyA1LjMxNi02Ljc0IDE0LjM5My0xNy4yMTYgMjguNjkyLTM2LjQ0NSA0MC42MjctNTQuNjI5IDMuMjY0LTQuOTczIDUuOTk5LTkuMTIxIDYuMDctOS4yMXptLTE3LjY4Ni41MDJjLjEyOS4xMjktNi45NjYgMTEuNDktMTkuNDQ0IDMxLjE0NWE5NjE2IDk2MTYgMCAwIDAtMTMuMjkxIDIwLjk5M2MtMi4wNDggMy4yNDctNS4wNDggOC4xODItNi42NTYgMTAuOTg5bC0yLjkzIDUuMTA3LTEuNDg3LS4zOThjLTMuNTg1LS45Ny0yOC44OC05LjkwNi0zNS41Ni0xMi41NTgtOC4yODItMy4yODctMTYuOTEyLTcuMjU3LTIzLjI3Ni0xMC42OTYtNy45NTItNC4yOTctMTguMDM3LTEwLjY3NS0xNy4yNDYtMTAuOTI2LjIyNy0uMDcyIDEzLjkxMS0zLjgxNyAzMC4zOS04LjMwOSA0My44NC0xMS45NSA2OC4wOS0xOC44MTUgODMuOTk1LTIzLjc3NyAyLjk3Mi0uOTI3IDUuNDQ4LTEuNjI3IDUuNTA1LTEuNTdtMTI0LjUxNiAyOS4xOThjLjA5NS0uMDIuMTM4LS4wMi4xNDcgMCAuNDE0IDEuMDM3LTE1LjgxNSA0NS45ODktMjEuNzQ3IDYwLjIzOS0xLjMyOSAzLjE5MS0xLjgyIDMuOTY1LTIuNTEyIDMuOTM0LTEuNjc5LS4wNzMtMjUuMjExLTMuMzYzLTM5LjQ1NC01LjUyNS0yNC45MzMtMy43ODUtNjYuNjk1LTExLjA3OC03Ny4yMzQtMTMuNDhsLTIuNDQ5LS41NDQgMTQuOTQ1LTMuMzdjMzIuMDMyLTcuMjE3IDQ3LjQxNS0xMS4wODcgNjMuMDIyLTE1Ljg2NSAxOS42ODItNi4wMjUgMzkuMTcyLTEzLjUzOCA1OC44NTctMjIuNjg5IDMuMTEyLTEuNDQ2IDUuNzY0LTIuNTU2IDYuNDI1LTIuNyIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTI5LjM5NyAtODIuOTIzKXNjYWxlKC41NjkzKSIvPjxwYXRoIGZpbGw9InVybCgjZSkiIGQ9Ik0zMzIuNjQ3IDE1My40NzVjLTIuMjEzLS4yNTgtMzcuNzMyIDEyLjUzOS02MC41NTIgMjEuODEtMzAuOTIyIDEyLjU2My01NC45MyAyNC42LTY5Ljc0IDM0Ljk5Ni01LjUxNCAzLjg3LTEyLjQ0NiAxMC44My0xMy40NiAxMy41LS4zNzggMS0uNTU2IDIuMTY4LS41NjQgMy4zN2wxMy40MzcgMTIuNjg0IDMxLjg3NyAxMC4xNzIgNzUuOTM3IDEzLjU2MyA4Ni43OTkgMTQuOTI0Ljg3OS03LjQ1MmMtLjI2My0uMDQtLjUxMS0uMDg0LS43NzUtLjEyNWwtMTEuNDI4LTEuOC0yLjMyMy00LjA4MmMtMTEuNzk3LTIwLjgxNi0yNC44MzQtNDYuNTc1LTMyLjQtNjQuMDA1LTUuODYtMTMuNS0xMS40ODgtMjkuMDUtMTQuNjEtNDAuMzEzLTEuODU0LTYuNjg4LTIuMDQ3LTcuMTIxLTMuMDc3LTcuMjQybS0xLjY3NCA1LjE1Yy4wODgtLjAxNy4xMzItLjAxNy4xNDYgMCAuMDcuMDgzLjQ3NCAyLjg3NS44OCA2LjE5NSAxLjcwOCAxMy45OCA0LjgzNiAyNy41NCA5LjczMiA0Mi4xMzMgMy42OSAxMC45OTcgMy43NDIgMTAuMzUxLS42NDkgOS4xMjYtMTAuMjA3LTIuODQ5LTU1LjkzNy0xMC42OTktODkuMDE4LTE1LjI4LTUuMzMtLjczOC05Ljc2Ny0xLjM5NC05LjgzNy0xLjQ2NS0uNDItLjQyIDIzLjg1Ny0xMy4xNCAzNC42Mi0xOC4xNDcgMTMuODAyLTYuNDIyIDUxLjM4OS0yMi4wNyA1NC4xMjYtMjIuNTYzem0tOTYuMzg2IDQ0Ljc3IDMuODcyIDEuMzE4YzIxLjIzOSA3LjIzIDc0LjQ3NCAxNy4zOTkgMTAzLjkgMTkuODQzIDMuMzIuMjc1IDYuMTEuNTcxIDYuMTk1LjY0OHMtMi43MzUgMS41ODUtNi4yNTggMy4zNWMtMTQuMTk1IDcuMTEtMjkuODE5IDE1Ljc3Ny00MC42MjYgMjIuNTQyLTMuMTc0IDEuOTg2LTYuMDg1IDMuNTg4LTYuNDY4IDMuNTU4cy0yLjQ3Ni0uMzY3LTQuNjY3LS43MzNsLTMuOTk4LS42NDktMTAuMDQ3LTkuNzUzYy0xNy42MzctMTcuMDctMzEuNDA3LTMwLjI3Ny0zNi43MzMtMzUuMjY4em0tMy45MzUgMy4xNCAxNC4wNjYgMTcuNTZjNy43NDMgOS42NiAxNS41MDMgMTkuMjQ1IDE3LjIyNSAyMS4zMDhzMy4wNTYgMy44MSAyLjk3MyAzLjg3MmMtLjQuMjkyLTIwLjM4Ni0zLjYtMzAuOTc4LTYuMDI4LTEwLjg3My0yLjQ5NC0xNS4zNy0zLjY4Ny0yMi4xMDItNS44NGwtNS40ODQtMS43NTguMDItMS4zNmMuMDctNi43NDYgOC41NzMtMTYuNjk2IDIzLjAwMy0yNi44NzZsMS4yNzctLjg3OXptMTE5Ljc4NiAyMy45MjNjLjQyMi4wMzMuODY3Ljg5IDIuMTE0IDMuNjIxIDMuNDEyIDcuNDc0IDE0LjAzIDI3LjcyOSAxNi41OTggMzEuNjQ3Ljg0NSAxLjI5IDIuMTg2IDEuMzc3LTExLjkxLS45LTMzLjg3NC01LjQ3Mi00NC44MzMtNy4zMDMtNDQuODMzLTcuNTE0IDAtLjEyOSAxLjAxNi0uNzk0IDIuMjYtMS40ODYgMTAuNDktNS44MzQgMjEuMDc1LTEzLjE3NiAzMC40OTctMjEuMTE5IDIuMjUyLTEuOSA0LjQxNy0zLjcwOCA0LjgxNC00LjA0LjE2My0uMTM2LjMyLS4yMi40Ni0uMjA5IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgtMjkuMzk3IC04Mi45MjMpc2NhbGUoLjU2OTMpIi8+PHBhdGggZmlsbD0idXJsKCNmKSIgZD0iTTE4OS40OTYgMjIyLjQzcy0yLjE5OCAzLjQ4NS0uMTI1IDguNjY2YzEuMjgyIDMuMjA1IDUuMTMzIDcuMDU2IDkuMzc3IDExLjEzNSAwIDAgNDQuNDUyIDQzLjM2MSA0OS44OTggNDkuNjQ3IDI0LjYzIDI4LjQyNiAzNS4zMjcgNTYuNDEgMzYuMzE1IDk1LjA0Ni42MzQgMjQuNzkzLTQuMTQ4IDQ2LjU4Ny0xNS43NjEgNzEuOTE3LTIwLjgxNSA0NS40LTY0LjY3MiA5NS40NjctMTMyLjQwNyAxNTEuMTRsOS45NDItMy4yODZjNi4zOS00Ljc4NyAxNS4wNjktOS45IDM1LjU0LTIxLjA5OCA0Ny4xNDUtMjUuNzg3IDEwMC4wODctNDkuNTA4IDE2NS4xMjItNzMuOTQ4IDkzLjU2OC0zNS4xNjMgMjQ3LjQ4LTc2LjQyIDMzNS4wNTctODkuODM0bDkuMTI1LTEuNDAyLTEuNDAyLTIuMTk4Yy04LjAwOC0xMi40NDctMTMuNDc0LTIwLjEyMi0yMC4wNTEtMjguMjU2LTE5LjIwOS0yMy43NTQtNDIuNDYzLTQzLjEzNi03MC45NTUtNTkuMDg3LTM5LjE1My0yMS45Mi04OS45MzYtMzguOTU2LTE1NC4xMzMtNTEuNzItMTIuMTM3LTIuNDEzLTM4LjcxNS02Ljk2OS02MC4zNDMtMTAuMzQtNDUuODE0LTcuMTQtNzUuMzYzLTExLjk2LTEwOC4wMDItMTcuNjQ0LTExLjcwMi0yLjAzLTI5LjE3NC00Ljk2NS00MC43NzMtNy40NzItNi4wNDMtMS4zMDctMTcuNTMtNC4wMjMtMjYuNDU2LTcuMDk2LTcuMzctMi45MDEtMTcuNzQ4LTUuNzA2LTE5Ljk2OC0xNC4xN20yNS43NjYgMjUuMDEyYy4wNjItLjA1NiAxLjczMi40NiAzLjc2NyAxLjE1MiAzLjc1MiAxLjI3MyA4LjcwMiAyLjc2NCAxNC40NjMgNC4zNzRhNjE5IDYxOSAwIDAgMCAxMy4xODcgMy41MTZjNi4wMTQgMS41MzggMTAuOTg3IDIuODYgMTEuMDUxIDIuOTMuNjY2Ljc1IDEwLjc2NyAzMi45ODggMTQuMjEyIDQ1LjM1NyAxLjMxNSA0LjcyMSAyLjMxMyA4LjY1NSAyLjIxOSA4Ljc1LS4wOTUuMDkzLTEuMjE1LTEuNjQ1LTIuNDctMy44NTItMTEuNjg2LTIwLjU1MS0zMC4xOTMtNDEuNDUtNTEuNTk0LTU4LjI3LTIuNjY4LTIuMDk3LTQuODM1LTMuODc3LTQuODM1LTMuOTU3bTQ5LjI1IDEzLjYwNWMuNTE0LS4wMzUgMi43MzMuMzM2IDUuMzc5LjkyMSAxNy4wNDIgMy43NjkgNDcuNDcxIDkuNjQ0IDY3LjA0IDEyLjkzNSAzLjI2LjU0OSA1Ljk0NSAxLjE0IDUuOTQ1IDEuMzE5cy0xLjIxOC45NS0yLjcgMS42OTVjLTMuMjg0IDEuNjUyLTE2LjU3IDkuNjA0LTIxLjAxNSAxMi41OC0xMS4wOTcgNy40MjctMjEuMDc0IDE1LjM3Ny0yOC4zNCAyMi42MDUtMi45MiAyLjkwNC01LjM2MyA1LjI3NC01LjQ0MiA1LjI3NHMtLjU4OS0xLjY5My0xLjEzLTMuNzY3Yy0zLjYzMy0xMy45MjUtMTEuMTQzLTM0LjQ4Ni0xNy44NzUtNDguOTU3LTEuMDgzLTIuMzI5LTEuOTY3LTQuMzgyLTEuOTY3LTQuNTYzIDAtLjAyMy4wMy0uMDM3LjEwNS0uMDQxem04Ni42MzEgMTYuNDczYy41Ny4xOSAxLjY0OCAzLjU1NCAzLjU1OCAxMS4xMTQgMy42NTggMTQuNDc2IDUuMzYgMzAuNzM0IDQuNzk0IDQ1Ljc3NS0uMTU4IDQuMTg2LS40MjMgOC4wNzMtLjU4NyA4LjY0NGwtLjMxMyAxLjA0Ny01LjE3LTEuNjc1Yy0xMC42NTgtMy40MDYtMjguMDctOC41MzMtNDIuOTkyLTEyLjY2My04LjQ3Ny0yLjM0Ni0xNS40MjYtNC40NC0xNS40MjYtNC42NDYgMC0uNjIgMTIuMzctMTIuOTg2IDE3LjY4Ny0xNy42ODcgMTAuMTU2LTguOTc4IDM3LjQ4LTMwLjIzMiAzOC40NS0yOS45MXptNi44ODYuOTgzYy4zMDktLjI4NyA0MS4zOTkgNi44MjggNjAuMDcxIDEwLjQwMyAxMy45MTggMi42NjQgMzQuMDU1IDYuODgxIDM1LjI2OCA3LjM4OC41ODYuMjQ1LTEuNDk4IDEuMzgtOC4xODQgNC4zOTYtMjYuNDQ1IDExLjkyNi00Ni4wMzcgMjIuNTctNjUuNTEyIDM1LjYwMy01LjEzIDMuNDMzLTkuMzkzIDYuMjM3LTkuNDgyIDYuMjM3cy0uMTY1LTIuODY1LS4xNjctNi4zNjNjLS4wMTQtMTguOTkyLTMuODA1LTM4LjE2MS0xMC43NTktNTQuMzU3LS43NDgtMS43NDMtMS4zMS0zLjIzNy0xLjIzNS0zLjMwN20xMDYuMjQ0IDIxLjAxNWMuMzE4LjMxOC0xLjAzIDguNDItMi4xOTggMTMuMjA3LTMuNjM1IDE0Ljg5Ny0xMy4yNyAzNy4wMDctMjUuMTU4IDU3Ljc5LTIuMDk1IDMuNjYxLTMuOTY5IDYuNzE1LTQuMTg2IDYuNzgtLjIxOC4wNjctMi45MjUtMS4zNTctNi4wMDctMy4xNi0xMS42MjYtNi44LTI0Ljc5LTEzLjIzMi0zOS4yNDUtMTkuMTkzLTQuMDMxLTEuNjYyLTcuNDY0LTMuMTQyLTcuNjQtMy4zMDctLjY2LS42MTkgMzEuNDY1LTIxLjg4NyA0OC40OTYtMzIuMTA4IDEzLjYyMy04LjE3NCAzNS41NTYtMjAuMzkyIDM1LjkzOC0yMC4wMXptNy41OTggMS4xOTNjLjkyNSAwIDE5LjE0OCA0Ljk2OCAyOC41NyA3Ljc4NiAyMy40NyA3LjAyIDUwLjU0NSAxNi45MSA2OC4xMDggMjQuODg2bDcuMzA1IDMuMzA3LTUuMTQ5IDEuMTkzYy00Mi45NzUgOS44NzMtNzkuODA5IDIxLjI2Ni0xMTUuMjg1IDM1LjY2Ni0yLjk0OCAxLjE5Ny01LjUxNCAyLjE3Ny01LjY5NCAyLjE3N3MuNzYxLTIuMjggMi4wNzItNS4wNjVjMTAuNjY1LTIyLjY1OCAxNy41NTItNDYuNDM0IDE5LjM0LTY2LjYyMi4xNjMtMS44MzguNDk1LTMuMzI4LjczMy0zLjMyOG0tMTgxLjEzMyA0MS42M2MuMjktLjI4NyAxNC4xNiAyLjk2MyAyMS43MjYgNS4wODcgMTEuMzcgMy4xOTIgMzUuNTY2IDExLjI4OSAzNS41ODIgMTEuOTEgMCAuMTItMi42NjcgMi40NDUtNS45MjQgNS4xNy0xMy4wODEgMTAuOTQzLTI1LjcgMjIuMzg2LTQwLjgxNSAzNi45ODQtNC40OCA0LjMyNy04LjI4OCA3Ljg0OS04LjQ3NiA3Ljg0OXMtLjI3Mi0uNjMyLS4xNjgtMS40MDNjMi4yNzYtMTYuODAzIDEuNzg3LTM4LjM4LTEuMzgxLTYwLjM0My0uNDAyLTIuNzg0LS42NDUtNS4xNTQtLjU0NC01LjI1M3ptMjkyLjA2NS4yNzNjLjIwOC4yMDgtNi40MzUgMTAuNTktMTAuNTcgMTYuNTE0LTYuMDMzIDguNjQzLTE0Ljc3OSAxOS45OS0zNC43MDMgNDUuMDQzYTE1Mzk5IDE1Mzk5IDAgMCAwLTI2LjI0NyAzMy4wOWMtMy45NzYgNS4wNC03LjMxMyA5LjE2OS03LjQxIDkuMTY5LS4wOTUgMC0xLjM3OC0xLjgwNS0yLjg0Ni0zLjk5OC0xMS4yMzEtMTYuNzgtMjQuNTU5LTMxLjUxOC00MC40NTktNDQuNzUtMi45NjctMi40Ny02LjMxNC01LjE3Ny03LjQzLTYuMDA3cy0yLjAyNS0xLjU5OC0yLjAzLTEuNzE2Yy0uMDEtLjI3NCAxNi45Ny03LjU1NyAyOS45My0xMi44MyAyMi41NjQtOS4xODIgNTMuNDAzLTIwLjE3NyA3Ni40OC0yNy4yNTIgMTIuMTctMy43MzEgMjUuMS03LjQ0OCAyNS4yODUtNy4yNjNtNy42NiAyLjAxYy4zNjUtLjA3NSAyLjc4NyAxLjA5NyA1LjY5NCAyLjc2MiAyNC4zMDUgMTMuOTIzIDQ4LjEyMyAzMS44MDMgNjYuODUyIDUwLjE5MiA1LjMyOCA1LjIzIDE4LjM2MSAxOC43ODggMTguMTY4IDE4LjktLjA1LjAyOS00LjU1MS4zODUtMTAuMDA1Ljc5NS00Mi4xMTkgMy4xNjgtOTUuOTY4IDEyLjEyOC0xNDcuODEyIDI0LjU5NC0zLjUyLjg0Ni02LjU2NSAxLjU0OS02Ljc2IDEuNTQ5LS4xOTYgMCAzLjY1OC0zLjg2OSA4LjU2LTguNTgyIDMwLjQ0Ni0yOS4yNyA0NC4zMzYtNDcuNzUyIDYwLjY3OC04MC43NzEgMi40MzQtNC45MTggNC40OTgtOS4xNiA0LjU4NC05LjQxOS4wMDUtLjAxNi4wMTctLjAxNi4wNDItLjAyem0tMjIyLjYxNyAyMi44MTNjMS4zOS4zMTMgMTQuMzc1IDYuMzU0IDI0LjE3NSAxMS4yNjEgOC45NjEgNC40ODcgMjIuNTM1IDExLjcxNCAyMy4yMTIgMTIuMzUuMDg1LjA3OS00LjY5NyAyLjU3Ni0xMC42MzMgNS41NDYtMTguNzk0IDkuNDAyLTM0Ljg5MSAxOC4yODItNTEuNjk5IDI4LjU1LTQuNzkyIDIuOTI3LTguODEgNS4zMzYtOC45MzcgNS4zMzYtLjQyIDAtLjI1NC0uMzYyIDIuNDI4LTUuMjc0IDguOTUtMTYuMzkzIDE2LjE3LTM1Ljk2NCAyMC4zMjQtNTUuMDkuMzctMS43MDYuODE2LTIuNzQ5IDEuMTMtMi42NzltLTEzLjA4MiAyLjM0NWMuMjcxLjI3LTMuMDk4IDEyLjY0Ny01LjIzMiAxOS4yNTYtNC4wOTQgMTIuNjc2LTExLjAxNSAyOC42MTEtMTcuNjY2IDQwLjYwNWEzMTMgMzEzIDAgMCAxLTUuMzE2IDkuMTY4bC0yLjQ3IDQuMDQtNS42MS01LjQyMmMtNi41MTgtNi4zMTktMTEuODI3LTEwLjI0My0xOC42MDctMTMuNzMtMi42NjQtMS4zNy00LjgzMS0yLjY0LTQuODM1LTIuODI2LS4wMTItLjgyNCAxNy4wNTMtMTYuMzQ0IDMwLjIyNC0yNy40ODIgOS40MjgtNy45NzIgMjkuMjcxLTIzLjg1IDI5LjUxMi0yMy42MXptNzkuNDk1IDMyLjY5MyA0Ljg3NyAzLjE2YzExLjE4NyA3LjI2NSAyNC40MzQgMTcuMDM2IDM0LjUzNSAyNS40NTIgNS42NiA0LjcxNyAxNi42NiAxNC41NjcgMTguOTIxIDE2Ljk1NGwxLjIxNCAxLjI3Ny04LjEgMi4yNmMtNDUuODEzIDEyLjcxMS04MS4yMDggMjQuMDI3LTEyMi41MDcgMzkuMjAzLTQuNTgzIDEuNjg1LTguNTQgMy4wNzctOC44MTIgMy4wNzctLjU3IDAtMS4xMzUuNTI0IDkuMTY4LTguOTU4IDI2LjQxNS0yNC4zMSA0OS43NS01MS4wOTMgNjcuMTg3LTc3LjE1em0tMjAuODkgNS4yMzNjLjI0LjI0LTEzLjUzOCAxOS41MzYtMjEuNzI1IDMwLjQzMy05Ljc5NSAxMy4wMzctMjcuMjQxIDM0LjgzMS0zOS4yNDUgNDkuMDItNS4wMTUgNS45MjctOS4zMTIgMTAuODQ2LTkuNTQ0IDEwLjkyNS0uMjU1LjA4Ny0uNDE0LTEuMzY1LS40MTktMy42NjMtLjAyMy0xMi4xMDYtMy4wODYtMjUuMDQ0LTguNDk4LTM2LTIuMjg1LTQuNjI4LTIuNjY4LTUuNzQ4LTIuMTk3LTYuMTc1IDEuODgzLTEuNzA3IDMxLjAyNS0xOC4zMjQgNDkuMzk2LTI4LjE3MiAxMi42MTktNi43NjUgMzEuOTkzLTE2LjYwOCAzMi4yMzMtMTYuMzY4em0tMTI2LjMzNiAzMC45NTZjLjI1IDAgMi41ODggMS4xNzUgNS4xOSAyLjYxNyA2LjM3OSAzLjUzMyAxMi4xMDkgNy40MiAxNy4xNjQgMTEuNjM3LjE5NS4xNjMtMi40MjMgMi4zMDEtNS44MTkgNC43NTEtOS40OCA2Ljg0LTIzLjkxNCAxNy43MzQtMzIuMjc1IDI0LjM4NC04LjgyIDcuMDE3LTkuMTEzIDcuMjMyLTguMTIxIDUuNzE0IDYuNjA2LTEwLjEwMiA5LjkyNy0xNS44MjIgMTMuMzk2LTIzLjEyOCAzLjA4My02LjQ5NCA2LjE1Ni0xNC4yMDMgOC4zNS0yMC45MS45MTMtMi43ODYgMS44NjUtNS4wNjUgMi4xMTUtNS4wNjVtMzMuNjU2IDI2LjQxNWMuNDU2LS4wNTcgMS4xMDQuNzkxIDMuODEgNC44MzUgNS43MDIgOC41MiAxMC4wNyAxOS44ODQgMTEuMTk3IDI5LjEzNWwuMjMgMS45ODgtMTMuNjY3IDUuMjk2Yy0yNC41MzQgOS41Mi00Ny4xMTggMTguOTA1LTYyLjM3MyAyNS44OTFhNjUyIDY1MiAwIDAgMC0xNi43MjQgOC4wMTZjLTQuOTIgMi40NjItOC45MzcgNC4zOTctOC45MzcgNC4yOTFzMy4wOS0yLjQyOSA2Ljg2NS01LjE3YzI5Ljk0LTIxLjczNiA1NS43NTUtNDUuNTMyIDc1LjIwNC02OS4zMjIgMi4wOC0yLjU0NCAzLjk2OS00Ljc1IDQuMjA3LTQuODk3YS40NS40NSAwIDAgMSAuMTg4LS4wNjNtLTE1LjUzIDMuODVjLjM5Ni4zOTctMTEuMDQ3IDEzLjMzOC0xOC43NTQgMjEuMjA0LTE5LjI4OSAxOS42ODYtMzguNDEyIDM1LjEyMS02Mi4xMDEgNTAuMTUtMi45NjQgMS44OC01LjY3MyAzLjU4LTYuMDI4IDMuNzg4LS42NS4zOC4yMS0uNTk4IDEwLjYxMi0xMS45MyA2LjU1NC03LjE0MiAxMS41NzEtMTMuMDcgMTcuMjY3LTIwLjQ3IDMuNzUyLTQuODc0IDQuNDY4LTUuNTU4IDkuOTYzLTkuNTI0IDE0LjgwMy0xMC42ODUgNDguNjQ3LTMzLjYxIDQ5LjA0LTMzLjIxN3oiIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0yOS4zOTcgLTgyLjkyMylzY2FsZSguNTY5MykiLz48L3N2Zz4="
+        },
+        "displayName": "Microsoft SQL",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 5,
+            "name": "Development"
+          }
+        ]
+      },
+      {
+        "id": 440,
+        "icon": "fa:file-archive",
+        "name": "n8n-nodes-base.compression",
+        "codex": {
+          "data": {
+            "alias": [
+              "Zip",
+              "Gzip",
+              "uncompress",
+              "compress",
+              "decompress",
+              "archive",
+              "unarchive",
+              "Binary",
+              "Files",
+              "File"
+            ],
+            "details": "The Compression node is useful when you want to compress files to either gzip or zip format. You can even use this node to decompress your gzip and zip files.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.compression/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes",
+              "Data & Storage"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Files",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Compression",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "file-archive",
+          "type": "icon"
+        },
+        "displayName": "Compression",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1235,
+        "icon": "file:extractFromFile.svg",
+        "name": "n8n-nodes-base.extractFromFile",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Spreadsheet",
+              "Excel",
+              "xls",
+              "xlsx",
+              "ods",
+              "tabular",
+              "decode",
+              "decoding",
+              "Move Binary Data",
+              "Binary",
+              "File",
+              "PDF",
+              "JSON",
+              "HTML",
+              "ICS",
+              "iCal",
+              "txt",
+              "Text",
+              "RTF",
+              "XML",
+              "64",
+              "Base64",
+              "Convert"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.extractfromfile/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Files",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Extract from File"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTAuOTM3NSAyQzAuNDE5NzMzIDIgMCAyLjQxOTczIDAgMi45Mzc1VjM3LjMyMjFDMCAzNy44Mzk5IDAuNDE5NzMzIDM4LjI1OTYgMC45Mzc1IDM4LjI1OTZIMjYuMjE1NEMyNi43MzMyIDM4LjI1OTYgMjcuMTUyOSAzNy44Mzk5IDI3LjE1MjkgMzcuMzIyMUwyNy4xNTI5IDMwLjY3MTlMMTYuNzk2OSAzMC42NzE5QzE0Ljg5ODQgMzAuNjcxOSAxMy4zNTk0IDI5LjEzMjkgMTMuMzU5NCAyNy4yMzQ0VjI1LjM1OTRDMTMuMzU5NCAyMy40NjA5IDE0Ljg5ODQgMjEuOTIxOSAxNi43OTY5IDIxLjkyMTlIMjcuMTUyOUwyNy4xNTI5IDE1Ljc4MjFIMTQuMzA4M0MxMy43OTA2IDE1Ljc4MjEgMTMuMzcwOCAxNS4zNjI0IDEzLjM3MDggMTQuODQ0NlYySDAuOTM3NVoiIGZpbGw9IiMzNTNGNkUiLz4KPHBhdGggZD0iTTE2LjAyNzEgMkMxNS45NDA4IDIgMTUuODcwOCAyLjA2OTk2IDE1Ljg3MDggMi4xNTYyNVYxMi44MTM0QzE1Ljg3MDggMTMuMDcyMyAxNi4wODA3IDEzLjI4MjEgMTYuMzM5NiAxMy4yODIxSDI2Ljk5NjdDMjcuMDgzIDEzLjI4MjEgMjcuMTUyOSAxMy4yMTIyIDI3LjE1MjkgMTMuMTI1OUwyNy4xNTI5IDEyLjYxNzFDMjcuMTUyOSAxMi4zNjg4IDI3LjA1NDUgMTIuMTMwNyAyNi44NzkxIDExLjk1NUwxNy4yMjI1IDIuMjc1MzhDMTcuMDQ2NiAyLjA5OTA4IDE2LjgwNzkgMiAxNi41NTg4IDJIMTYuMDI3MVoiIGZpbGw9IiMzNTNGNkUiLz4KPHBhdGggZD0iTTI5Ljc2NDIgMzQuNjUwM0MyOS4wMzQgMzMuOTE2IDI5LjAzNzQgMzIuNzI4OCAyOS43NzE2IDMxLjk5ODZMMzMuNjE5NyAyOC4xNzE5TDE2Ljc5NjkgMjguMTcxOUMxNi4yNzkxIDI4LjE3MTkgMTUuODU5NCAyNy43NTIxIDE1Ljg1OTQgMjcuMjM0NFYyNS4zNTk0QzE1Ljg1OTQgMjQuODQxNiAxNi4yNzkxIDI0LjQyMTkgMTYuNzk2OSAyNC40MjE5TDMzLjU0MTIgMjQuNDIxOUwyOS43NzE2IDIwLjY3MzNDMjkuMDM3NCAxOS45NDMxIDI5LjAzNCAxOC43NTU5IDI5Ljc2NDIgMTguMDIxNkMzMC40OTQ0IDE3LjI4NzQgMzEuNjgxNiAxNy4yODQgMzIuNDE1OSAxOC4wMTQyTDM5LjQ0NzEgMjUuMDA2NEMzOS44MDEgMjUuMzU4MyA0MCAyNS44MzY4IDQwIDI2LjMzNTlDNDAgMjYuODM1IDM5LjgwMSAyNy4zMTM1IDM5LjQ0NzEgMjcuNjY1NUwzMi40MTU5IDM0LjY1NzZDMzEuNjgxNiAzNS4zODc4IDMwLjQ5NDQgMzUuMzg0NSAyOS43NjQyIDM0LjY1MDNaIiBmaWxsPSIjMzUzRjZFIi8+Cjwvc3ZnPgo="
+        },
+        "displayName": "Extract from File",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 35,
+        "name": "Document Extraction"
+      }
+    ],
+    "image": []
+  }
+}

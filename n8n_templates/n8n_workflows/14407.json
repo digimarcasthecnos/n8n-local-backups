@@ -1,0 +1,992 @@
+{
+  "workflow": {
+    "id": 14407,
+    "name": "Generate YouTube shorts using WayinVideo AI and upload clips to Google Drive",
+    "views": 193,
+    "recentViews": 10,
+    "totalViews": 193,
+    "createdAt": "2026-03-28T06:34:46.603Z",
+    "description": "## Description\n\nPaste any video URL in chat — YouTube, podcast, webinar, anything — and this n8n workflow automatically finds the best short clips using [WayinVideo](https://wayin.ai/api/) AI, adds captions, reframes to 9:16 vertical format, and uploads everything directly to your Google Drive. No editing software, no manual work. Just paste and done.\n\nBuilt for content creators, marketers, and agencies who want to repurpose long-form video into viral short clips on autopilot.\n\n---\n\n## What This Workflow Does\n\nThis automation handles your complete video-to-clips pipeline:\n\n- **Chat-triggered** — User pastes any video URL and the workflow starts instantly\n- **AI clip detection** — WayinVideo AI finds the most engaging moments automatically\n- **Auto-captions** — Adds styled captions to every clip without manual effort\n- **Smart reframing** — Converts horizontal video to 9:16 vertical (perfect for Reels, Shorts, TikTok)\n- **Smart polling loop** — Waits and retries every 30 seconds until processing is complete\n- **Batch download** — Downloads all generated clips automatically\n- **Google Drive upload** — Saves every clip with its title directly to your chosen folder\n\n---\n\n## Setup Requirements\n\n**Tools You'll Need:**\n\n- Active n8n instance (self-hosted or n8n Cloud)\n- WayinVideo account with API access\n- Google Drive with OAuth2 access\n\n**Estimated Setup Time:** 10–15 minutes\n\n---\n\n## Step-by-Step Setup\n\n### 1. Get Your WayinVideo API Key\n\nWayinVideo is the AI engine that generates short clips from your videos.\n\n1. Go to [WayinVideo](https://wayin.ai/) and create a free/paid account\n2. Navigate to **Dashboard → API** section\n3. Copy your **Bearer API token**\n4. Open the **\"🎬 Submit Video to WayinVideo API\"** node in n8n\n5. Replace `YOUR_WAYINVIDEO_API_KEY` with your actual token (in the Authorization header)\n6. Do the same in the **\"🔄 Poll for Clip Results\"** node — replace the same placeholder there too\n\n&gt; ⚠️ The API key appears in **two places** — Submit node and Poll node. Replace both!\n\n---\n\n### 2. Connect Google Drive\n\n1. In n8n: Go to **Credentials → Add Credential → Google Drive OAuth2 API**\n2. Complete the Google OAuth authentication\n3. Open the **\"☁️ Upload Clip to Google Drive\"** node\n4. Select your Google Drive credential\n5. Replace `YOUR_GOOGLE_DRIVE_FOLDER_ID` with your actual folder ID\n\n**How to find your Google Drive Folder ID:**\n- Open Google Drive in browser\n- Navigate to your target folder\n- Look at the URL: `drive.google.com/drive/folders/`**`THIS_IS_YOUR_FOLDER_ID`**\n- Copy just that last part and paste it in the node\n\n---\n\n### 3. Configure the Chat Trigger\n\nThis workflow is triggered when a user sends a video URL in the n8n chat interface.\n\n- The trigger node receives `$json.chatInput` — this is the video URL the user pastes\n- Make sure your n8n instance has the chat trigger enabled\n- No additional setup needed — it works out of the box\n\n---\n\n### 4. Customise Clip Settings (Optional)\n\nOpen the **\"🎬 Submit Video to WayinVideo API\"** node to customise:\n\n| Parameter | Default Value | What It Does |\n|---|---|---|\n| `target_duration` | `DURATION_30_60` | Clip length (30–60 seconds) |\n| `limit` | `3` | Number of clips to generate |\n| `resolution` | `HD_720` | Video quality (720p) |\n| `ratio` | `RATIO_9_16` | Vertical format (for Reels/Shorts) |\n| `enable_caption` | `true` | Auto-captions on/off |\n| `caption_display` | `original` | Caption language/style |\n| `cc_style_tpl` | `temp-7` | Caption design template |\n| `enable_ai_reframe` | `true` | Auto-reframe to vertical |\n\n**To change clip length options:**\n- `DURATION_15_30` → 15 to 30 second clips\n- `DURATION_30_60` → 30 to 60 second clips (default)\n- `DURATION_60_90` → 60 to 90 second clips\n\n**To change ratio:**\n- `RATIO_9_16` → Vertical (TikTok, Reels, Shorts)\n- `RATIO_16_9` → Horizontal (YouTube, LinkedIn)\n- `RATIO_1_1` → Square (Instagram feed)\n\n**To change resolution:**\n- `HD_720` → 720p (faster processing)\n- `FULL_HD_1080` → 1080p (higher quality)\n\n---\n\n### 5. Test & Activate\n\n1. Open n8n and go to this workflow\n2. Click **\"Chat\"** button to open the chat interface\n3. Paste any YouTube video URL and press send\n4. Watch the workflow run step by step in the execution view\n5. Check your Google Drive folder — clips should appear within 1–5 minutes\n6. Once confirmed, toggle the workflow **Active** at the top ✅\n\n---\n\n## How It Works (Step by Step)\n\n### Step 1 — Chat Trigger\nUser pastes a video URL in the n8n chat. The URL is captured as `$json.chatInput` and passed to the next node.\n\n### Step 2 — Submit Video to WayinVideo API\nThe workflow sends a `POST` request to the WayinVideo API (`/api/v2/clips`) with:\n- The video URL\n- All your clip preferences (duration, ratio, captions, resolution)\n- A project name auto-generated with today's date (e.g., `Podcast Clips - 2025-01-15`)\n\nThe API returns a **Job ID** which is used to track processing status.\n\n### Step 3 — Wait 30 Seconds\nThe workflow pauses for 30 seconds to give WayinVideo time to start processing. This avoids hitting the API too early with an empty response.\n\n### Step 4 — Poll for Clip Results\nUsing the Job ID from Step 2, the workflow calls:\n```\nGET /api/v2/clips/results/{job_id}\n```\nto check if clips are ready.\n\n### Step 5 — Clips Ready? (Smart Loop)\nThe IF node checks if the `clips` array in the response is non-empty:\n\n- **YES (clips ready)** → Moves forward to extract clip details\n- **NO (still processing)** → Loops back to \"Wait 30 Seconds\" and tries again\n\n&gt; This smart retry loop runs automatically every 30 seconds until your clips are done. No manual retries needed.\n\n### Step 6 — Extract Clip Details\nThe Code node loops through all generated clips and extracts:\n- `title` — AI-generated clip title\n- `export_link` — Direct download URL for the clip\n- `score` — AI virality/engagement score\n- `tags` — Topic tags for the clip\n- `desc` — Short clip description\n- `begin_ms` / `end_ms` — Timestamp of the clip in the original video\n\nEach clip becomes a separate item for parallel processing.\n\n### Step 7 — Download Clip File\nFor each clip, the workflow downloads the video file from the `export_link` URL. The file is stored as binary data (`responseFormat: file`) ready for upload.\n\n### Step 8 — Upload to Google Drive\nEach downloaded clip is uploaded to your specified Google Drive folder. The file is named using the clip's AI-generated title automatically.\n\n---\n\n## Key Features\n\n✅ **Zero manual editing** — AI handles clip selection, captions, and reframing  \n✅ **Smart polling loop** — Auto-retries every 30s, no timeout issues  \n✅ **Batch processing** — Handles multiple clips from one video in one run  \n✅ **AI virality scoring** — Each clip comes with an engagement score  \n✅ **Auto-named files** — Clips saved with meaningful AI-generated titles  \n✅ **Flexible formats** — Supports 9:16, 16:9, and 1:1 ratios  \n✅ **Caption support** — Multiple caption style templates available  \n✅ **Google Drive ready** — Organised storage with zero manual uploads  \n\n---\n\n## Customisation Options\n\n**Generate more clips per video:**\nChange `limit` from `3` to `5` or `10` in the Submit node.\n\n**Sort clips by score before uploading:**\nAdd a Sort node after \"Extract Clip Details\" and sort by `score` descending — this ensures your best clips are uploaded first.\n\n**Save clip metadata to Google Sheets:**\nAdd a Google Sheets node after \"Extract Clip Details\" to log the title, score, tags, and timestamp of each clip for tracking.\n\n**Add a response message back to chat:**\nAdd a \"Respond to Webhook\" node at the end to send a confirmation message like: `\"✅ 3 clips have been uploaded to your Google Drive!\"`\n\n**Process multiple videos in batch:**\nModify the chat trigger to accept comma-separated URLs and add a Split node to process each video sequentially.\n\n---\n\n## Troubleshooting\n\n**Clips not generating / API returns empty:**\n- Verify your WayinVideo API key is correct in **both** the Submit and Poll nodes\n- Check your WayinVideo account has active credits\n- Ensure the video URL is publicly accessible (private YouTube videos won't work)\n- Try with a shorter video first (under 20 minutes)\n\n**Workflow stuck in polling loop:**\n- Very long videos (1+ hour) can take 5–10 minutes to process — this is normal\n- Check WayinVideo dashboard to see if your job is still running\n- If stuck for more than 15 minutes, check API status at wayinvideo.com\n\n**Google Drive upload failing:**\n- Re-authenticate your Google Drive OAuth credential\n- Verify the Folder ID is correct (copy directly from the URL)\n- Check that your Google account has write access to that folder\n- Ensure the folder is not inside a Shared Drive (use My Drive for simplest setup)\n\n**Video URL not accepted:**\n- Make sure you paste only the URL with no extra text\n- YouTube Shorts URLs work — use full URL format: `https://www.youtube.com/watch?v=...`\n- Some region-locked videos may not be accessible\n\n**Clips uploading with wrong names:**\n- The file name comes from `clip.title` in the Extract node\n- If titles look odd, you can add a Code node to clean/rename them before upload\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version for your use case?\n\n📧 **Email:** [info@isawow.com](info@isawow.com)  \n🌐 **Website:** [https://isawow.com](https://isawow.com)",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "e5946662-78f4-4051-ba5c-65328551140a",
+          "name": "📋 Setup Guide",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1776,
+            -320
+          ],
+          "parameters": {
+            "width": 476,
+            "height": 968,
+            "content": "## 🎬 Video → AI Clips → Google Drive\n\n**What it does:**\nUser pastes a video URL in chat (YouTube, etc). WayinVideo AI automatically finds the best short clips, adds captions, reframes to 9:16, and uploads them to Google Drive.\n\n**How it works:**\n1. 💬 User sends a video URL via chat\n2. 🎬 Video is submitted to WayinVideo API for clip generation\n3. ⏳ Waits 30s, then polls until clips are ready\n4. 🔄 If not ready → waits 30s again (loop)\n5. ⚙️ Extracts clip title, download link, score & tags\n6. ⬇️ Downloads each clip file\n7. ☁️ Uploads each clip to your Google Drive folder\n\n---\n\n**🔑 Credentials to Add:**\n- Google Drive → Connect OAuth2 credential\n\n**🔧 Placeholders to Fill:**\n\n`YOUR_WAYINVIDEO_API_KEY`\n→ Your WayinVideo API Bearer token\n  Get it from: wayinvideo.com/dashboard/api\n\n`YOUR_GOOGLE_DRIVE_FOLDER_ID`\n→ The folder ID from Google Drive URL\n  e.g. drive.google.com/drive/folders/**THIS_PART**\n\n---\n\n**⚙️ Customise (in Submit node):**\n- `target_duration` → DURATION_30_60 (change clip length)\n- `limit` → 3 (how many clips to generate)\n- `resolution` → HD_720 or FULL_HD_1080\n- `ratio` → RATIO_9_16 (vertical) or RATIO_16_9\n- `project_name` → Change naming convention\n\n---\n\n**⚠️ Note:**\nIf video is long, processing may take >30s.\nThe workflow auto-retries every 30s until clips are ready."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "0d68a3dc-c481-408d-87cd-b7870fc4d195",
+          "name": "🎬 Submit Video to WayinVideo API",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -1168,
+            160
+          ],
+          "parameters": {
+            "url": "https://wayinvideo-api.wayin.ai/api/v2/clips",
+            "method": "POST",
+            "options": {},
+            "sendBody": true,
+            "sendHeaders": true,
+            "bodyParameters": {
+              "parameters": [
+                {
+                  "name": "video_url",
+                  "value": "={{ $json.chatInput }}"
+                },
+                {
+                  "name": "project_name",
+                  "value": "=Podcast Clips - {{ new Date().toISOString().split('T')[0] }}"
+                },
+                {
+                  "name": "target_duration",
+                  "value": "DURATION_30_60"
+                },
+                {
+                  "name": "limit",
+                  "value": 3
+                },
+                {
+                  "name": "enable_export",
+                  "value": true
+                },
+                {
+                  "name": "resolution",
+                  "value": "HD_720"
+                },
+                {
+                  "name": "enable_caption",
+                  "value": true
+                },
+                {
+                  "name": "caption_display",
+                  "value": "original"
+                },
+                {
+                  "name": "cc_style_tpl",
+                  "value": "temp-7"
+                },
+                {
+                  "name": "enable_ai_reframe",
+                  "value": true
+                },
+                {
+                  "name": "ratio",
+                  "value": "RATIO_9_16"
+                }
+              ]
+            },
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                },
+                {
+                  "name": "Authorization",
+                  "value": "Bearer YOUR_TOKEN_HERE"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "1fdc4b1c-e744-4419-9a26-bdff9a748b2a",
+          "name": "⏳ Wait 30 Seconds",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            -848,
+            160
+          ],
+          "webhookId": "acf07ef6-fdd4-450e-afbd-345051673c85",
+          "parameters": {
+            "unit": "seconds",
+            "amount": 30
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "cd70538d-78a0-43e2-9211-fffbed248d9d",
+          "name": "🔄 Poll for Clip Results",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -560,
+            160
+          ],
+          "parameters": {
+            "url": "=https://wayinvideo-api.wayin.ai/api/v2/clips/results/{{ $('🎬 Submit Video to WayinVideo API').item.json.data.id }}",
+            "options": {},
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer YOUR_TOKEN_HERE"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "8abd5935-8293-45d0-8b8f-ec81f2c5e9eb",
+          "name": "✅ Clips Ready?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -320,
+            160
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "d25403b5-efc7-4262-8f7d-3e6ed7a47caf",
+                  "operator": {
+                    "type": "array",
+                    "operation": "notEmpty",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json.data.clips }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "547a364c-7c59-45ba-bce5-23c2db7b2619",
+          "name": "⚙️ Extract Clip Details",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            128,
+            144
+          ],
+          "parameters": {
+            "jsCode": "const clips = $json.data.clips;\n\nreturn clips.map(clip => ({\n  json: {\n    title: clip.title,\n    export_link: clip.export_link,\n    score: clip.score,\n    tags: clip.tags,\n    desc: clip.desc,\n    begin_ms: clip.begin_ms,\n    end_ms: clip.end_ms\n  }\n}));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "0ea44c90-35ca-41e9-93b0-b11b6e554179",
+          "name": "⬇️ Download Clip File",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            464,
+            144
+          ],
+          "parameters": {
+            "url": "={{ $json.export_link }}",
+            "options": {
+              "response": {
+                "response": {
+                  "responseFormat": "file"
+                }
+              }
+            }
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "c7042cb0-d32e-45cd-b708-f5e1ce493be7",
+          "name": "☁️ Upload Clip to Google Drive",
+          "type": "n8n-nodes-base.googleDrive",
+          "position": [
+            736,
+            144
+          ],
+          "parameters": {
+            "name": "={{ $('⚙️ Extract Clip Details').item.json.title }}",
+            "driveId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "My Drive"
+            },
+            "options": {},
+            "folderId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID",
+              "cachedResultUrl": "https://drive.google.com/drive/folders/YOUR_GOOGLE_DRIVE_FOLDER_ID",
+              "cachedResultName": "Your Clips Folder"
+            },
+            "inputDataFieldName": "=data"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "f06f33ce-dbf1-4244-b8f8-12f30cf90a3f",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1280,
+            -48
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 336,
+            "height": 256,
+            "content": "## 🎬 Submit Video for Processing\n\n• Sends video URL to WayinVideo API\n• Starts AI clip generation process\n• Applies settings (duration, captions, format)\n\n👉 This is where clip creation begins"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "8e92fc58-457c-4faa-82c8-99ab7add9750",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -848,
+            -48
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 384,
+            "height": 256,
+            "content": "## ⏳ Wait & Check Processing Status\n\n• Waits 30 seconds before checking\n• Requests API to check if clips are ready\n• Uses job ID to fetch results\n\n👉 Prevents instant API calls & allows processing time"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "fa48d725-e2b4-4901-a122-67c64be8643a",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -400,
+            -48
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 336,
+            "height": 256,
+            "content": "## 🔁 Check if Clips are Ready\n\n• Checks if clips data is available\n• If NOT ready → waits again (loop)\n• If ready → moves to next step\n\n👉 Smart loop until clips are generated"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "663307a2-ecd4-4460-a848-90f8d55a997b",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            16,
+            -48
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 336,
+            "height": 240,
+            "content": "## ⚙️ Extract Clip Information\n\n• Loops through all generated clips\n• Extracts title, link, score, tags\n• Prepares clean structured output\n\n👉 Converts API response into usable data"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "3d323aa3-5126-41be-aa14-2461a669db84",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            464,
+            -48
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 368,
+            "height": 240,
+            "content": "## 📥 Download & Save Clips\n\n• Downloads clip using export link\n• Uploads file to Google Drive\n• Saves with clip title\n\n👉 Final storage of generated clips"
+          },
+          "typeVersion": 1
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "✅ Clips Ready?": {
+          "main": [
+            [
+              {
+                "node": "⚙️ Extract Clip Details",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "⏳ Wait 30 Seconds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "⏳ Wait 30 Seconds": {
+          "main": [
+            [
+              {
+                "node": "🔄 Poll for Clip Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "⬇️ Download Clip File": {
+          "main": [
+            [
+              {
+                "node": "☁️ Upload Clip to Google Drive",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "🔄 Poll for Clip Results": {
+          "main": [
+            [
+              {
+                "node": "✅ Clips Ready?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "⚙️ Extract Clip Details": {
+          "main": [
+            [
+              {
+                "node": "⬇️ Download Clip File",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "🎬 Submit Video to WayinVideo API": {
+          "main": [
+            [
+              {
+                "node": "⏳ Wait 30 Seconds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 13,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 1
+        },
+        "n8n-nodes-base.wait": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.googleDrive": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 3
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "isaWOW",
+      "username": "isawow",
+      "bio": "",
+      "verified": true,
+      "links": [
+        ""
+      ],
+      "avatar": "https://gravatar.com/avatar/8e8c1f17a2be80c0d1b0248585660dff3062cefeda523bbafeafcdb813f52ffa?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 58,
+        "icon": "file:googleDrive.svg",
+        "name": "n8n-nodes-base.googleDrive",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googledrive/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Google Drive"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgODEgNzMiPjx1c2UgeGxpbms6aHJlZj0iI2EiIHg9Ii41IiB5PSIuNSIvPjxzeW1ib2wgaWQ9ImEiIG92ZXJmbG93PSJ2aXNpYmxlIj48ZyBmaWxsLXJ1bGU9Im5vbnplcm8iIHN0cm9rZT0ibm9uZSI+PHBhdGggZmlsbD0iIzAwNjZkYSIgZD0ibTYuMDQ4IDYxLjI2IDMuNTI4IDYuMDk0Yy43MzMgMS4yODMgMS43ODcgMi4yOTEgMy4wMjQgMy4wMjRsMTIuNi0yMS44MUgwYTguMyA4LjMgMCAwIDAgMS4xIDQuMTI0eiIvPjxwYXRoIGZpbGw9IiMwMGFjNDciIGQ9Ik00MCAyMi45MSAyNy40IDEuMWMtMS4yMzcuNzMzLTIuMjkxIDEuNzQxLTMuMDI0IDMuMDI0TDEuMSA0NC40NDVBOC4zIDguMyAwIDAgMCAwIDQ4LjU2OGgyNS4yeiIvPjxwYXRoIGZpbGw9IiNlYTQzMzUiIGQ9Ik02Ny40IDcwLjM3OGMxLjIzNy0uNzMzIDIuMjkxLTEuNzQxIDMuMDI0LTMuMDI0bDEuNDY2LTIuNTIgNy4wMS0xMi4xNDJhOC4zIDguMyAwIDAgMCAxLjEtNC4xMjRINTQuNzk4bDUuMzYzIDEwLjUzOHoiLz48cGF0aCBmaWxsPSIjMDA4MzJkIiBkPSJNNDAgMjIuOTEgNTIuNiAxLjFDNTEuMzYzLjM2NyA0OS45NDMgMCA0OC40NzcgMEgzMS41MjRjLTEuNDY2IDAtMi44ODcuNDEyLTQuMTI0IDEuMXoiLz48cGF0aCBmaWxsPSIjMjY4NGZjIiBkPSJNNTQuNzk5IDQ4LjU2OEgyNS4ybC0xMi42IDIxLjgxYzEuMjM3LjczMyAyLjY1NyAxLjEgNC4xMjQgMS4xaDQ2LjU1MmMxLjQ2NiAwIDIuODg3LS40MTIgNC4xMjQtMS4xeiIvPjxwYXRoIGZpbGw9IiNmZmJhMDAiIGQ9Ik02Ny4yNjIgMjQuMjg0IDU1LjYyNCA0LjEyNEM1NC44OTEgMi44NDEgNTMuODM3IDEuODMzIDUyLjYgMS4xTDQwIDIyLjkxbDE0LjggMjUuNjU5aDI1LjE1NWE4LjMgOC4zIDAgMCAwLTEuMS00LjEyNHoiLz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Google Drive",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 31,
+        "name": "Content Creation"
+      },
+      {
+        "id": 51,
+        "name": "Multimodal AI"
+      }
+    ],
+    "image": []
+  }
+}

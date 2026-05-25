@@ -1,0 +1,889 @@
+{
+  "workflow": {
+    "id": 14966,
+    "name": "Triage customer support emails and draft Gmail replies with IONOS AI Model Hub",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-10T06:45:00.705Z",
+    "description": "## AI Customer Support Triage — Auto-Draft Replies with IONOS AI Model Hub\n\nThis n8n template shows you how to automate customer support email triage with a sovereign AI. By combining Gmail for inbox monitoring and the IONOS AI Model Hub, every customer email is classified and replied to by AI.\n\n## Use cases\n\n- **Support inbox management:** Automatically sort incoming emails into Spam, Sales Lead, Tech Support, FAQ, Billing, or Other — so your team knows exactly what needs attention and in what order.\n- **Draft replies in seconds:** Instead of writing responses from scratch, your agent opens Gmail Drafts to find a ready-to-send reply already written in the customer's language — just review and hit Send.\n- **Multi-inbox coverage:** Monitor both your info@ and support@ addresses or more in a single workflow, with a filter that ensures only legitimate business emails reach the AI.\n\n## How it works\n\nA Gmail Trigger polls your inbox every minute for new unread messages. A Filter node immediately discards anything not addressed to your support@ or info@ address, so irrelevant mail never reaches the AI.\n\nThe **Prepare Email Data** code node strips HTML, removes quoted reply chains, and extracts the clean fields — sender, subject, date, recipient, and body — with no prompt logic mixed in.\n\nThe **Basic LLM Chain** node then takes over: it sends the cleaned email to the IONOS AI Model Hub (Mistral Small 24B) with a structured prompt that instructs the model to return a single JSON object containing the category, priority, sentiment, detected language, a one-sentence summary, and a full draft reply written in the same language as the customer's email.\n\nA **Parse AI Response** code node extracts and validates the JSON, with a graceful fallback if the model output is malformed. A Switch node routes Spam emails to a silent mark-as-read action, while all other categories trigger the **Gmail Create Draft** node — which saves the AI-written reply directly into your Drafts folder, threaded to the original conversation. Your agent reviews it and clicks Send.\n\n## Good to know\n\n**Filtering:** The Filter node uses a partial match on `support@` and `info@`. For a stricter match, update the values to your full addresses (e.g. `support@yourcompany.com`).\n\n**Model selection:** The IONOS AI Model Hub offers several LLMs including Mistral Small 24B, and Nemo. For email triage and reply drafting, Mistral Small 24B the best balance of reasoning quality and response speed.\n\n**Language support:** The prompt instructs the model to detect the email language and reply in kind — no additional configuration needed for multilingual inboxes.\n\n## How to set it up\n\n1. Connect your Gmail OAuth2 credentials to the Gmail Trigger, Filter, and both Gmail action nodes.\n2. Update the Filter node values with your actual support addresses.\n3. Add your IONOS Cloud API token to the **IONOS Cloud Chat Model** node credentials.\n4. Customize the prompt in the **AI Triage & Draft Reply** node — adjust categories, tone, or signature as needed.\n5. Activate the workflow and send a test email to verify the draft appears in Gmail.\n\n## Requirements\n\n- Gmail account (OAuth2) for inbox monitoring and draft creation\n- IONOS Cloud account to access the AI Model Hub",
+    "workflow": {
+      "meta": {
+        "instanceId": "13a069722ccf677b3fea772a46d821337e174b728302fc5fa23334c39ab54f32",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "c6d45206-fea1-407e-8792-86e3a8da02ba",
+          "name": "Sticky Note — Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2176,
+            752
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 620,
+            "height": 600,
+            "content": "## Customer Support Email Triage\n### Sovereign AI — IONOS AI Model Hub\n\n**What this workflow does:**\n-  Watches the inbox for new unread emails\n- Filters to only process emails addressed to support@ or info@\n- Uses IONOS Sovereign AI (Llama 3.3-70B) to classify each email AND write a draft reply\n- Categories: **Spam · Sales Lead · Tech Support · FAQ · Billing · Other**\n- Creates a Gmail **Draft**\n- Spam emails are silently marked as read (no draft created)\n\n**Setup checklist:**\n- [ ] Gmail OAuth2 credentials configured (for support@ or info@)\n- [ ] IONOS Cloud API token added to credentials (ionosCloudApi)\n- [ ] `@ionos-cloud/n8n-nodes-ionos-cloud` node package installed\n- [ ] Update the Filter node with your actual domain (e.g. support@yourcompany.com)\n\n**Data flow:**\nGmail Trigger → Filter (support@/info@ only) → Clean Email → AI Triage & Draft → Parse → Route → Draft / Archive Spam"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "bd77acc6-90e9-4164-89cc-643603f1820d",
+          "name": "New Email (info@ / support@)",
+          "type": "n8n-nodes-base.gmailTrigger",
+          "position": [
+            2912,
+            1392
+          ],
+          "parameters": {
+            "filters": {
+              "readStatus": "unread"
+            },
+            "pollTimes": {
+              "item": [
+                {
+                  "mode": "everyMinute"
+                }
+              ]
+            }
+          },
+          "credentials": {
+            "gmailOAuth2": {
+              "id": "SwxuaYMFZiJGyOms",
+              "name": "Gmail account 2"
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "6b895e3b-7d8a-4d5a-8605-c8872a65d8a4",
+          "name": "Only support@ or info@",
+          "type": "n8n-nodes-base.filter",
+          "position": [
+            3184,
+            1392
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 2,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "or",
+              "conditions": [
+                {
+                  "id": "filter-cond-01",
+                  "operator": {
+                    "type": "string",
+                    "operation": "contains"
+                  },
+                  "leftValue": "={{ $json.From }}",
+                  "rightValue": "support@"
+                },
+                {
+                  "id": "filter-cond-02",
+                  "operator": {
+                    "type": "string",
+                    "operation": "contains"
+                  },
+                  "leftValue": "=",
+                  "rightValue": "info@"
+                },
+                {
+                  "id": "bb7aee9c-7633-40c3-b22b-f51ea2221993",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals"
+                  },
+                  "leftValue": "=",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "ad33e66f-bee1-4abb-817f-7daaabbcbefc",
+          "name": "Prepare Email Data",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            3440,
+            1392
+          ],
+          "parameters": {
+            "jsCode": "// Extract and clean the raw email fields only — prompt lives in the AI node\nconst email = $input.first().json;\n\nfunction stripHtml(html) {\n  return (html || '')\n    .replace(/<style[^>]*>[\\s\\S]*?<\\/style>/gi, '')\n    .replace(/<script[^>]*>[\\s\\S]*?<\\/script>/gi, '')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfunction removeQuotedText(text) {\n  const markers = [\n    /\\nOn .+?wrote:/s,\n    /\\n-{3,}/,\n    /\\nFrom:\\s+/,\n    /\\n_{3,}/,\n    /\\n>{1,}/m\n  ];\n  let result = text || '';\n  for (const marker of markers) {\n    const idx = result.search(marker);\n    if (idx > 80) { result = result.substring(0, idx); break; }\n  }\n  return result.trim();\n}\n\n// Gmail trigger returns capitalized headers: From, To, Subject, Date\n// Body: prefer full text/html, fall back to snippet\nconst rawBody   = email.text || email.Text || stripHtml(email.html || email.Html || '') || email.snippet || '';\nconst cleanBody = removeQuotedText(rawBody).substring(0, 3500);\n\nconst fromRaw   = email.From || email.from || '';\nconst fromMatch = fromRaw.match(/^(.+?)\\s*<([^>]+)>$/);\nconst fromName  = fromMatch ? fromMatch[1].replace(/\"/g, '').trim() : fromRaw.split('@')[0];\nconst fromEmail = fromMatch ? fromMatch[2].trim() : fromRaw.trim();\n\nreturn [{\n  json: {\n    from:      fromEmail,\n    fromName,\n    subject:   email.Subject  || email.subject  || '(no subject)',\n    date:      email.Date     || email.date      || new Date().toISOString(),\n    threadId:  email.threadId || '',\n    messageId: email.id       || '',\n    toAddress: email.To       || email.to        || '',\n    cleanBody\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "52c13ea7-f25c-4b28-9817-34cc6a01c479",
+          "name": "AI Triage & Draft Reply",
+          "type": "@n8n/n8n-nodes-langchain.chainLlm",
+          "position": [
+            3712,
+            1392
+          ],
+          "parameters": {
+            "text": "=You are an expert customer support triage assistant for a technology company.\nAnalyze the email below and return ONLY a valid JSON object — no markdown, no code fences, no explanation.\n\nCATEGORIES (pick exactly one):\n- \"Spam\"        : unsolicited commercial mail, phishing, bot-generated or clearly irrelevant\n- \"Sales Lead\"  : pricing/demo inquiries, partnership proposals, purchase intent\n- \"Tech Support\": technical problems, bugs, errors, product malfunctions, integration issues\n- \"FAQ\"         : common how-to or product-info questions answered in standard documentation\n- \"Billing\"     : payment issues, invoice requests, refunds, subscription changes\n- \"Other\"       : legitimate emails that don't fit the above\n\nPRIORITY (pick one):\n- \"Urgent\" : system down, data loss, legal/compliance threat, or very angry customer\n- \"High\"   : customer is frustrated or has a time-sensitive issue\n- \"Medium\" : normal business inquiry\n- \"Low\"    : informational, no urgency\n\nDRAFT REPLY RULES:\n- Write the reply in the SAME language as the email\n- Open with a personalized greeting using the sender first name when available\n- Acknowledge their specific situation concisely\n- Provide helpful next steps or a resolution path\n- Close professionally; use [YOUR NAME] as the signature placeholder\n- If category is \"Spam\", set draft_reply to the string \"N/A\"\n\nReturn exactly this JSON structure:\n{\n  \"category\": \"...\",\n  \"priority\": \"...\",\n  \"summary\": \"one sentence describing the email\",\n  \"sentiment\": \"Positive | Neutral | Frustrated | Angry\",\n  \"language\": \"detected language name in English (e.g. French, German, English)\",\n  \"draft_reply\": \"complete reply text ready to review and send\"\n}\n\nEMAIL:\nFrom: {{ $json.fromName }} <{{ $json.from }}>\nTo: {{ $json.toAddress }}\nSubject: {{ $json.subject }}\nDate: {{ $json.date }}\nBody:\n{{ $json.cleanBody }}",
+            "promptType": "define"
+          },
+          "typeVersion": 1.4
+        },
+        {
+          "id": "abc5b3a7-4dd5-4eab-b8a1-730c9b89cecc",
+          "name": "IONOS Cloud Chat Model",
+          "type": "@ionos-cloud/n8n-nodes-ionos-cloud.ionosCloudChatModel",
+          "position": [
+            3712,
+            1616
+          ],
+          "parameters": {
+            "model": "meta-llama/Llama-3.3-70B-Instruct",
+            "options": {}
+          },
+          "credentials": {
+            "ionosCloudApi": {
+              "id": "xB8RFFIWMSdB6c1i",
+              "name": "Central Ionos Cloud ModelHub"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9c4eb4e7-bff9-4783-9081-600c361f9033",
+          "name": "Parse AI Response",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            4048,
+            1376
+          ],
+          "parameters": {
+            "jsCode": "// ── Parse the AI JSON response and merge with original email data ───────────\nconst llmOutput  = $input.first().json;\nconst emailData  = $('Prepare Email Data').first().json;\n\n// The LLM Chain can surface the text under different keys depending on n8n version\nconst llmText = llmOutput.output || llmOutput.text || llmOutput.response || '';\n\nlet parsed;\ntry {\n  // Robustly extract the first JSON object from the response\n  // (handles cases where the model adds commentary before/after)\n  const jsonMatch = llmText.match(/\\{[\\s\\S]*\\}/);\n  if (!jsonMatch) throw new Error('No JSON object found in AI response');\n  parsed = JSON.parse(jsonMatch[0]);\n\n  // Validate required fields\n  const validCategories = ['Spam', 'Sales Lead', 'Tech Support', 'FAQ', 'Billing', 'Other'];\n  const validPriorities  = ['Low', 'Medium', 'High', 'Urgent'];\n  if (!validCategories.includes(parsed.category)) parsed.category = 'Other';\n  if (!validPriorities.includes(parsed.priority))  parsed.priority = 'Medium';\n\n} catch (e) {\n  // Graceful fallback — the draft will still be created for human review\n  parsed = {\n    category:    'Other',\n    priority:    'Medium',\n    summary:     'AI parsing failed — please review this email manually.',\n    sentiment:   'Neutral',\n    language:    'English',\n    draft_reply: 'Thank you for contacting us. A member of our team will review your message and respond as soon as possible.\\n\\nBest regards,\\n[YOUR NAME]'\n  };\n}\n\nreturn [{\n  json: {\n    // Original email fields\n    from:        emailData.from,\n    fromName:    emailData.fromName,\n    subject:     emailData.subject,\n    date:        emailData.date,\n    threadId:    emailData.threadId,\n    messageId:   emailData.messageId,\n    toAddress:   emailData.toAddress,\n    // AI triage results\n    category:    parsed.category,\n    priority:    parsed.priority,\n    summary:     parsed.summary    || '',\n    sentiment:   parsed.sentiment  || 'Neutral',\n    language:    parsed.language   || 'English',\n    draft_reply: parsed.draft_reply || '',\n    // Metadata\n    processedAt: new Date().toISOString(),\n    rawAiText:   llmText\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "5ac96dc1-08e2-425c-8be1-48ea52642055",
+          "name": "Route by Category",
+          "type": "n8n-nodes-base.switch",
+          "position": [
+            4272,
+            1392
+          ],
+          "parameters": {
+            "rules": {
+              "values": [
+                {
+                  "outputKey": "Spam",
+                  "conditions": {
+                    "options": {
+                      "leftValue": "",
+                      "caseSensitive": false,
+                      "typeValidation": "strict"
+                    },
+                    "combinator": "and",
+                    "conditions": [
+                      {
+                        "operator": {
+                          "type": "string",
+                          "operation": "equals"
+                        },
+                        "leftValue": "={{ $json.category }}",
+                        "rightValue": "Spam"
+                      }
+                    ]
+                  },
+                  "renameOutput": true
+                }
+              ]
+            },
+            "options": {
+              "fallbackOutput": "extra"
+            }
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "8a154418-57ac-4929-91c6-d8665dbd8a66",
+          "name": "Archive Spam (mark as read)",
+          "type": "n8n-nodes-base.gmail",
+          "position": [
+            4576,
+            1328
+          ],
+          "webhookId": "ce054ce9-e53f-49c6-ad3f-5167956c293e",
+          "parameters": {
+            "messageId": "={{ $json.messageId }}",
+            "operation": "markAsRead"
+          },
+          "credentials": {
+            "gmailOAuth2": {
+              "id": "SwxuaYMFZiJGyOms",
+              "name": "Gmail account 2"
+            }
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "01fccce5-9506-4c4f-8a1d-1662b20cff6d",
+          "name": "Create Draft Reply",
+          "type": "n8n-nodes-base.gmail",
+          "position": [
+            4560,
+            1536
+          ],
+          "webhookId": "653a6c55-549a-4c3c-8f4d-2793c2e2311c",
+          "parameters": {
+            "message": "=━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🤖 AI TRIAGE — REVIEW BEFORE SENDING (delete this block)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCategory : {{ $json.category }}\nPriority : {{ $json.priority }}\nSentiment: {{ $json.sentiment }}\nLanguage : {{ $json.language }}\nTo       : {{ $json.toAddress }}\nSummary  : {{ $json.summary }}\nProcessed: {{ $json.processedAt }}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n{{ $json.draft_reply }}",
+            "options": {
+              "threadId": "={{ $json.threadId }}"
+            },
+            "subject": "=Re: {{ $json.subject }}",
+            "resource": "draft"
+          },
+          "credentials": {
+            "gmailOAuth2": {
+              "id": "SwxuaYMFZiJGyOms",
+              "name": "Gmail account 2"
+            }
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "befb35b1-57e3-45a8-9091-ea331cb6c362",
+          "name": "Sticky Note — Overview1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2864,
+            1088
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 796,
+            "height": 600,
+            "content": "## 1. Receive & Filter Email\n\nPolls Gmail every minute for new unread messages.\n\n**Filter node:** only lets through emails where the `from` field contains `support@` or `info@`. All other emails are silently ignored.\n\n> ✏️ Update the Filter node values with your full addresses (e.g. `support@yourcompany.com`) for a stricter match."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "0d8caeae-92dd-4b78-84e3-8ebb1996496f",
+          "name": "Sticky Note — Overview2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            3664,
+            1088
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 556,
+            "height": 680,
+            "content": "## 2. AI Triage + Draft Reply\n### IONOS AI Model Hub (Llama 3.3-70B)\n\nSingle AI call returns structured JSON:\n- **category** (Spam / Sales Lead / Tech Support / FAQ / Billing / Other)\n- **priority** (Low / Medium / High / Urgent)\n- **summary** (one-sentence description)\n- **sentiment** (Positive / Neutral / Frustrated / Angry)\n- **language** (auto-detected)\n- **draft_reply** (complete reply, same language as email)"
+          },
+          "typeVersion": 1
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "Parse AI Response": {
+          "main": [
+            [
+              {
+                "node": "Route by Category",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Route by Category": {
+          "main": [
+            [
+              {
+                "node": "Archive Spam (mark as read)",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Create Draft Reply",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Prepare Email Data": {
+          "main": [
+            [
+              {
+                "node": "AI Triage & Draft Reply",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "IONOS Cloud Chat Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "AI Triage & Draft Reply",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Only support@ or info@": {
+          "main": [
+            [
+              {
+                "node": "Prepare Email Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "AI Triage & Draft Reply": {
+          "main": [
+            [
+              {
+                "node": "Parse AI Response",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "New Email (info@ / support@)": {
+          "main": [
+            [
+              {
+                "node": "Only support@ or info@",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 29,
+    "workflowInfo": {
+      "nodeCount": 12,
+      "nodeTypes": {
+        "n8n-nodes-base.code": {
+          "count": 2
+        },
+        "n8n-nodes-base.gmail": {
+          "count": 2
+        },
+        "n8n-nodes-base.filter": {
+          "count": 1
+        },
+        "n8n-nodes-base.switch": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 3
+        },
+        "n8n-nodes-base.gmailTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.chainLlm": {
+          "count": 1
+        },
+        "@ionos-cloud/n8n-nodes-ionos-cloud.ionosCloudChatModel": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Fabrice",
+      "username": "fwurtz",
+      "bio": "Content Marketing Manager in IT",
+      "verified": true,
+      "links": [
+        ""
+      ],
+      "avatar": "https://gravatar.com/avatar/747c33a64ec17cf86c9cf6389b7b74103a16f904511c44f972c61f6c55e257bc?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 112,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.switch",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "If",
+              "Path",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Branch",
+              "Case"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.switch/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Switch",
+          "color": "#506000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "Switch",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 356,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmail",
+        "codex": {
+          "data": {
+            "alias": [
+              "email",
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.gmail/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Gmail"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 824,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmailTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/trigger-nodes/n8n-nodes-base.gmailtrigger/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "Gmail Trigger"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 844,
+        "icon": "fa:filter",
+        "name": "n8n-nodes-base.filter",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The Filter node can be used to filter items based on a condition. If the condition is met, the item will be passed on to the next node. If the condition is not met, the item will be omitted. Conditions can be combined together by AND(meet all conditions), or OR(meet at least one condition).",
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.filter/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Filter",
+          "color": "#229eff"
+        },
+        "iconData": {
+          "icon": "filter",
+          "type": "icon"
+        },
+        "displayName": "Filter",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1123,
+        "icon": "fa:link",
+        "name": "@n8n/n8n-nodes-langchain.chainLlm",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.chainllm/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Chains",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Basic LLM Chain",
+          "color": "#909298"
+        },
+        "iconData": {
+          "icon": "link",
+          "type": "icon"
+        },
+        "displayName": "Basic LLM Chain",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 41,
+        "name": "Ticket Management"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

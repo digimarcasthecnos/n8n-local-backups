@@ -1,0 +1,1328 @@
+{
+  "workflow": {
+    "id": 15352,
+    "name": "Convert podcasts to LinkedIn articles with WayinVideo and GPT-4o-mini",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-28T07:47:35.285Z",
+    "description": "### Description\n\nSubmit your podcast or video URL using a simple form and the workflow automatically transcribes the full episode with speaker labels and timestamps. GPT-4o-mini then reads the transcript and writes a complete LinkedIn newsletter article — headline, 400–600 word body, five key takeaways, and hashtags — following seven LinkedIn readability rules. The finished draft is saved to Google Sheets with a Status of \"Draft\" so you can review and publish when ready. Built for podcast hosts, content marketers, and personal brand builders who want to turn every episode into a LinkedIn article without writing from scratch.\n\n---\n\n## What This Workflow Does\n\n- **Transcribes your podcast with speaker labels** — [WayinVideo](https://wayin.ai/api/) processes the full episode and returns each segment attributed to the correct speaker with timestamps\n- **Polls automatically until transcription is complete** — Waits 60 seconds then checks the status repeatedly every 30 seconds until the transcript is ready, with no manual monitoring needed\n- **Formats the transcript for AI analysis** — Structures every segment as speaker name with timestamp so GPT understands who said what and when\n- **Writes a complete LinkedIn article** — GPT-4o-mini produces a headline, full 400–600 word article body, five key takeaways starting with action verbs, and 5–8 relevant hashtags\n- **Applies LinkedIn readability rules** — The AI follows seven specific rules: short paragraphs, strong opening hook, human conversational tone, no filler, consistent tone throughout, and a closing CTA\n- **Saves the draft to Google Sheets** — Appends a row with headline, article, key takeaways, hashtags, word count, episode duration, and Status set to \"Draft\" — ready for your review before publishing\n\n---\n\n## Setup Requirements\n\n### Tools Needed\n- n8n instance (self-hosted or cloud)\n- WayinVideo account with API access\n- OpenAI account with GPT-4o-mini API access\n- Google Sheets (one sheet with a tab named **LinkedIn Drafts**)\n\n### Credentials Required\n- WayinVideo API key (pasted directly into **2. WayinVideo — Submit Transcription** and **4. WayinVideo — Get Transcript Results**)\n- OpenAI API key\n- Google Sheets OAuth2\n\n&gt; ⚠️ **WayinVideo API key appears in 2 steps** — replace `YOUR_WAYINVIDEO_API_KEY` in both **2. WayinVideo — Submit Transcription** and **4. WayinVideo — Get Transcript Results**. Missing either one will cause the workflow to fail.\n\n**Estimated Setup Time: 15–20 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Import the workflow** — Open n8n → Workflows → Import from JSON → paste the workflow JSON → click Import\n\n2. **Get your WayinVideo API key** — Log in to your WayinVideo account → go to Account Settings → copy your API key\n\n3. **Add your WayinVideo API key to node 2** — Open node **2. WayinVideo — Submit Transcription** → find the `Authorization` header value that says `Bearer YOUR_WAYINVIDEO_API_KEY` → replace `YOUR_WAYINVIDEO_API_KEY` with your actual key\n\n4. **Add your WayinVideo API key to node 4** — Open node **4. WayinVideo — Get Transcript Results** → find the same `Authorization` header → replace `YOUR_WAYINVIDEO_API_KEY` again with the same key\n\n5. **Connect OpenAI** — Open node **9. OpenAI — GPT-4o-mini Model** → click the credential dropdown → add your OpenAI API key → test the connection\n\n6. **Create your Google Sheet tab** — Open your Google Sheet → add a tab named exactly **LinkedIn Drafts** → add these 10 column headers in row 1: `Podcast Title`, `Video URL`, `Episode Duration (min)`, `LinkedIn Headline`, `LinkedIn Article`, `Key Takeaways`, `Hashtags`, `Word Count`, `Generated On`, `Status`\n\n7. **Connect Google Sheets** — Open node **11. Google Sheets — Save LinkedIn Draft** → click the credential dropdown → add Google Sheets OAuth2 → sign in with your Google account → authorize access\n\n8. **Update the Sheet ID in node 11** — In node **11. Google Sheets — Save LinkedIn Draft**, the document ID currently says `YOUR_GOOGLE_SHEET_ID` → click the document field → select your actual spreadsheet from the list, or manually replace the ID with the string between `/d/` and `/edit` in your Sheet URL\n\n9. **Activate the workflow** — Toggle the workflow to Active → copy the Form URL from node **1. Form — Podcast URL + Details** → open it in a browser to submit your first episode\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Form: Podcast URL + Details**\nYou open the form URL in a browser and fill in five fields: the podcast or video URL (YouTube, Zoom, Vimeo, or any direct link), the episode title, the host and guest name, the target audience, and optionally your preferred LinkedIn tone. Tone defaults to \"Professional and insightful\" if left blank. Submitting the form starts the workflow.\n\n**Step 2 — HTTP: WayinVideo — Submit Transcription**\nThe podcast URL is sent to the WayinVideo API with the target language set to English. WayinVideo accepts the job and returns a task ID confirming transcription has started.\n\n**Step 3 — Wait: 60 Seconds**\nThe workflow pauses for 60 seconds before checking the transcription status for the first time. This gives WayinVideo time to begin processing the audio before the first poll.\n\n**Step 4 — HTTP: WayinVideo — Get Transcript Results**\nA GET request checks the WayinVideo results endpoint using the task ID from step 2. It returns the current processing status and, once complete, the full transcript with speaker labels, timestamps, and text for each segment.\n\n**Step 5 — IF: Transcription Complete?**\nThis is the polling gate. If the status equals `SUCCEEDED` (YES path), the transcript is ready and the workflow moves forward to formatting. If the status is anything else (NO path — still processing), the workflow routes to **6. Wait — 30 Seconds Retry** which pauses 30 seconds then loops back to step 4 to check again. This repeats automatically until transcription succeeds.\n\n**Step 6 — Wait: 30 Seconds Retry**\nThis step handles the not-yet-complete case. The workflow pauses 30 seconds then returns to step 4 for another status check. The loop continues until WayinVideo returns SUCCEEDED.\n\n**Step 7 — Code: Format Transcript**\nEach transcript segment is formatted as `[Speaker Name | MM:SS] text` so GPT receives a structured, readable conversation. Total episode duration in minutes is calculated from the last segment's end time. Unique speaker names are collected. Word count is calculated. All form inputs (episode title, host/guest name, target audience, tone, video URL) are also packaged here for the AI prompt.\n\n**Step 8 — AI Agent: Write LinkedIn Newsletter**\nGPT-4o-mini receives the formatted transcript as the user message and a detailed system prompt as context. The system prompt provides episode details, specifies seven writing rules (short paragraphs, hook-first, human tone, no filler, consistent tone, CTA at the end, and only use content from the transcript), and specifies the exact output format with labeled sections: HEADLINE, ARTICLE, KEY TAKEAWAYS, and HASHTAGS.\n\n**Step 9 — OpenAI: GPT-4o-mini Model**\nThis is the language model powering the article writing. It runs with default temperature settings and no custom token cap — the article length is controlled by the prompt instructions (400–600 words for the body).\n\n**Step 10 — Code: Parse AI Output**\nThe AI output text is parsed using regex to extract each labeled section. The HEADLINE, ARTICLE, KEY TAKEAWAYS, and HASHTAGS sections are each extracted individually. Word count of the final article is calculated. All fields are packaged with the episode title, video URL, and duration for the sheet row.\n\n**Step 11 — Google Sheets: Save LinkedIn Draft**\nOne row is appended to your LinkedIn Drafts tab with all 10 columns populated: podcast title, video URL, episode duration in minutes, LinkedIn headline, full article, key takeaways, hashtags, word count, generation timestamp, and Status set to \"Draft\". The draft is now ready for you to open, review, and publish to LinkedIn.\n\n---\n\n## Key Features\n\n✅ **Speaker-labeled transcript** — WayinVideo attributes every sentence to the correct speaker so GPT understands the conversation structure and can reference who said what\n✅ **Automatic retry polling** — The workflow checks every 30 seconds after the initial 60-second wait — no manual monitoring needed regardless of episode length\n✅ **Seven LinkedIn writing rules enforced** — Short paragraphs, hook-first structure, human tone, no filler, consistent voice, facts only from the transcript, and a closing CTA are all built into the prompt\n✅ **Timestamped transcript for context** — Each segment includes the MM:SS timestamp so GPT understands the flow and can reference specific moments in the article\n✅ **Draft status in Google Sheets** — Every article saves with Status = Draft so you have a review stage before publishing — nothing goes live without your approval\n✅ **Five action-verb takeaways** — The prompt requires exactly five key takeaways each starting with an action verb, making them ready to use as pull quotes or bullet points on LinkedIn\n✅ **Tone personalization per episode** — Your chosen LinkedIn tone (professional, casual, data-driven, etc.) is passed to the AI and applied consistently throughout the article\n\n---\n\n## Customisation Options\n\n**Change the retry wait time for longer podcasts** — In node **6. Wait — 30 Seconds Retry**, change the wait duration from 45 seconds (the current value) to 60 or 90 seconds for very long podcasts that take more time to process, reducing unnecessary API calls.\n\n**Add a Gmail notification when the draft is saved** — After node **11. Google Sheets — Save LinkedIn Draft**, add a Gmail step that sends you a brief email with the episode title, headline, and a link to your LinkedIn Drafts sheet so you know when a new draft is ready.\n\n**Save to Google Docs instead of Sheets** — Replace node **11. Google Sheets — Save LinkedIn Draft** with a Google Docs create step that saves the headline and article as a formatted editable document — giving you a word-processor-ready draft alongside the sheet log.\n\n**Add a Slack notification for your content team** — After node **11. Google Sheets — Save LinkedIn Draft**, add a Slack step that posts the episode title, the LinkedIn headline, and today's date to a `#content-drafts` channel so your team knows a new article is ready for review.\n\n**Extract quotes for social media posts** — In node **8. AI Agent — Write LinkedIn Newsletter**, add a sixth output section to the prompt: `PULL QUOTES: List 3 direct quotes from the transcript that would work as standalone social posts, each under 25 words` — then extend the regex in node **10** to capture this section.\n\n---\n\n## Troubleshooting\n\n**WayinVideo returning an error on submission:**\n- Confirm `YOUR_WAYINVIDEO_API_KEY` in node **2. WayinVideo — Submit Transcription** is replaced with your actual API key — not the placeholder text\n- Also confirm the same replacement was made in node **4. WayinVideo — Get Transcript Results** — both nodes require the key\n- Check the execution log of node 2 for the exact API error response — a 401 means wrong key, a 422 means the URL format is not supported\n\n**Workflow stuck in the retry loop:**\n- Check that the podcast URL is publicly accessible — private, password-protected, or region-blocked videos will not be processed by WayinVideo\n- Open the execution log of node **4. WayinVideo — Get Transcript Results** and check the raw response — WayinVideo may have returned a FAILED status with an error message\n- If the loop runs indefinitely, deactivate the workflow, fix the video URL, and resubmit\n\n**Transcript is empty after SUCCEEDED:**\n- Node **7. Code — Format Transcript** throws an error if the segments array is empty — this means WayinVideo succeeded but returned no transcript data\n- Check that the podcast has clear spoken audio — low-quality audio, background music-heavy recordings, or music-only content will not produce usable transcripts\n- Try a shorter, clearer clip first to verify the API connection is working correctly\n\n**OpenAI not generating the article:**\n- Confirm the API key is connected in node **9. OpenAI — GPT-4o-mini Model** and your account has available credits\n- Check the execution log of node **8. AI Agent — Write LinkedIn Newsletter** for the raw GPT response\n- If the output is missing labeled sections (HEADLINE, ARTICLE, etc.), the regex in node **10. Code — Parse AI Output** will fail to extract the fields — check that the system prompt text in node 8 is intact and has not been accidentally edited\n\n**Google Sheets not logging the draft:**\n- Confirm the Google Sheets OAuth2 credential in node **11. Google Sheets — Save LinkedIn Draft** is connected and not expired — re-authorize if needed\n- Confirm `YOUR_GOOGLE_SHEET_ID` in node 11 has been replaced with your actual sheet ID — or select your spreadsheet from the document dropdown\n- Confirm the tab is named **LinkedIn Drafts** exactly — capitalization and spacing must match\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email: [info@isawow.com](info@isawow.com)\n🌐 Website: [https://isawow.com/](https://isawow.com/)",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "b5df56e5-9bcb-47ec-9b1c-2035c1b9d875",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -3744,
+            -400
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 524,
+            "height": 932,
+            "content": "## Podcast Episode to LinkedIn Newsletter Auto-Publisher — WayinVideo + GPT-4o-mini + Sheets\n\nFor podcast hosts, content marketers, and personal brand builders who want to repurpose podcast episodes into professional LinkedIn newsletter articles without writing from scratch. Submit a podcast or video URL via the form. WayinVideo transcribes the full episode with speaker labels and timestamps. GPT-4o-mini reads the transcript and writes a complete LinkedIn article — headline, hook, full body, five key takeaways, and hashtags — following 7 writing rules for LinkedIn readability. The final article is saved to Google Sheets as a draft with Status set to Draft, ready for you to review and publish.\n\n## How it works\n- **1. Form — Podcast URL + Details** collects the video URL, episode title, host and guest names, target audience, and LinkedIn tone\n- **2. WayinVideo — Submit Transcription** submits the URL to the WayinVideo API for speaker-labeled transcription\n- **3. Wait — 60 Seconds** gives the API time to start processing before the first poll\n- **4. WayinVideo — Get Transcript Results** polls the API for the task result\n- **5. IF — Transcription Complete?** checks if status equals SUCCEEDED — if not, loops back via a 30-second retry wait\n- **7. Code — Format Transcript** formats each segment as speaker label with timestamp and builds the text for GPT\n- **8. AI Agent — Write LinkedIn Newsletter** uses GPT-4o-mini with a structured system prompt to write the full article in labeled sections\n- **10. Code — Parse AI Output** extracts headline, article, key takeaways, and hashtags from the labeled output using regex\n- **11. Google Sheets — Save LinkedIn Draft** appends one row with all fields and sets status to Draft\n\n## Set up steps\n1. In **2. WayinVideo — Submit Transcription** and **4. WayinVideo — Get Transcript Results** — replace YOUR_WAYINVIDEO_API_KEY with your key from wayin.ai Account Settings\n2. In **9. OpenAI — GPT-4o-mini Model** — connect your OpenAI credential\n3. In **11. Google Sheets — Save LinkedIn Draft** — connect your Google Sheets OAuth2 credential and replace YOUR_GOOGLE_SHEET_ID\n4. Create a Google Sheet tab named LinkedIn Drafts with columns: Podcast Title, Video URL, Episode Duration (min), LinkedIn Headline, LinkedIn Article, Key Takeaways, Hashtags, Word Count, Generated On, Status"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "78f888d2-c997-49fe-be38-11b7f215425d",
+          "name": "Section — Form Input",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -3136,
+            -176
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 308,
+            "height": 372,
+            "content": "## Form Input\nUser submits podcast URL, episode title, host and guest name, target audience, and LinkedIn tone. All five fields feed directly into the transcript formatter and AI prompt."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "f2d95f61-a150-466a-844b-c7a0a1166e20",
+          "name": "Section — Transcription Submit and Poll",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2800,
+            -176
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 724,
+            "height": 388,
+            "content": "## WayinVideo Transcription Submit and Poll\nSubmits the podcast URL to WayinVideo for speaker-labeled transcription. Waits 60 seconds before the first poll. Polls the results endpoint and checks for SUCCEEDED status."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "1fb5726c-6c53-40e4-abe4-c85bb29a06ff",
+          "name": "Section — Status Check and Retry Loop",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2032,
+            -320
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 340,
+            "height": 724,
+            "content": "## Transcription Status Check and Retry Loop\nIF node checks if status equals SUCCEEDED. TRUE proceeds to transcript formatting. FALSE waits 30 seconds and polls again. Loop continues until SUCCEEDED."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "94fdf2ab-222e-4d50-95df-8899b0f3432a",
+          "name": "Section — Transcript Formatting and AI Writing",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1648,
+            -432
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 548,
+            "height": 900,
+            "content": "## Transcript Formatting and AI Newsletter Writing\nFormats each transcript segment as speaker label with timestamp. GPT-4o-mini reads the formatted transcript and writes a full LinkedIn article with headline, body (400–600 words), five key takeaways, and hashtags using 7 LinkedIn readability rules."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "e1c8942f-8930-4060-b616-145849069bf6",
+          "name": "Section — Parse Output and Save Draft",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1040,
+            -240
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 484,
+            "height": 580,
+            "content": "## Parse Output and Save Draft\nRegex extracts HEADLINE, ARTICLE, KEY TAKEAWAYS, and HASHTAGS from the AI output. Google Sheets appends one row with all fields and Status set to Draft — ready for review before publishing."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "a35ae5db-7547-48a9-bcf7-7648098fe93c",
+          "name": "1. Form — Podcast URL + Details",
+          "type": "n8n-nodes-base.formTrigger",
+          "position": [
+            -3056,
+            -32
+          ],
+          "webhookId": "fb610772-4714-484d-892d-0d9624651c6c",
+          "parameters": {
+            "options": {},
+            "formTitle": "Podcast to LinkedIn Newsletter Generator",
+            "formFields": {
+              "values": [
+                {
+                  "fieldLabel": "Podcast / Episode Video URL",
+                  "placeholder": "https://www.youtube.com/watch?v=xxxxxxx or Zoom/Vimeo link",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Episode Title",
+                  "placeholder": "e.g. How AI is Changing Digital Marketing in 2025",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Host / Guest Name",
+                  "placeholder": "e.g. John Smith, Jane Doe",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Target Audience",
+                  "placeholder": "e.g. Marketing professionals, startup founders, HR leaders",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Your LinkedIn Tone",
+                  "placeholder": "e.g. Professional and insightful / Casual and conversational / Data-driven"
+                }
+              ]
+            },
+            "formDescription": "Paste your podcast episode URL. AI will transcribe the full episode and write a professional LinkedIn newsletter article ready to publish."
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "680dfb29-1c6f-4319-90d0-5597f895156c",
+          "name": "2. WayinVideo — Submit Transcription",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -2720,
+            -32
+          ],
+          "parameters": {
+            "url": "https://wayinvideo-api.wayin.ai/api/v2/transcripts",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"video_url\": \"{{ $json['Podcast / Episode Video URL'] }}\",\n  \"target_lang\": \"en\"\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer YOUR_TOKEN_HERE"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "0aee8ca1-178d-4a7e-a628-8187cbf8c5a8",
+          "name": "3. Wait — 60 Seconds",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            -2480,
+            -32
+          ],
+          "webhookId": "wait-podcast-transcribe-60s",
+          "parameters": {
+            "amount": 60
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "15fe233d-cf66-4732-9972-067e3ebbb862",
+          "name": "4. WayinVideo — Get Transcript Results",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -2240,
+            -32
+          ],
+          "parameters": {
+            "url": "=https://wayinvideo-api.wayin.ai/api/v2/transcripts/results/{{ $('2. WayinVideo — Submit Transcription').item.json.data.id }}",
+            "options": {},
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer YOUR_TOKEN_HERE"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "012355fe-0493-4577-a57e-7c25f884f42a",
+          "name": "5. IF — Transcription Complete?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -1920,
+            -32
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "status-check-succeeded",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals"
+                  },
+                  "leftValue": "={{ $json.data.status }}",
+                  "rightValue": "SUCCEEDED"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "eb789bbc-48e7-4e52-bb1f-e266351f22cc",
+          "name": "6. Wait — 30 Seconds Retry",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            -1920,
+            192
+          ],
+          "webhookId": "wait-podcast-retry-30s",
+          "parameters": {
+            "amount": 45
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "15d29406-9aa3-4e7a-a383-386e2406580c",
+          "name": "7. Code — Format Transcript",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -1584,
+            -48
+          ],
+          "parameters": {
+            "jsCode": "// Get transcript segments from WayinVideo response\nconst segments = $('4. WayinVideo — Get Transcript Results').item.json.data.transcript || [];\n\nif (segments.length === 0) {\n  throw new Error('Transcript is empty — check if the video URL is valid and publicly accessible.');\n}\n\n// Format transcript with speaker labels and timestamps\nconst formattedTranscript = segments\n  .map(s => {\n    const timeInSeconds = Math.floor(s.start / 1000);\n    const minutes = Math.floor(timeInSeconds / 60);\n    const seconds = timeInSeconds % 60;\n    const timestamp = `${minutes}:${seconds.toString().padStart(2, '0')}`;\n    return `[${s.speaker} | ${timestamp}] ${s.text.trim()}`;\n  })\n  .join('\\n');\n\n// Calculate total duration\nconst lastSegment = segments[segments.length - 1];\nconst totalDurationMs = lastSegment?.end || 0;\nconst totalMinutes = Math.round(totalDurationMs / 60000);\n\n// Count unique speakers\nconst speakers = [...new Set(segments.map(s => s.speaker))];\n\n// Word count\nconst wordCount = segments.map(s => s.text).join(' ').split(/\\s+/).length;\n\nreturn [{\n  json: {\n    formattedTranscript,\n    wordCount,\n    totalMinutes,\n    speakerCount: speakers.length,\n    speakers: speakers.join(', '),\n    episodeTitle: $('1. Form — Podcast URL + Details').item.json['Episode Title'],\n    hostGuestName: $('1. Form — Podcast URL + Details').item.json['Host / Guest Name'],\n    targetAudience: $('1. Form — Podcast URL + Details').item.json['Target Audience'],\n    linkedinTone: $('1. Form — Podcast URL + Details').item.json['Your LinkedIn Tone'] || 'Professional and insightful',\n    videoUrl: $('1. Form — Podcast URL + Details').item.json['Podcast / Episode Video URL']\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "63bbcd05-c083-42a4-a166-83d280358bad",
+          "name": "8. AI Agent — Write LinkedIn Newsletter",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            -1424,
+            -48
+          ],
+          "parameters": {
+            "text": "={{ $json.formattedTranscript }}",
+            "options": {
+              "systemMessage": "=You are an expert LinkedIn content writer who specializes in turning podcast transcripts into high-performing LinkedIn newsletter articles.\n\nYour job is to read the podcast transcript below and write a professional, engaging LinkedIn newsletter article that will get high engagement from the target audience.\n\n---\n\n## EPISODE DETAILS\n- Episode Title: {{ $json.episodeTitle }}\n- Host / Guest: {{ $json.hostGuestName }}\n- Target Audience: {{ $json.targetAudience }}\n- Tone: {{ $json.linkedinTone }}\n- Episode Duration: {{ $json.totalMinutes }} minutes\n- Speakers: {{ $json.speakers }}\n\n---\n\n## WRITING RULES\n1. Write ONLY from what is said in the transcript — no made-up facts or general knowledge\n2. The article must feel human and conversational — not robotic or AI-generated\n3. Use short paragraphs — maximum 3 lines each — LinkedIn readers skim content\n4. Start with a strong hook in the first line — make it a bold statement, a surprising fact, or a question\n5. Use the tone specified above consistently throughout\n6. No unnecessary filler words — every sentence must add value\n7. End with a clear CTA that encourages comments or shares\n\n---\n\n## OUTPUT FORMAT\nReturn your response in this exact structure — use these exact labels:\n\nHEADLINE:\n[Write a compelling LinkedIn article headline — 8 to 12 words — no clickbait]\n\nARTICLE:\n[Write the full LinkedIn newsletter article — 400 to 600 words — formatted with short paragraphs and occasional line breaks for readability]\n\nKEY TAKEAWAYS:\n[List exactly 5 key takeaways from the episode — each one a single sentence starting with an action verb]\n\nHASHTAGS:\n[List 5 to 8 relevant LinkedIn hashtags — lowercase — separated by spaces]\n\n---\n\nNow read the transcript below and write the LinkedIn newsletter article:"
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "0ca2bb68-8075-4bce-bdfd-156efb6679f2",
+          "name": "9. OpenAI — GPT-4o-mini Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            -1424,
+            272
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini"
+            },
+            "options": {},
+            "builtInTools": {}
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "736cb079-6dfb-4a3c-aaec-097b2e7042ed",
+          "name": "10. Code — Parse AI Output",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -992,
+            -48
+          ],
+          "parameters": {
+            "jsCode": "// Parse the AI output into structured fields\nconst output = $input.first().json.output || '';\n\n// Extract HEADLINE\nconst headlineMatch = output.match(/HEADLINE:\\s*([\\s\\S]*?)(?=\\nARTICLE:|$)/);\nconst headline = headlineMatch ? headlineMatch[1].trim() : 'LinkedIn Newsletter Draft';\n\n// Extract ARTICLE\nconst articleMatch = output.match(/ARTICLE:\\s*([\\s\\S]*?)(?=\\nKEY TAKEAWAYS:|$)/);\nconst article = articleMatch ? articleMatch[1].trim() : output;\n\n// Extract KEY TAKEAWAYS\nconst takeawaysMatch = output.match(/KEY TAKEAWAYS:\\s*([\\s\\S]*?)(?=\\nHASHTAGS:|$)/);\nconst keyTakeaways = takeawaysMatch ? takeawaysMatch[1].trim() : '';\n\n// Extract HASHTAGS\nconst hashtagsMatch = output.match(/HASHTAGS:\\s*([\\s\\S]*)$/);\nconst hashtags = hashtagsMatch ? hashtagsMatch[1].trim() : '';\n\n// Word count of final article\nconst wordCount = article.split(/\\s+/).length;\n\nreturn [{\n  json: {\n    headline,\n    article,\n    keyTakeaways,\n    hashtags,\n    wordCount,\n    episodeTitle: $('7. Code — Format Transcript').item.json.episodeTitle,\n    videoUrl: $('7. Code — Format Transcript').item.json.videoUrl,\n    totalMinutes: $('7. Code — Format Transcript').item.json.totalMinutes\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "ebc11dea-6673-41a5-94bb-1a4a713e640e",
+          "name": "11. Google Sheets — Save LinkedIn Draft",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            -752,
+            -48
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "Status": "Draft",
+                "Hashtags": "={{ $json.hashtags }}",
+                "Video URL": "={{ $json.videoUrl }}",
+                "Word Count": "={{ $json.wordCount }}",
+                "Generated On": "={{ $now.toFormat('dd MMMM yyyy HH:mm') }}",
+                "Key Takeaways": "={{ $json.keyTakeaways }}",
+                "Podcast Title": "={{ $json.episodeTitle }}",
+                "LinkedIn Article": "={{ $json.article }}",
+                "LinkedIn Headline": "={{ $json.headline }}",
+                "Episode Duration (min)": "={{ $json.totalMinutes }}"
+              },
+              "schema": [],
+              "mappingMode": "defineBelow",
+              "matchingColumns": []
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "LinkedIn Drafts"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_GOOGLE_SHEET_ID"
+            }
+          },
+          "credentials": {
+            "googleSheetsOAuth2Api": {
+              "id": "credential-id",
+              "name": "TESTING_SHEET"
+            }
+          },
+          "typeVersion": 4.5
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "3. Wait — 60 Seconds": {
+          "main": [
+            [
+              {
+                "node": "4. WayinVideo — Get Transcript Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "10. Code — Parse AI Output": {
+          "main": [
+            [
+              {
+                "node": "11. Google Sheets — Save LinkedIn Draft",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. Wait — 30 Seconds Retry": {
+          "main": [
+            [
+              {
+                "node": "4. WayinVideo — Get Transcript Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. Code — Format Transcript": {
+          "main": [
+            [
+              {
+                "node": "8. AI Agent — Write LinkedIn Newsletter",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "9. OpenAI — GPT-4o-mini Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "8. AI Agent — Write LinkedIn Newsletter",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Form — Podcast URL + Details": {
+          "main": [
+            [
+              {
+                "node": "2. WayinVideo — Submit Transcription",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. IF — Transcription Complete?": {
+          "main": [
+            [
+              {
+                "node": "7. Code — Format Transcript",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "6. Wait — 30 Seconds Retry",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "2. WayinVideo — Submit Transcription": {
+          "main": [
+            [
+              {
+                "node": "3. Wait — 60 Seconds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "4. WayinVideo — Get Transcript Results": {
+          "main": [
+            [
+              {
+                "node": "5. IF — Transcription Complete?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. AI Agent — Write LinkedIn Newsletter": {
+          "main": [
+            [
+              {
+                "node": "10. Code — Parse AI Output",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 17,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 2
+        },
+        "n8n-nodes-base.wait": {
+          "count": 2
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.formTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 2
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "isaWOW",
+      "username": "isawow",
+      "bio": "",
+      "verified": true,
+      "links": [
+        ""
+      ],
+      "avatar": "https://gravatar.com/avatar/8e8c1f17a2be80c0d1b0248585660dff3062cefeda523bbafeafcdb813f52ffa?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1225,
+        "icon": "file:form.svg",
+        "name": "n8n-nodes-base.formTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "table",
+              "submit",
+              "post"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.formtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Other Trigger Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "On form submission"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NiIgaGVpZ2h0PSI0MCIgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iIzAwQjdCQyIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMzQuOTc4IDM3LjczMmExLjU2IDEuNTYgMCAwIDEtMS41NjIgMS41NjNINi4yNmExLjU2IDEuNTYgMCAwIDEtMS41NjMtMS41NjNWOS42MDdjMC0uNDA1LjE1Ny0uNzk0LjQzOC0xLjA4Nmw2LjMwNC02LjUzMXY1LjM0NEg4LjIxM2ExLjE3MiAxLjE3MiAwIDEgMCAwIDIuMzQzaDQuNDNhMS4xNyAxLjE3IDAgMCAwIDEuMTcxLTEuMTcxVi4yMzJoMTkuNjAyYTEuNTYgMS41NiAwIDAgMSAxLjU2MiAxLjU2M3YxMC4zMjdsLTIuODYgMi44Ni04LjI1MiA4LjI3NmE0MTMuMDA2IDQxMy4wMDYgMCAwIDEtMS42NTQgMS42NjJsLS4zMzcuMzM3YTIgMiAwIDAgMC0uNTU3IDEuMDhMMjAuMyAzMS45MjJjLS4xMDguNjM4LS4yMTUgMS4wNzkuMjExIDEuNDE4LjQwMy4zMi45LjE3NCAxLjU0LjA2Nmw1LjQwOC0uOTI4YTIgMiAwIDAgMCAxLjA4LS41NTZsNi40NC02LjQyOXptLTI0LjAzLTIxLjI2NWExLjE4IDEuMTggMCAwIDAgMS4xNzEgMS4xNzJoMTMuMTYzYTEuMTcyIDEuMTcyIDAgMSAwIDAtMi4zNDRIMTIuMTE5YTEuMTcgMS4xNyAwIDAgMC0xLjE3MiAxLjE3Mm03LjI5NCAxNC43NjZhMS4xNyAxLjE3IDAgMCAwLTEuMTcyLTEuMTcySDEyLjEyYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNC45NTFhMS4xNyAxLjE3IDAgMCAwIDEuMTcyLTEuMTcybS44Ni03LjM5MWExLjE3IDEuMTcgMCAwIDAtMS4xNzItMS4xNzJoLTUuODExYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNS44MWExLjE2NCAxLjE2NCAwIDAgMCAxLjE3My0xLjE3MSIgY2xpcC1ydWxlPSJldmVub2RkIi8+PHBhdGggZmlsbD0iIzAwQjdCQyIgZD0ibTMzLjUzMiAxNi4zOTcgNC4yODktNC4yODkgMy43NTggMy43MSAxLjYxNy0xLjYxNiAyLjI1OCAyLjI1N2MuMjE4LjIxOC4zNC41MTMuMzQzLjgyLS4wMDIuMzExLS4xMjUuNjA4LS4zNDQuODNsLTYuODA0IDYuNzk2YTEuMTMgMS4xMyAwIDAgMS0uODI4LjM0MyAxLjE1IDEuMTUgMCAwIDEtLjgyOC0uMzQzIDEuMTggMS4xOCAwIDAgMSAwLTEuNjU3bDUuOTc2LTUuOTY4LTEuMzEyLTEuMzEzLTEuMzgzIDEuNDE0LTEzLjE0OSAxMy4xMjUtNC42MTcuNzgyLjc4Mi00LjYxNy4zMzYtLjMzNyAyLjU2MiAyLjU1NWExLjEgMS4xIDAgMCAwIC44MjguMzQ0Yy4zMTIuMDA1LjYxMi0uMTIuODI4LS4zNDRhMS4xOCAxLjE4IDAgMCAwIDAtMS42NTZsLTIuNTYyLTIuNTYyek00NC43MzYgMTIuMjRjMCAuNDE0LS4xNjMuODEtLjQ1NCAxLjEwMmwtLjkyMi45MTQtMy44NTItMy44MjguOTMtLjkzYTEuNTYzIDEuNTYzIDAgMCAxIDIuMjAzIDBsMS42NCAxLjY0MWMuMjkxLjI5My40NTUuNjkuNDU1IDEuMTAyIi8+PC9zdmc+"
+        },
+        "displayName": "n8n Form Trigger",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 31,
+        "name": "Content Creation"
+      },
+      {
+        "id": 51,
+        "name": "Multimodal AI"
+      }
+    ],
+    "image": []
+  }
+}

@@ -1,0 +1,1400 @@
+{
+  "workflow": {
+    "id": 15101,
+    "name": "Create daily prayer and sunnah fasting reminders in Google Calendar using Aladhan API",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-16T15:48:19.798Z",
+    "description": "🕌 How it works\n\nThis workflow automatically creates daily Islamic reminders in your Google Calendar based on your location 📍\n\nIt fetches real-time prayer times 🌐 and generates events for:\n\t•\t🕌 Daily prayers (Subuh, Dzuhur, Ashar, Maghrib, Isya)\n\t•\t🤲 Morning & evening dhikr (Doa Pagi & Petang)\n\t•\t🌙 Sunnah fasting reminders (Ayamul Bidh – 13, 14, 15 Hijri)\n\nTo prevent duplicates 🔍, it compares generated events with existing calendar entries 📅 and only creates new ones if they do not already exist ✅\n\n⸻\n\n⚙️ Setup steps\n\t•\tSet your location (city & country) in the Set City and Country node\n\t•\tConnect your Google Calendar account\n\t•\tAdjust the schedule trigger if needed (default: daily)\n\t•\tActivate the workflow\n\nSetup takes less than 5 minutes ⏱️\n\n⸻\n\n⚠️ Notes\n\t•\tThis workflow uses the Aladhan API for prayer times and Hijri date conversion\n\t•\tTimezone is set to Asia/Jakarta (you can adjust it if needed)\n\t•\tDetailed logic and explanations are available inside the workflow using sticky notes\n\n⸻\n\n💡 Tip\n\nPerfect for building consistent daily worship habits using automation 🤖",
+    "workflow": {
+      "id": "bmuzhJcQ1L5ZD6TH",
+      "meta": {
+        "instanceId": "c406dd3b52aaf7ed9d99c9e4c431e85cbbdd0d117807e19681625a2f4d155145",
+        "templateCredsSetupCompleted": true
+      },
+      "name": "Automatically Add Daily Prayer & Sunnah Fasting Reminders to Google Calendar (n8n)",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "63df3eed-52ff-4705-b393-0037aed6deee",
+          "name": "Schedule Trigger",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            -624,
+            -16
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "triggerAtHour": 1
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "2891ea9a-c612-4ea4-a9c6-bc6fa78d0a01",
+          "name": "Create an event",
+          "type": "n8n-nodes-base.googleCalendar",
+          "position": [
+            2256,
+            16
+          ],
+          "parameters": {
+            "end": "={{ $json.end }}",
+            "start": "={{ $json.start }}",
+            "calendar": {
+              "__rl": true,
+              "mode": "list",
+              "value": ""
+            },
+            "additionalFields": {
+              "summary": "={{ $json.title }}"
+            }
+          },
+          "credentials": {
+            "googleCalendarOAuth2Api": {
+              "id": "kpYq3itVIVh6ki2U",
+              "name": "Google Calendar OAuth2 API"
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "11f57159-2766-4fce-be5e-597538882b2a",
+          "name": "reformat prayer",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            336,
+            -16
+          ],
+          "parameters": {
+            "jsCode": "return [{\n  fajr: $json.data.timings.Fajr,\n  dhuhr: $json.data.timings.Dhuhr,\n  asr: $json.data.timings.Asr,\n  maghrib: $json.data.timings.Maghrib,\n  isha: $json.data.timings.Isha,\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "fe467792-a8cc-4b39-803c-030ff00064b3",
+          "name": "merge",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1264,
+            -16
+          ],
+          "parameters": {
+            "jsCode": "const prayer = $items(\"reformat prayer\")[0].json;\n\nconst events = [];\n\nevents.push({title: \"Shalat Subuh\", time: prayer.fajr});\nevents.push({title: \"Shalat Dzuhur\", time: prayer.dhuhr});\nevents.push({title: \"Shalat Ashar\", time: prayer.asr});\nevents.push({title: \"Shalat Maghrib\", time: prayer.maghrib});\nevents.push({title: \"Shalat Isya\", time: prayer.isha});\n\n// Doa\nevents.push({title: \"Doa Pagi\", time: prayer.fajr});\nevents.push({title: \"Doa Petang\", time: prayer.asr});\n\n// Ayamul Bidh\nif ($json.isAyamulBidh) {\n  events.push({title: \"Puasa Sunnah Ayamul Bidh\", time: \"04:30\"});\n}\n\nconst today = $now.setZone(\"Asia/Jakarta\").toFormat(\"yyyy-MM-dd\");\n\nreturn events.map(e => {\n  const cleanTime = e.time.split(\" \")[0];\n\n  // 🔥 tambah durasi 10 menit\n  const endTime = $moment(`${today} ${cleanTime}`)\n    .add(10, 'minutes')\n    .format('HH:mm:ss');\n\n  return {\n    json: {\n      title: `${e.title} - ${today}`,\n      start: `${today}T${cleanTime}:00`,\n      end: `${today}T${endTime}`\n    }\n  };\n});"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "0d2c7791-9dcf-4e34-8fa4-b9f2a26f503a",
+          "name": "Set City and Country",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -288,
+            -16
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "25ef6d6e-9072-436f-bf0a-ab93c3f8aafe",
+                  "name": "city",
+                  "type": "string",
+                  "value": "Bandung"
+                },
+                {
+                  "id": "b39259d8-b024-4964-b14e-da319ac9499f",
+                  "name": "country",
+                  "type": "string",
+                  "value": "Indonesia"
+                },
+                {
+                  "id": "e63e90c6-8438-40b9-ba02-fbb1ba347399",
+                  "name": "end_day",
+                  "type": "string",
+                  "value": "={{$now.setZone(\"Asia/Jakarta\").endOf(\"day\")}}"
+                },
+                {
+                  "id": "544bb871-e62a-4154-be8f-3012a5e86581",
+                  "name": "start_day",
+                  "type": "string",
+                  "value": "={{$now.setZone(\"Asia/Jakarta\").startOf(\"day\")}}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "79a6c56c-579a-4484-87ad-64e66cfc8c27",
+          "name": "Get Today Event",
+          "type": "n8n-nodes-base.googleCalendar",
+          "position": [
+            -80,
+            800
+          ],
+          "parameters": {
+            "options": {},
+            "timeMax": "={{ $json.end_day }}",
+            "timeMin": "={{ $json.start_day }}",
+            "calendar": {
+              "__rl": true,
+              "mode": "list",
+              "value": ""
+            },
+            "operation": "getAll"
+          },
+          "credentials": {
+            "googleCalendarOAuth2Api": {
+              "id": "kpYq3itVIVh6ki2U",
+              "name": "Google Calendar OAuth2 API"
+            }
+          },
+          "executeOnce": false,
+          "typeVersion": 1.3
+        },
+        {
+          "id": "7eb04827-4d40-4f3e-bc2f-3a144b5fad6c",
+          "name": "Merge",
+          "type": "n8n-nodes-base.merge",
+          "position": [
+            1616,
+            32
+          ],
+          "parameters": {
+            "mode": "combine",
+            "options": {},
+            "advanced": true,
+            "joinMode": "enrichInput1",
+            "mergeByFields": {
+              "values": [
+                {
+                  "field1": "title",
+                  "field2": "summary"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.2
+        },
+        {
+          "id": "90090881-b224-4744-834d-5bc0bd64730c",
+          "name": "IF Event Do not Exist",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            1904,
+            32
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "version": 3,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "8fb4a9c3-fb5d-431f-bf03-12cacb5fa6a0",
+                  "operator": {
+                    "type": "string",
+                    "operation": "notExists",
+                    "singleValue": true
+                  },
+                  "leftValue": "={{ $json.summary }}",
+                  "rightValue": ""
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.3
+        },
+        {
+          "id": "6200b683-0b08-4280-9713-d747071207e6",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -688,
+            -176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 560,
+            "height": 560,
+            "content": "## Schedule Trigger & Location Setup\n- This workflow runs daily and allows you to configure your city and country.\n\n- Modify the \"Set City and Country\" node to match your location.\n- Default: Bandung, Indonesia\n- Change this to your own location"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "2b8ba2ff-68fd-4fd5-a1fa-2f6548486992",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -96,
+            -176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 304,
+            "height": 560,
+            "content": "## Fetch Prayer Times from API\nThis section retrieves daily prayer times based on the configured location."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "a22ddae1-b5d5-47cf-84c3-038ca11d9491",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            224,
+            -176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 304,
+            "height": 560,
+            "content": "## Reformat Prayer\nCleans and formats prayer time data into a simpler structure for further processing."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "aa5c922d-c838-4627-987c-89046ba00071",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            544,
+            -176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 304,
+            "height": 560,
+            "content": "## Get Date (Hijri API)\n\nFetches today's Hijri date using Aladhan API."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "3e0a0491-ca44-416d-9bac-88265534d19b",
+          "name": "Sticky Note5",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            864,
+            -176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 304,
+            "height": 560,
+            "content": "## Hijri Date & Sunnah Logic\n\nChecks if today is 13, 14, or 15 Hijri.\nIf true, adds a sunnah fasting reminder event."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "2dee38f8-1b4f-4199-9f72-65ae343e9970",
+          "name": "Sticky Note6",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1184,
+            -176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 304,
+            "height": 560,
+            "content": "## Generate Events\n- Creates a list of events with title, start time, and end time.\n- Each item represents one calendar event."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "b782dba2-57ff-4a84-aeb4-fbb656a21f1f",
+          "name": "Sticky Note7",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1504,
+            -176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 304,
+            "height": 560,
+            "content": "## Check Existing Events\n- Matches new events with existing ones using title comparison.\n- Used to detect duplicates"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ed8d287d-9405-495d-ab34-02b558170283",
+          "name": "Sticky Note8",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1824,
+            -176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 304,
+            "height": 560,
+            "content": "## IF Event Do Not Exist\n\n- Checks if the event already exists in the calendar.\n- If not found → proceed to create event.\n- If found → skip."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "e34c45e3-18c7-4dc4-a1ef-c566f8a16742",
+          "name": "Sticky Note9",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            2160,
+            -176
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 304,
+            "height": 560,
+            "content": "## Create an Event\nCreates events only if they do not already exist.\n\nDont forget to Set up your google calendar account"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "d421a0b2-a385-48a6-b59e-c57b76dd541d",
+          "name": "Sticky Note10",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -208,
+            512
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 304,
+            "height": 560,
+            "content": "## Get Today's Existing Events\n\n- Retrieve all events scheduled for today (00:00–23:59).\n- Used to prevent duplicate events from being created.\n\n\nDont forget to Set up your google calendar account"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "70b0c7e4-19e7-4176-bb70-9f617c0cc0be",
+          "name": "Fetch Prayer Data",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            0,
+            -16
+          ],
+          "parameters": {
+            "url": "=https://api.aladhan.com/v1/timingsByCity?city={{ $json.city }}&country={{ $json.country }}&method=2",
+            "options": {}
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "8a83ce6b-9244-4fee-bc60-b138af6ac1e7",
+          "name": "get hijri date",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            656,
+            -16
+          ],
+          "parameters": {
+            "url": "https://api.aladhan.com/v1/gToH",
+            "options": {},
+            "sendQuery": true,
+            "queryParameters": {
+              "parameters": [
+                {
+                  "name": "date",
+                  "value": "={{$now.toFormat(\"dd-MM-yyyy\")}}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.4
+        },
+        {
+          "id": "c287435e-4be9-453a-865b-a76e9ab5b4b4",
+          "name": "detect ayamul bidh date",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            960,
+            -16
+          ],
+          "parameters": {
+            "jsCode": "const day = parseInt($input.first().json.data.hijri.day);\n\nreturn [{\n  json: {\n    isAyamulBidh: [13,14,15].includes(day)\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "4223f56a-188e-4859-a0cd-c4e9462216c4",
+          "name": "Sticky Note1",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -1664,
+            -192
+          ],
+          "parameters": {
+            "width": 944,
+            "height": 1888,
+            "content": "🕌 Smart Prayer & Sunnah Reminder (Google Calendar + Hijri + n8n)\n\nThis workflow automatically creates daily Islamic reminders in your Google Calendar:\n\t•\t🕌 Daily prayer times (Subuh, Dzuhur, Ashar, Maghrib, Isya)\n\t•\t🌅 Morning & evening dhikr (Doa Pagi & Petang)\n\t•\t🌙 Sunnah fasting reminder (Ayamul Bidh – 13, 14, 15 Hijri)\n\nPrayer times are dynamically fetched based on your location, and Hijri dates are used to determine sunnah fasting days.\n\n⸻\n\n🔁 Flow\n\nSchedule Trigger\n→ Set City & Country\n→ Get Prayer Times (API)\n→ Format Data\n→ Get Hijri Date\n→ Detect Ayamul Bidh\n→ Generate Events\n→ Get Today’s Events (Google Calendar)\n→ Compare (Anti-Duplicate)\n→ Create Event (if not exists)\n\n⸻\n\n⚙️ Setup Guide\n\n1️⃣ Configure Location\n\nOpen node: Set City and Country\n\nReplace:\ncity: Bandung\ncountry: Indonesia\n\nWith your own location.\n\n⸻\n\n2️⃣ Google Calendar Credential\n\t1.\tAdd Google Calendar OAuth2 in n8n\n\t2.\tConnect your Google account\n\t3.\tSelect your calendar in the “Create Event” node\n\n⸻\n\n3️⃣ Set Schedule\n\nOpen: Schedule Trigger\n\nRecommended:\nRun once daily (e.g., 00:05 AM)\n\n⸻\n\n4️⃣ Activate Workflow\n\t•\tSave workflow\n\t•\tClick “Activate”\n\t•\tDone 🎉\n\n⸻\n\n⚠️ Important Notes\n\n🔁 Anti-Duplicate Protection\n\nThis workflow:\n\t•\tChecks existing events for today\n\t•\tCompares events by title\n\t•\tOnly creates new events if they do not already exist\n\n⸻\n\n🕒 Timezone\n\nMake sure your n8n timezone is set to:\nAsia/Jakarta\n\n⸻\n\n📅 Event Format\n\nEvents are created using:\n\t•\tSummary (title)\n\t•\tStart time\n\t•\tEnd time\n\n⸻\n\n💡 Customization Ideas\n\nYou can extend this workflow by:\n\t•\tSending reminders via Telegram / WhatsApp\n\t•\tUsing latitude & longitude instead of city\n\t•\tSupporting multiple users\n\t•\tAdding notification reminders\n\t•\tIntegrating AI for Islamic content\n\n⸻\n\n🏆 Use Case\n\nPerfect for:\n\t•\tDaily ibadah reminders\n\t•\tBuilding consistent habits\n\t•\tLearning n8n automation with real use case\n\n⸻\n\n🚀 Tips\n\nIf events are not created:\n\t•\tCheck Google Calendar credentials\n\t•\tEnsure workflow is active\n\t•\tVerify city & country input\n"
+          },
+          "typeVersion": 1
+        }
+      ],
+      "active": true,
+      "pinData": {},
+      "settings": {
+        "binaryMode": "separate",
+        "executionOrder": "v1"
+      },
+      "versionId": "aeaa06b0-b690-4bc1-9ec4-6584984c2f89",
+      "connections": {
+        "Merge": {
+          "main": [
+            [
+              {
+                "node": "IF Event Do not Exist",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "merge": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "get hijri date": {
+          "main": [
+            [
+              {
+                "node": "detect ayamul bidh date",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Create an event": {
+          "main": [
+            []
+          ]
+        },
+        "Get Today Event": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 1
+              }
+            ]
+          ]
+        },
+        "reformat prayer": {
+          "main": [
+            [
+              {
+                "node": "get hijri date",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Schedule Trigger": {
+          "main": [
+            [
+              {
+                "node": "Set City and Country",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Fetch Prayer Data": {
+          "main": [
+            [
+              {
+                "node": "reformat prayer",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Set City and Country": {
+          "main": [
+            [
+              {
+                "node": "Fetch Prayer Data",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Get Today Event",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "IF Event Do not Exist": {
+          "main": [
+            [
+              {
+                "node": "Create an event",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "detect ayamul bidh date": {
+          "main": [
+            [
+              {
+                "node": "merge",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 22,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.set": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 3
+        },
+        "n8n-nodes-base.merge": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 11
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 2
+        },
+        "n8n-nodes-base.googleCalendar": {
+          "count": 2
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "ARofiqi Maulana",
+      "username": "arofiqimaulana",
+      "bio": "Data Scientist with a strong focus on automation and AI-driven workflows.\n\nBuilding scalable solutions using Python, SQL, n8n, and modern data tools.",
+      "verified": true,
+      "links": [
+        "https://rofiqi.com/"
+      ],
+      "avatar": "https://gravatar.com/avatar/e7e09b84103f021fc1ba96907e5b43afca22b9322b968059472f6287a8d6f7a0?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 24,
+        "icon": "file:merge.svg",
+        "name": "n8n-nodes-base.merge",
+        "codex": {
+          "data": {
+            "alias": [
+              "Join",
+              "Concatenate",
+              "Wait"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-sync-data-between-two-systems/",
+                  "icon": "🏬",
+                  "label": "How to synchronize data between two systems (one-way vs. two-way sync"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.merge/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Merge"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTc3XzUxOCkiPgo8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTAgNDhDMCAyMS40OTAzIDIxLjQ5MDMgMCA0OCAwSDExMkMxMzguNTEgMCAxNjAgMjEuNDkwMyAxNjAgNDhWNTZIMTk2LjI1MkMyNDAuNDM1IDU2IDI3Ni4yNTIgOTEuODE3MiAyNzYuMjUyIDEzNlYxOTJDMjc2LjI1MiAyMTQuMDkxIDI5NC4xNjEgMjMyIDMxNi4yNTIgMjMySDM1MlYyMjRDMzUyIDE5Ny40OSAzNzMuNDkgMTc2IDQwMCAxNzZINDY0QzQ5MC41MSAxNzYgNTEyIDE5Ny40OSA1MTIgMjI0VjI4OEM1MTIgMzE0LjUxIDQ5MC41MSAzMzYgNDY0IDMzNkg0MDBDMzczLjQ5IDMzNiAzNTIgMzE0LjUxIDM1MiAyODhWMjgwSDMxNi4yNTJDMjk0LjE2MSAyODAgMjc2LjI1MiAyOTcuOTA5IDI3Ni4yNTIgMzIwVjM3NkMyNzYuMjUyIDQyMC4xODMgMjQwLjQzNSA0NTYgMTk2LjI1MiA0NTZIMTYwVjQ2NEMxNjAgNDkwLjUxIDEzOC41MSA1MTIgMTEyIDUxMkg0OEMyMS40OTAzIDUxMiAwIDQ5MC41MSAwIDQ2NFY0MDBDMCAzNzMuNDkgMjEuNDkwMyAzNTIgNDggMzUySDExMkMxMzguNTEgMzUyIDE2MCAzNzMuNDkgMTYwIDQwMFY0MDhIMTk2LjI1MkMyMTMuOTI1IDQwOCAyMjguMjUyIDM5My42NzMgMjI4LjI1MiAzNzZWMzIwQzIyOC4yNTIgMjk0Ljc4NCAyMzguODU5IDI3Mi4wNDQgMjU1Ljg1MyAyNTZDMjM4Ljg1OSAyMzkuOTU2IDIyOC4yNTIgMjE3LjIxNiAyMjguMjUyIDE5MlYxMzZDMjI4LjI1MiAxMTguMzI3IDIxMy45MjUgMTA0IDE5Ni4yNTIgMTA0SDE2MFYxMTJDMTYwIDEzOC41MSAxMzguNTEgMTYwIDExMiAxNjBINDhDMjEuNDkwMyAxNjAgMCAxMzguNTEgMCAxMTJWNDhaTTEwNCA0OEMxMDguNDE4IDQ4IDExMiA1MS41ODE3IDExMiA1NlYxMDRDMTEyIDEwOC40MTggMTA4LjQxOCAxMTIgMTA0IDExMkg1NkM1MS41ODE3IDExMiA0OCAxMDguNDE4IDQ4IDEwNFY1NkM0OCA1MS41ODE3IDUxLjU4MTcgNDggNTYgNDhIMTA0Wk00NTYgMjI0QzQ2MC40MTggMjI0IDQ2NCAyMjcuNTgyIDQ2NCAyMzJWMjgwQzQ2NCAyODQuNDE4IDQ2MC40MTggMjg4IDQ1NiAyODhINDA4QzQwMy41ODIgMjg4IDQwMCAyODQuNDE4IDQwMCAyODBWMjMyQzQwMCAyMjcuNTgyIDQwMy41ODIgMjI0IDQwOCAyMjRINDU2Wk0xMTIgNDA4QzExMiA0MDMuNTgyIDEwOC40MTggNDAwIDEwNCA0MDBINTZDNTEuNTgxNyA0MDAgNDggNDAzLjU4MiA0OCA0MDhWNDU2QzQ4IDQ2MC40MTggNTEuNTgxNyA0NjQgNTYgNDY0SDEwNEMxMDguNDE4IDQ2NCAxMTIgNDYwLjQxOCAxMTIgNDU2VjQwOFoiIGZpbGw9IiM1NEI4QzkiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTc3XzUxOCI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Merge",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 317,
+        "icon": "file:googleCalendar.svg",
+        "name": "n8n-nodes-base.googleCalendar",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-host-virtual-coffee-breaks-with-n8n/",
+                  "icon": "☕️",
+                  "label": "How to host virtual coffee breaks with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automation for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/tracking-time-spent-in-meetings-with-google-calendar-twilio-and-n8n/",
+                  "icon": "🗓",
+                  "label": "Tracking Time Spent in Meetings With Google Calendar, Twilio, and n8n"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlecalendar/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Google Calendar"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgODEgODIiPjx1c2UgeGxpbms6aHJlZj0iI2EiIHg9Ii41IiB5PSIuNSIvPjxzeW1ib2wgaWQ9ImEiIG92ZXJmbG93PSJ2aXNpYmxlIj48ZyBmaWxsLXJ1bGU9Im5vbnplcm8iIHN0cm9rZT0ibm9uZSI+PHBhdGggZD0iTTYxLjA1MiAxOC45NDdIMTguOTQ3djQyLjEwNWg0Mi4xMDV6Ii8+PHBhdGggZmlsbD0iI2VhNDMzNSIgZD0iTTYxLjA1MyA4MCA4MCA2MS4wNTNINjEuMDUzeiIvPjxwYXRoIGZpbGw9IiNmYmJjMDQiIGQ9Ik04MCAxOC45NDdINjEuMDUzdjQyLjEwNUg4MHoiLz48cGF0aCBmaWxsPSIjMzRhODUzIiBkPSJNNjEuMDUyIDYxLjA1M0gxOC45NDdWODBoNDIuMTA1eiIvPjxwYXRoIGZpbGw9IiMxODgwMzgiIGQ9Ik0wIDYxLjA1M3YxMi42MzJBNi4zMTQgNi4zMTQgMCAwIDAgNi4zMTYgODBoMTIuNjMyVjYxLjA1M3oiLz48cGF0aCBmaWxsPSIjMTk2N2QyIiBkPSJNODAgMTguOTQ3VjYuMzE2QTYuMzE0IDYuMzE0IDAgMCAwIDczLjY4NSAwSDYxLjA1M3YxOC45NDd6Ii8+PHBhdGggZmlsbD0iIzQyODVmNCIgZD0iTTYxLjA1MyAwSDYuMzE2QTYuMzE0IDYuMzE0IDAgMCAwIDAgNi4zMTZ2NTQuNzM3aDE4Ljk0N1YxOC45NDdoNDIuMTA1VjB6TTI3LjU4NCA1MS42MTFjLTEuNTc0LTEuMDYzLTIuNjYzLTIuNjE2LTMuMjU4LTQuNjY4bDMuNjUzLTEuNTA1cS40OTggMS44OTQgMS43MzcgMi45MzdjMS4yMzkgMS4wNDMgMS44MjEgMS4wMzcgMi45ODkgMS4wMzdxMS43OTIgMCAzLjA3OS0xLjA4OWMxLjI4Ny0xLjA4OSAxLjI5LTEuNjUzIDEuMjktMi43NzRhMy40NCAzLjQ0IDAgMCAwLTEuMzU4LTIuODExYy0uOTA1LS43MjctMi4wNDItMS4wODktMy40LTEuMDg5aC0yLjExMXYtMy42MTZIMzIuMXExLjc1MiAwIDIuOTUzLS45NDdjMS4yMDEtLjk0NyAxLjItMS40OTUgMS4yLTIuNTk1cTAtMS40NjctMS4wNzQtMi4zNDJjLTEuMDc0LS44NzUtMS42MjEtLjg3OS0yLjcyMS0uODc5cS0xLjYxLS4wMDItMi41NTguODU4Yy0uOTQ4Ljg2LTEuMTA2IDEuMzAxLTEuMzc5IDIuMTExbC0zLjYxNi0xLjUwNWMuNDc5LTEuMzU4IDEuMzU4LTIuNTU4IDIuNjQ3LTMuNTk1czIuOTM3LTEuNTU4IDQuOTM3LTEuNTU4cTIuMjItLjAwMiAzLjk4OS44NThjMS43NjkuODYgMi4xMDUgMS4zNjggMi43NzQgMi4zNzlzMSAyLjE1MyAxIDMuNDE2cTAgMS45MzItLjkzMiAzLjI3NGMtLjkzMiAxLjM0Mi0xLjM4NCAxLjU3OS0yLjI4OSAyLjA1OHYuMjE2YTYuOTUgNi45NSAwIDAgMSAyLjkzNyAyLjI4OXExLjE0NiAxLjUzOCAxLjE0NyAzLjY4NGMuMDAxIDIuMTQ2LS4zNjMgMi43MTEtMS4wODkgMy44MzJzLTEuNzMyIDIuMDA1LTMuMDA1IDIuNjQ3Yy0xLjI3OS42NDItMi43MTYuOTY4LTQuMzExLjk2OC0xLjg0Ny4wMDUtMy41NTMtLjUyNi01LjEyNi0xLjU4OXptMjIuNDM3LTE4LjEyNi00LjAxIDIuOS0yLjAwNS0zLjA0MiA3LjE5NS01LjE4OWgyLjc1OHYyNC40NzloLTMuOTM3VjMzLjQ4NHoiLz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Google Calendar",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 43,
+        "name": "Personal Productivity"
+      }
+    ],
+    "image": []
+  }
+}

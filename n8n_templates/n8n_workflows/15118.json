@@ -1,0 +1,1923 @@
+{
+  "workflow": {
+    "id": 15118,
+    "name": "Create short social video clips from webinars with WayinVideo, Google Sheets and Gmail",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-17T11:48:52.099Z",
+    "description": "### Description\n\nSubmit any YouTube, Vimeo, or Zoom webinar URL using a simple form and the workflow handles everything from there. It runs a two-phase pipeline: first identifying the top viral moments in your video without rendering anything, then exporting only the best clips as ready-to-post 9:16 vertical videos with animated captions, an AI hook, and AI subject reframing. Every clip is logged to Google Sheets and a Gmail digest with direct download links arrives in your inbox when all clips are ready. Built for content marketers and social media teams who want to turn a 1–2 hour webinar into short video content without any manual editing.\n\n---\n\n## What This Workflow Does\n\n- **Identifies viral moments first, renders second** — Phase 1 scans the entire video and ranks all potential clips by viral score before any rendering happens, so you only pay to export the best ones\n- **Exports clips as 9:16 vertical video** — Renders each selected clip in portrait format with animated captions, an AI-generated hook, and AI subject reframing — ready to post on TikTok, Reels, or Shorts\n- **Runs two independent polling loops** — Waits patiently for both the identification phase (up to 25 minutes) and the rendering phase (up to 20 minutes) with hard timeouts to prevent indefinite hanging\n- **Sorts clips by viral score** — Picks only the highest-scoring clips up to your chosen maximum so the best content always gets exported first\n- **Logs every clip to Google Sheets** — Appends one row per clip with title, duration, viral score, tags, description, and download link for your content library\n- **Sends a Gmail digest with download links** — Delivers all clip details and direct download links in one email after all clips are logged — with a 24-hour expiry warning so you download immediately\n\n---\n\n## Setup Requirements\n\n### Tools Needed\n- n8n instance (self-hosted or cloud)\n- WayinVideo account with API access\n- Google Sheets (one sheet with a tab named **Social Media Clips**)\n- Gmail account (the account you want to receive the digest)\n\n### Credentials Required\n- WayinVideo API key (pasted into **2. Set — Config Values**)\n- Google Sheets OAuth2\n- Gmail OAuth2\n\n**Estimated Setup Time: 10–15 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Import the workflow** — Open n8n → Workflows → Import from JSON → paste the workflow JSON → click Import\n\n2. **Get your WayinVideo API key** — Log in to your WayinVideo account → go to your account or API settings dashboard → copy your API key\n\n3. **Fill in Config Values** — Open node **2. Set — Config Values** → replace all placeholders:\n\n| Field | What to enter |\n|---|---|\n| `YOUR_WAYINVIDEO_API_KEY` | Your WayinVideo API key from step 2 |\n| `YOUR_GOOGLE_SHEET_ID` | The ID from your Google Sheet URL (the string between `/d/` and `/edit`) |\n| `Social Media Clips` | Leave as-is, or change to match your sheet tab name exactly |\n| `you@yourcompany.com` | The email address where the Gmail digest should be sent |\n| `YOUR NAME` | Your name for the email sign-off |\n| `targetDuration` | Leave as `DURATION_30_60` for 30–60 second clips, or change to match WayinVideo's supported duration options |\n| `exportRatio` | Leave as `RATIO_9_16` for vertical video, or change if you want a different aspect ratio |\n| `exportResolution` | Leave as `HD_720` or change to a higher resolution if your WayinVideo plan supports it |\n\n4. **Create your Google Sheet tab** — Open your Google Sheet → add a tab named exactly **Social Media Clips** → add these 10 column headers in row 1: `Date`, `Video Title`, `Clip #`, `Clip Title`, `Duration (sec)`, `Viral Score`, `Tags`, `Description`, `Export Link`, `Logged At`\n\n5. **Connect Google Sheets** — Open node **19. Google Sheets — Log Clips** → click the credential dropdown → add Google Sheets OAuth2 → sign in with your Google account → authorize access\n\n6. **Connect Gmail** — Open node **22. Gmail — Send Clips Digest** → click the credential dropdown → add Gmail OAuth2 → sign in with the Gmail account that matches `recipientEmail` → authorize access\n\n7. **Activate the workflow** — Toggle the workflow to Active → copy the Form URL from node **1. Form — Enter Video URL** → open it in a browser to submit your first video\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Form: Enter Video URL**\nYou open the form URL in a browser and fill in four fields: the video URL (YouTube, Vimeo, or Zoom), a title for the video, your name, and how many clips you want (maximum 5). Submitting the form kicks off the entire workflow automatically.\n\n**Step 2 — Set: Config Values**\nYour WayinVideo API key, Google Sheet ID, sheet tab name, recipient email, sender name, export settings, and all four form inputs are stored here. The clip count is automatically capped at 5 even if a higher number is entered. A submission timestamp is also generated.\n\n**Step 3 — HTTP: Submit AI Clipping Task**\nThe video URL and title are submitted to the WayinVideo API with `enable_export: false`. This tells WayinVideo to analyze the video and identify all viral clip candidates without rendering any videos yet. WayinVideo returns a project ID confirming the job was accepted.\n\n**Step 4 — Code: Save Clipping Project ID**\nThe project ID is saved along with all config values. A poll counter is initialized at zero to track how many times Phase 1 has been checked.\n\n**Step 5 — Wait: 60 Seconds**\nThe workflow pauses for 60 seconds before checking the Phase 1 status for the first time, giving WayinVideo time to begin processing.\n\n**Step 6 — HTTP: Poll Clipping Results**\nA GET request checks the WayinVideo results endpoint using the project ID. It returns the current status and, once complete, the full list of identified clips with their viral scores, titles, descriptions, timestamps, and tags.\n\n**Step 7 — Code: Check Clipping Status**\nThe poll counter is incremented and the status is evaluated. SUCCEEDED sets `isReady` to true. FAILED throws an error and stops. Still processing continues. If 25 polls pass without success (approximately 25 minutes), the workflow times out with an error.\n\n**Step 8 — IF: Clips Ready?**\nPhase 1 gate check. If clips are identified (YES path), the workflow moves to select the top clips for export. If still processing (NO path), the workflow routes to **9. Set — Still Clipping** which loops back to **5. Wait — 60 Seconds** for another cycle.\n\n**Step 9 — Set: Still Clipping**\nHandles the still-processing case for Phase 1. Sets a brief in-progress message and loops back to the 60-second wait.\n\n**Step 10 — Code: Select Top Clips for Export**\nAll identified clips are sorted by viral score from highest to lowest. The top clips up to your chosen maximum are selected. Their index numbers are extracted and packaged as the `clipIndices` list needed for the export API call.\n\n**Step 11 — HTTP: Submit Export Task**\nThe selected clip indices are submitted to the WayinVideo export API. The export is configured with: animated captions in original style using caption template `temp-7`, an AI-generated hook in excited style placed at the beginning, AI subject reframing, 9:16 aspect ratio, and HD 720p resolution. WayinVideo returns an export task ID.\n\n**Step 12 — Code: Save Export Task ID**\nThe export task ID is saved and the export poll counter is reset to zero for the Phase 2 polling loop.\n\n**Step 13 — Wait: 60 Seconds (Export)**\nThe workflow pauses for 60 seconds before checking the Phase 2 rendering status for the first time.\n\n**Step 14 — HTTP: Poll Export Results**\nA GET request checks the WayinVideo export endpoint using the export task ID. It returns the rendering status and, once complete, the list of exported clips with their download links.\n\n**Step 15 — Code: Check Export Status**\nThe export poll counter is incremented and the status is evaluated. SUCCEEDED sets `isExportReady` to true. FAILED throws an error. Still rendering continues. If 20 polls pass without success (approximately 20 minutes), the workflow times out.\n\n**Step 16 — IF: Export Ready?**\nPhase 2 gate check. If rendering is complete (YES path), the workflow moves to build sheet rows and send the email. If still rendering (NO path), the workflow routes to **17. Set — Still Exporting** which loops back to **13. Wait — 60 Seconds (Export)**.\n\n**Step 17 — Set: Still Exporting**\nHandles the still-rendering case for Phase 2. Sets a brief in-progress message and loops back to the 60-second export wait.\n\n**Step 18 — Code: Build Sheet Rows**\nThe exported clips with download links are matched to the original clip metadata by index. Duration in seconds is calculated. Each clip is assembled into a complete sheet row. An `isLastRow` flag is set on the final clip. All clip details are also assembled for the Gmail digest.\n\n**Step 19 — Google Sheets: Log Clips**\nEach clip is appended as one row to your Social Media Clips tab with all 10 columns populated: date, video title, clip number, clip title, duration, viral score, tags, description, download link, and logged-at timestamp.\n\n**Step 20 — IF: Last Row?**\nAfter each row is written, this check reads the `isLastRow` flag. If true (YES path — final clip logged), the Gmail digest is built and sent. If false (NO path — more clips to log), the workflow routes to **23. Set — More Rows** and continues logging.\n\n**Step 21 — Code: Build Gmail Digest**\nThe email subject and body are assembled. The body includes a greeting, video title, total clips found, export count, format summary, and a full breakdown of each clip with title, duration, viral score, tags, description, and download link. A clear 24-hour download link expiry warning is included.\n\n**Step 22 — Gmail: Send Clips Digest**\nThe digest email is sent to your recipient email. All clips, their details, and download links arrive in one clean message.\n\n---\n\n## Key Features\n\n✅ **Two-phase pipeline** — Phase 1 identifies all clips first; Phase 2 renders only the top ones — avoiding wasted rendering time and API cost on low-scoring clips\n✅ **Viral score sorting** — Clips are ranked by WayinVideo's viral score before export so your highest-quality content always gets selected first\n✅ **Two independent retry loops with hard timeouts** — Phase 1 retries up to 25 times and Phase 2 retries up to 20 times — long videos never hang indefinitely\n✅ **9:16 vertical video with captions and AI hook** — Every exported clip is fully production-ready for TikTok, Reels, and Shorts with no manual editing needed\n✅ **Gmail fires once after all clips are logged** — The `isLastRow` flag ensures you receive one clean email digest, not one email per clip\n✅ **24-hour expiry warning in the email** — The digest explicitly warns you to download immediately, preventing lost clips due to expired links\n✅ **Configurable clip count from the form** — You set how many clips you want per submission directly in the form — no need to edit the workflow between videos\n✅ **Permanent clip library in Google Sheets** — Every clip from every webinar is logged with its viral score and download link so you can build a searchable content archive\n\n---\n\n## Customisation Options\n\n**Change the clip duration range** — In node **2. Set — Config Values**, update `targetDuration` from `DURATION_30_60` to a longer or shorter WayinVideo duration option to generate clips of a different length for different platforms.\n\n**Change the caption style** — In node **11. HTTP — Submit Export Task**, edit `cc_style_tpl` from `temp-7` to a different WayinVideo caption template ID to change the visual style of the animated captions on your clips.\n\n**Send to Slack instead of or alongside Gmail** — After node **21. Code — Build Gmail Digest**, add a Slack node that posts a short summary (video title, number of clips, and the first download link) to a `#content-team` channel so your social media team sees the clips immediately without checking email.\n\n**Increase the Phase 1 timeout for very long webinars** — In node **7. Code — Check Clipping Status**, change `pollCount &gt;= 25` to `pollCount &gt;= 40` to allow up to approximately 40 minutes for identification on 2+ hour recordings that take longer to process.\n\n**Log clips to a different sheet per month** — In node **2. Set — Config Values**, make `sheetName` dynamic using the current month (e.g. `Social Media Clips — April 2026`) so clips are automatically organized into monthly tabs without any manual file management.\n\n---\n\n## Troubleshooting\n\n**Form submission not starting the workflow:**\n- Confirm the workflow is Active — inactive workflows do not receive form submissions\n- Copy the Form URL fresh from node **1. Form — Enter Video URL** after activating — test URLs generated before activation will not work\n- Make sure the Video URL field is filled in correctly — the URL must be a direct link to a publicly accessible video\n\n**WayinVideo API returning an error or no project ID:**\n- Confirm `YOUR_WAYINVIDEO_API_KEY` in node **2. Set — Config Values** is replaced with your actual key — not the placeholder text\n- Check the execution log of node **3. HTTP — Submit AI Clipping Task** for the exact error response from WayinVideo\n- Ensure the video URL is publicly accessible — private or password-protected videos cannot be processed by WayinVideo\n\n**Phase 1 or Phase 2 polling loop timing out:**\n- If the loop times out, check your WayinVideo dashboard to see if the job is still processing or failed on their end\n- For very long recordings (2+ hours), increase the timeout in **7. Code — Check Clipping Status** or **15. Code — Check Export Status** by raising the poll limit from 25 or 20 to a higher number\n- Check the poll count in the execution log to see how many attempts ran before timeout\n\n**Google Sheets not logging rows:**\n- Confirm the Google Sheets OAuth2 credential in node **19. Google Sheets — Log Clips** is connected and not expired — re-authorize if needed\n- Check that `YOUR_GOOGLE_SHEET_ID` in node **2. Set — Config Values** is the ID from the sheet URL, not the full URL\n- Confirm the tab is named **Social Media Clips** exactly and all 10 column headers in row 1 match exactly\n\n**Gmail digest not arriving:**\n- Confirm the Gmail OAuth2 credential in node **22. Gmail — Send Clips Digest** is connected and authorized\n- Check that `you@yourcompany.com` in node **2. Set — Config Values** is replaced with your actual email address\n- Check your spam or promotions folder — automated Gmail OAuth2 messages sometimes land there on first send\n- Check the execution log of node **22** for any Gmail API error message\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email: [info@incrementors.com](info@incrementors.com)\n🌐 Website: [https://www.incrementors.com/](https://www.incrementors.com/)",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "70b879a1-c100-4b22-a3db-cfbce96252d2",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -3376,
+            -352
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 700,
+            "height": 1192,
+            "content": "## Webinar to Social Media Clips — WayinVideo + Sheets + Gmail\n\nFor content marketers and social media teams who want to turn a 1–2 hour webinar into ready-to-post vertical short videos in 10–15 minutes with zero manual editing. Submit a YouTube, Vimeo, or Zoom recording URL via the form. The workflow runs a two-phase WayinVideo pipeline: Phase 1 identifies all viral clips from the video without rendering, Phase 2 exports only the highest-scoring clips as 9:16 vertical videos with animated captions, an AI hook, and AI subject reframing. Every clip is logged to Google Sheets and a Gmail digest with direct download links arrives when everything is ready.\n\n## How it works\n- **1. Form — Enter Video URL** collects the video URL, title, your name, and how many clips you want (max 5)\n- **2. Set — Config Values** stores the WayinVideo API key, Sheet ID, recipient email, and all export settings\n- **3. HTTP — Submit AI Clipping Task** submits the video to WayinVideo with enable_export false — identifies clips without rendering\n- **4. Code — Save Clipping Project ID** saves the project ID and initializes the poll counter\n- **5–8. Phase 1 Polling Loop** polls every 60 seconds until all clips are identified — up to 25 polls (25 minutes)\n- **10. Code — Select Top Clips for Export** sorts clips by viral score and extracts the clip indices for export\n- **11. HTTP — Submit Export Task** sends the top clips for full rendering with captions, AI hook, and 9:16 reframe\n- **12. Code — Save Export Task ID** saves the export task ID and resets the poll counter\n- **13–16. Phase 2 Polling Loop** polls every 60 seconds until rendering is complete — up to 20 polls (20 minutes)\n- **18. Code — Build Sheet Rows** merges export download links with clip metadata and prepares one row per clip\n- **19. Google Sheets — Log Clips** appends every clip as a row with score, tags, description, and download link\n- **21. Code — Build Gmail Digest** assembles the email with all clip details and a 24-hour link expiry warning\n- **22. Gmail — Send Clips Digest** delivers the final report to your inbox\n\n## Set up steps\n1. In **2. Set — Config Values** — replace YOUR_WAYINVIDEO_API_KEY, YOUR_GOOGLE_SHEET_ID, recipient email, and sender name\n2. In **19. Google Sheets — Log Clips** — connect your Google Sheets OAuth2 credential\n3. In **22. Gmail — Send Clips Digest** — connect your Gmail OAuth2 credential\n4. Create a Google Sheet tab named Social Media Clips with columns: Date, Video Title, Clip #, Clip Title, Duration (sec), Viral Score, Tags, Description, Export Link, Logged At\n5. Activate the workflow and open the Form URL to submit your first video"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "1b388157-e051-4987-875f-3c74c6f1c9b6",
+          "name": "Section — Form Input and Config",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2640,
+            -16
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 484,
+            "height": 372,
+            "content": "## Form Input and Config\nUser submits the video URL, title, name, and clip count via the n8n form. Config stores WayinVideo API key, sheet and email settings, and all export parameters including clip duration, aspect ratio, and resolution."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "3da64c58-6724-4347-bb14-c57cd97e7a5c",
+          "name": "Section — Phase 1 AI Clipping Identification",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -2144,
+            -96
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 1284,
+            "height": 788,
+            "content": "## Phase 1 — AI Clipping Identification and Polling Loop\nSubmits video to WayinVideo with enable_export false to identify all viral clips without rendering. Polls every 60 seconds until SUCCEEDED. Clips are ranked but not yet rendered — only metadata returned. Timeout after 25 polls (25 minutes)."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "baf83c57-1c92-4cc5-8794-c3fd342775b4",
+          "name": "Section — Phase 2 Selective Export and Rendering",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -832,
+            -288
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 1508,
+            "height": 804,
+            "content": "## Phase 2 — Selective Export and Rendering Loop\nSelects only the highest-scoring clips by viral score and submits them for full rendering with animated captions, AI hook text, and AI subject reframing. Polls every 60 seconds until all clips are rendered and export links are available. Timeout after 20 polls (20 minutes)."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "9cc7aa3f-d136-4881-b735-46adb8c4ab4f",
+          "name": "Section — Sheet Logging and Gmail Delivery",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            720,
+            -528
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 1060,
+            "height": 644,
+            "content": "## Sheet Logging and Gmail Delivery\nMerges export download links with clip metadata. Logs one row per clip to Google Sheets. After the last clip is logged, builds a Gmail digest with all clip details, scores, tags, and download links. Export links expire after 24 hours — download immediately after receiving the email."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "7093db00-30e7-4bae-a2d4-621110badca9",
+          "name": "1. Form — Enter Video URL",
+          "type": "n8n-nodes-base.formTrigger",
+          "position": [
+            -2560,
+            128
+          ],
+          "webhookId": "c3dcf0f2-190b-4a4e-a45e-8ad5d9c4c9c8",
+          "parameters": {
+            "options": {},
+            "formTitle": "Webinar to Social Media Clips",
+            "formFields": {
+              "values": [
+                {
+                  "fieldLabel": "Video URL",
+                  "placeholder": "https://www.youtube.com/watch?v=... OR Zoom/Vimeo link",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Video Title",
+                  "placeholder": "e.g. SEO Strategy Webinar April 2026",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Your Name",
+                  "placeholder": "e.g. Rahul Dutt",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Number of Clips (max 5)",
+                  "placeholder": "3"
+                }
+              ]
+            },
+            "formDescription": "Paste a webinar or YouTube video URL. WayinVideo will find the top viral clips and deliver them as ready-to-post 9:16 short videos with captions."
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "b7f054a4-9485-45e4-a278-8db7e77601a9",
+          "name": "2. Set — Config Values",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -2336,
+            128
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "cfg-001",
+                  "name": "wayinVideoApiKey",
+                  "type": "string",
+                  "value": "YOUR_WAYINVIDEO_API_KEY"
+                },
+                {
+                  "id": "cfg-002",
+                  "name": "sheetId",
+                  "type": "string",
+                  "value": "YOUR_GOOGLE_SHEET_ID"
+                },
+                {
+                  "id": "cfg-003",
+                  "name": "sheetName",
+                  "type": "string",
+                  "value": "Social Media Clips"
+                },
+                {
+                  "id": "cfg-004",
+                  "name": "recipientEmail",
+                  "type": "string",
+                  "value": "user@example.com"
+                },
+                {
+                  "id": "cfg-005",
+                  "name": "senderName",
+                  "type": "string",
+                  "value": "YOUR NAME"
+                },
+                {
+                  "id": "cfg-006",
+                  "name": "targetDuration",
+                  "type": "string",
+                  "value": "DURATION_30_60"
+                },
+                {
+                  "id": "cfg-007",
+                  "name": "exportRatio",
+                  "type": "string",
+                  "value": "RATIO_9_16"
+                },
+                {
+                  "id": "cfg-008",
+                  "name": "exportResolution",
+                  "type": "string",
+                  "value": "HD_720"
+                },
+                {
+                  "id": "cfg-009",
+                  "name": "videoUrl",
+                  "type": "string",
+                  "value": "={{ $json['Video URL'].trim() }}"
+                },
+                {
+                  "id": "cfg-010",
+                  "name": "videoTitle",
+                  "type": "string",
+                  "value": "={{ $json['Video Title'] }}"
+                },
+                {
+                  "id": "cfg-011",
+                  "name": "submittedBy",
+                  "type": "string",
+                  "value": "={{ $json['Your Name'] }}"
+                },
+                {
+                  "id": "cfg-012",
+                  "name": "maxClips",
+                  "type": "number",
+                  "value": "={{ Math.min(parseInt($json['Number of Clips (max 5)']) || 3, 5) }}"
+                },
+                {
+                  "id": "cfg-013",
+                  "name": "submittedAt",
+                  "type": "string",
+                  "value": "={{ $now.toFormat('dd MMM yyyy HH:mm') }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "39148735-995d-47a4-b91e-7b21e0e80907",
+          "name": "3. HTTP — Submit AI Clipping Task",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -2112,
+            128
+          ],
+          "parameters": {
+            "url": "https://wayinvideo-api.wayin.ai/api/v2/clips",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"video_url\": \"{{ $json.videoUrl }}\",\n  \"project_name\": \"{{ $json.videoTitle }}\",\n  \"target_duration\": \"{{ $json.targetDuration }}\",\n  \"enable_export\": false\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $json.wayinVideoApiKey }}"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "e50025bc-9a9b-4ea7-b689-a5f07cbff1f5",
+          "name": "4. Code — Save Clipping Project ID",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -1888,
+            128
+          ],
+          "parameters": {
+            "jsCode": "const response = $input.first().json;\nconst config = $('2. Set — Config Values').item.json;\n\nconst projectId = response?.data?.id;\nif (!projectId) throw new Error('WayinVideo did not return a project ID. Check API key and video URL.');\n\nreturn [{\n  json: {\n    projectId,\n    status: response.data.status || 'CREATED',\n    videoTitle: config.videoTitle,\n    videoUrl: config.videoUrl,\n    submittedBy: config.submittedBy,\n    submittedAt: config.submittedAt,\n    maxClips: config.maxClips,\n    wayinVideoApiKey: config.wayinVideoApiKey,\n    exportRatio: config.exportRatio,\n    exportResolution: config.exportResolution,\n    sheetId: config.sheetId,\n    sheetName: config.sheetName,\n    recipientEmail: config.recipientEmail,\n    senderName: config.senderName,\n    pollCount: 0\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "266fc967-dae9-48be-b31b-927546f9224e",
+          "name": "5. Wait — 60 Seconds",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            -1680,
+            128
+          ],
+          "webhookId": "10d48c78-f652-4922-a3e7-4519ede405ac",
+          "parameters": {
+            "amount": 60
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "3ea2aac8-cfe4-4f2d-99c7-f52a88365f3f",
+          "name": "6. HTTP — Poll Clipping Results",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -1456,
+            128
+          ],
+          "parameters": {
+            "url": "=https://wayinvideo-api.wayin.ai/api/v2/clips/results/{{ $json.projectId }}",
+            "options": {},
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $json.wayinVideoApiKey }}"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "b6f9a51f-bbb8-4022-8393-f440809d0feb",
+          "name": "7. Code — Check Clipping Status",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -1232,
+            128
+          ],
+          "parameters": {
+            "jsCode": "const pollResponse = $input.first().json;\nconst prev = $('4. Code — Save Clipping Project ID').item.json;\n\nconst status = pollResponse?.data?.status || 'UNKNOWN';\nconst pollCount = (prev.pollCount || 0) + 1;\n\nif (pollCount >= 25 && status !== 'SUCCEEDED') {\n  throw new Error('WayinVideo clipping timeout after 25 polls (~25 min). Project: ' + prev.projectId);\n}\n\nif (status === 'FAILED') {\n  const errMsg = pollResponse?.data?.error_message || 'Unknown error';\n  throw new Error('WayinVideo clipping failed: ' + errMsg);\n}\n\nreturn [{\n  json: {\n    projectId: prev.projectId,\n    status,\n    clips: pollResponse?.data?.clips || [],\n    pollCount,\n    isReady: status === 'SUCCEEDED',\n    videoTitle: prev.videoTitle,\n    videoUrl: prev.videoUrl,\n    submittedBy: prev.submittedBy,\n    submittedAt: prev.submittedAt,\n    maxClips: prev.maxClips,\n    wayinVideoApiKey: prev.wayinVideoApiKey,\n    exportRatio: prev.exportRatio,\n    exportResolution: prev.exportResolution,\n    sheetId: prev.sheetId,\n    sheetName: prev.sheetName,\n    recipientEmail: prev.recipientEmail,\n    senderName: prev.senderName\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "01571844-6665-4939-9836-a56f9d21e901",
+          "name": "8. IF — Clips Ready?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            -1008,
+            128
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-clip-ready",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $json.isReady }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "4292019b-b4d5-4c02-bca4-21381560edf1",
+          "name": "9. Set — Still Clipping",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            -1008,
+            320
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "loop-clip-001",
+                  "name": "result",
+                  "type": "string",
+                  "value": "Clipping still processing — looping back."
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "5b794245-7810-46e5-b63a-5b0dd96297cc",
+          "name": "10. Code — Select Top Clips for Export",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -800,
+            -32
+          ],
+          "parameters": {
+            "jsCode": "const data = $input.first().json;\nconst allClips = data.clips || [];\n\nif (allClips.length === 0) {\n  throw new Error('WayinVideo returned no clips for this video.');\n}\n\nconst topClips = [...allClips]\n  .sort((a, b) => (b.score || 0) - (a.score || 0))\n  .slice(0, data.maxClips || 3);\n\nconst clipIndices = topClips.map(c => c.idx);\n\nreturn [{\n  json: {\n    projectId: data.projectId,\n    clipIndices,\n    topClips,\n    totalFound: allClips.length,\n    exporting: topClips.length,\n    videoTitle: data.videoTitle,\n    submittedBy: data.submittedBy,\n    submittedAt: data.submittedAt,\n    wayinVideoApiKey: data.wayinVideoApiKey,\n    exportRatio: data.exportRatio,\n    exportResolution: data.exportResolution,\n    sheetId: data.sheetId,\n    sheetName: data.sheetName,\n    recipientEmail: data.recipientEmail,\n    senderName: data.senderName\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "66763eaa-7845-4cb3-9f00-4dc6a85c15bb",
+          "name": "11. HTTP — Submit Export Task",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            -576,
+            -32
+          ],
+          "parameters": {
+            "url": "https://wayinvideo-api.wayin.ai/api/v2/clips/export",
+            "method": "POST",
+            "options": {},
+            "jsonBody": "={\n  \"project_id\": \"{{ $json.projectId }}\",\n  \"clip_indices\": {{ JSON.stringify($json.clipIndices) }},\n  \"resolution\": \"{{ $json.exportResolution }}\",\n  \"enable_caption\": true,\n  \"caption_display\": \"original\",\n  \"cc_style_tpl\": \"temp-7\",\n  \"enable_ai_hook\": true,\n  \"ai_hook_script_style\": \"excited\",\n  \"ai_hook_position\": \"beginning\",\n  \"enable_ai_reframe\": true,\n  \"ratio\": \"{{ $json.exportRatio }}\"\n}",
+            "sendBody": true,
+            "sendHeaders": true,
+            "specifyBody": "json",
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $json.wayinVideoApiKey }}"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "92f69111-8959-4371-8d18-350c2c292389",
+          "name": "12. Code — Save Export Task ID",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -352,
+            -32
+          ],
+          "parameters": {
+            "jsCode": "const response = $input.first().json;\nconst prev = $('10. Code — Select Top Clips for Export').item.json;\n\nconst exportTaskId = response?.data?.export_task_id;\nif (!exportTaskId) throw new Error('WayinVideo export did not return export_task_id.');\n\nreturn [{\n  json: {\n    exportTaskId,\n    exportStatus: response.data.status || 'CREATED',\n    topClips: prev.topClips,\n    totalFound: prev.totalFound,\n    exporting: prev.exporting,\n    videoTitle: prev.videoTitle,\n    submittedBy: prev.submittedBy,\n    submittedAt: prev.submittedAt,\n    wayinVideoApiKey: prev.wayinVideoApiKey,\n    exportRatio: prev.exportRatio,\n    sheetId: prev.sheetId,\n    sheetName: prev.sheetName,\n    recipientEmail: prev.recipientEmail,\n    senderName: prev.senderName,\n    exportPollCount: 0\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "a6306212-c6f1-4d28-b6f8-13d58b519a2f",
+          "name": "13. Wait — 60 Seconds (Export)",
+          "type": "n8n-nodes-base.wait",
+          "position": [
+            -128,
+            -32
+          ],
+          "webhookId": "3513d64e-bf4a-4e4e-ab63-a47e6e3e459b",
+          "parameters": {
+            "amount": 60
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "70a82d8a-ca42-4000-a677-8e9d925b42bb",
+          "name": "14. HTTP — Poll Export Results",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            96,
+            -32
+          ],
+          "parameters": {
+            "url": "=https://wayinvideo-api.wayin.ai/api/v2/clips/export/{{ $json.exportTaskId }}",
+            "options": {},
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $json.wayinVideoApiKey }}"
+                },
+                {
+                  "name": "x-wayinvideo-api-version",
+                  "value": "v2"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "9fd097c5-49c7-4f54-923c-ee63dfb947b9",
+          "name": "15. Code — Check Export Status",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            320,
+            -32
+          ],
+          "parameters": {
+            "jsCode": "const pollResponse = $input.first().json;\nconst prev = $('12. Code — Save Export Task ID').item.json;\n\nconst status = pollResponse?.data?.status || 'UNKNOWN';\nconst exportPollCount = (prev.exportPollCount || 0) + 1;\n\nif (exportPollCount >= 20 && status !== 'SUCCEEDED') {\n  throw new Error('WayinVideo export timeout after 20 polls (~20 min). Export: ' + prev.exportTaskId);\n}\n\nif (status === 'FAILED') {\n  throw new Error('WayinVideo export failed: ' + (pollResponse?.data?.error_message || 'Unknown error'));\n}\n\nreturn [{\n  json: {\n    exportTaskId: prev.exportTaskId,\n    exportStatus: status,\n    exportedClips: pollResponse?.data?.clips || [],\n    exportPollCount,\n    isExportReady: status === 'SUCCEEDED',\n    topClips: prev.topClips,\n    totalFound: prev.totalFound,\n    videoTitle: prev.videoTitle,\n    submittedBy: prev.submittedBy,\n    submittedAt: prev.submittedAt,\n    wayinVideoApiKey: prev.wayinVideoApiKey,\n    sheetId: prev.sheetId,\n    sheetName: prev.sheetName,\n    recipientEmail: prev.recipientEmail,\n    senderName: prev.senderName\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "837e0380-675b-4367-8382-556c88331e77",
+          "name": "16. IF — Export Ready?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            544,
+            -32
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-export-ready",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $json.isExportReady }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "81ac7d67-e015-4d10-9df9-9d0234c5e42c",
+          "name": "17. Set — Still Exporting",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            544,
+            176
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "loop-exp-001",
+                  "name": "result",
+                  "type": "string",
+                  "value": "Export still rendering — looping back."
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "f32c5002-a49f-47aa-9a6c-2beb5be91d8c",
+          "name": "18. Code — Build Sheet Rows",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            768,
+            -176
+          ],
+          "parameters": {
+            "jsCode": "const data = $input.first().json;\nconst exportedClips = data.exportedClips || [];\nconst topClips = data.topClips || [];\n\nconst clipsWithLinks = topClips.map(tc => {\n  const exported = exportedClips.find(ec => ec.idx === tc.idx);\n  return {\n    ...tc,\n    exportLink: exported?.export_link || 'Processing'\n  };\n});\n\nconst msToTime = ms => {\n  const s = Math.floor((ms || 0) / 1000);\n  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');\n};\n\nconst loggedAt = new Date().toISOString().replace('T', ' ').substring(0, 16);\nconst today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });\n\nconst sheetRows = clipsWithLinks.map((clip, i) => ({\n  date: today,\n  videoTitle: data.videoTitle,\n  clipNum: i + 1,\n  clipTitle: clip.title || 'Clip ' + (i + 1),\n  durationSec: Math.round(((clip.end_ms || 0) - (clip.begin_ms || 0)) / 1000),\n  viralScore: clip.score || 0,\n  tags: (clip.tags || []).join(', '),\n  description: (clip.desc || '').substring(0, 200),\n  exportLink: clip.exportLink,\n  loggedAt,\n  sheetId: data.sheetId,\n  sheetName: data.sheetName,\n  isLastRow: i === clipsWithLinks.length - 1,\n  clipsWithLinks: i === clipsWithLinks.length - 1 ? clipsWithLinks : [],\n  totalFound: data.totalFound,\n  submittedBy: data.submittedBy,\n  submittedAt: data.submittedAt,\n  recipientEmail: data.recipientEmail,\n  senderName: data.senderName\n}));\n\nreturn sheetRows.map(r => ({ json: r }));"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "bf16a703-45b2-443f-bbdb-81f18aebc752",
+          "name": "19. Google Sheets — Log Clips",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            976,
+            -176
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "Date": "={{ $json.date }}",
+                "Tags": "={{ $json.tags }}",
+                "Clip #": "={{ $json.clipNum }}",
+                "Logged At": "={{ $json.loggedAt }}",
+                "Clip Title": "={{ $json.clipTitle }}",
+                "Description": "={{ $json.description }}",
+                "Export Link": "={{ $json.exportLink }}",
+                "Video Title": "={{ $json.videoTitle }}",
+                "Viral Score": "={{ $json.viralScore }}",
+                "Duration (sec)": "={{ $json.durationSec }}"
+              },
+              "mappingMode": "defineBelow"
+            },
+            "options": {
+              "cellFormat": "USER_ENTERED"
+            },
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "name",
+              "value": "={{ $json.sheetName }}"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $json.sheetId }}"
+            }
+          },
+          "typeVersion": 4.5
+        },
+        {
+          "id": "794c667f-4d9d-4eb9-9d22-affc0f1756b5",
+          "name": "20. IF — Last Row?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            1200,
+            -176
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": false,
+                "typeValidation": "loose"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-last",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  },
+                  "leftValue": "={{ $json.isLastRow }}",
+                  "rightValue": true
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "b81e589f-4721-43ed-a17d-57990e7d9239",
+          "name": "21. Code — Build Gmail Digest",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1424,
+            -336
+          ],
+          "parameters": {
+            "jsCode": "const data = $json;\nconst clips = data.clipsWithLinks || [];\n\nlet clipLines = '';\nclips.forEach((clip, i) => {\n  const dur = Math.round(((clip.end_ms || 0) - (clip.begin_ms || 0)) / 1000);\n  const tags = (clip.tags || []).join(', ');\n  clipLines +=\n    '\\n--- Clip ' + (i + 1) + ' ---\\n' +\n    'Title: ' + (clip.title || 'Untitled') + '\\n' +\n    'Duration: ' + dur + ' seconds | Viral Score: ' + (clip.score || 0) + '/100\\n' +\n    'Tags: ' + tags + '\\n' +\n    'Description: ' + (clip.desc || '').substring(0, 150) + '\\n' +\n    'Download Link: ' + (clip.exportLink || 'Not available') + '\\n';\n});\n\nconst emailSubject = 'Social Media Clips Ready — ' + data.videoTitle;\n\nconst emailBody =\n  'Hi ' + data.submittedBy + ',\\n\\n' +\n  'Your social media clips are ready! Here are the top ' + clips.length + ' clips from your webinar.\\n\\n' +\n  'VIDEO: ' + data.videoTitle + '\\n' +\n  'Total clips found: ' + data.totalFound + ' | Exported: ' + clips.length + '\\n' +\n  'Format: 9:16 vertical | Captions: Yes | AI Hook: Yes\\n' +\n  'Submitted: ' + data.submittedAt + '\\n' +\n  clipLines +\n  '\\nIMPORTANT: Download links expire in 24 hours. Download now!\\n\\n' +\n  'All clips also logged in Google Sheets for reference.\\n\\n' +\n  'Best regards,\\n' +\n  data.senderName;\n\nreturn [{\n  json: {\n    emailSubject,\n    emailBody,\n    recipientEmail: data.recipientEmail\n  }\n}];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "9049c329-56c6-4c18-8dbe-91309f9412e9",
+          "name": "22. Gmail — Send Clips Digest",
+          "type": "n8n-nodes-base.gmail",
+          "position": [
+            1648,
+            -336
+          ],
+          "webhookId": "d46a1532-9ec0-4e66-b39f-3c2ea639d3d8",
+          "parameters": {
+            "sendTo": "={{ $json.recipientEmail }}",
+            "message": "={{ $json.emailBody }}",
+            "options": {
+              "appendAttribution": false
+            },
+            "subject": "={{ $json.emailSubject }}"
+          },
+          "typeVersion": 2.1
+        },
+        {
+          "id": "83ee9550-aa9d-494e-bbfb-796f999d8938",
+          "name": "23. Set — More Rows",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            1424,
+            -32
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "more-rows-001",
+                  "name": "result",
+                  "type": "string",
+                  "value": "More rows being logged."
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "20. IF — Last Row?": {
+          "main": [
+            [
+              {
+                "node": "21. Code — Build Gmail Digest",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "23. Set — More Rows",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. Wait — 60 Seconds": {
+          "main": [
+            [
+              {
+                "node": "6. HTTP — Poll Clipping Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. IF — Clips Ready?": {
+          "main": [
+            [
+              {
+                "node": "10. Code — Select Top Clips for Export",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "9. Set — Still Clipping",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "16. IF — Export Ready?": {
+          "main": [
+            [
+              {
+                "node": "18. Code — Build Sheet Rows",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "17. Set — Still Exporting",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "2. Set — Config Values": {
+          "main": [
+            [
+              {
+                "node": "3. HTTP — Submit AI Clipping Task",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "9. Set — Still Clipping": {
+          "main": [
+            [
+              {
+                "node": "5. Wait — 60 Seconds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Form — Enter Video URL": {
+          "main": [
+            [
+              {
+                "node": "2. Set — Config Values",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "17. Set — Still Exporting": {
+          "main": [
+            [
+              {
+                "node": "13. Wait — 60 Seconds (Export)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "18. Code — Build Sheet Rows": {
+          "main": [
+            [
+              {
+                "node": "19. Google Sheets — Log Clips",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "11. HTTP — Submit Export Task": {
+          "main": [
+            [
+              {
+                "node": "12. Code — Save Export Task ID",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "19. Google Sheets — Log Clips": {
+          "main": [
+            [
+              {
+                "node": "20. IF — Last Row?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "21. Code — Build Gmail Digest": {
+          "main": [
+            [
+              {
+                "node": "22. Gmail — Send Clips Digest",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "12. Code — Save Export Task ID": {
+          "main": [
+            [
+              {
+                "node": "13. Wait — 60 Seconds (Export)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "13. Wait — 60 Seconds (Export)": {
+          "main": [
+            [
+              {
+                "node": "14. HTTP — Poll Export Results",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "14. HTTP — Poll Export Results": {
+          "main": [
+            [
+              {
+                "node": "15. Code — Check Export Status",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "15. Code — Check Export Status": {
+          "main": [
+            [
+              {
+                "node": "16. IF — Export Ready?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. HTTP — Poll Clipping Results": {
+          "main": [
+            [
+              {
+                "node": "7. Code — Check Clipping Status",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. Code — Check Clipping Status": {
+          "main": [
+            [
+              {
+                "node": "8. IF — Clips Ready?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "3. HTTP — Submit AI Clipping Task": {
+          "main": [
+            [
+              {
+                "node": "4. Code — Save Clipping Project ID",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "4. Code — Save Clipping Project ID": {
+          "main": [
+            [
+              {
+                "node": "5. Wait — 60 Seconds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "10. Code — Select Top Clips for Export": {
+          "main": [
+            [
+              {
+                "node": "11. HTTP — Submit Export Task",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 28,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 3
+        },
+        "n8n-nodes-base.set": {
+          "count": 4
+        },
+        "n8n-nodes-base.code": {
+          "count": 7
+        },
+        "n8n-nodes-base.wait": {
+          "count": 2
+        },
+        "n8n-nodes-base.gmail": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 5
+        },
+        "n8n-nodes-base.formTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 4
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Incrementors",
+      "username": "incrementors",
+      "bio": "",
+      "verified": true,
+      "links": [
+        "https://www.incrementors.com/"
+      ],
+      "avatar": "https://gravatar.com/avatar/e09b4b6a8c5a00f886a9eedf3be23a4af5a50cc216cd6b2aee2a12c2dfba99dd?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 356,
+        "icon": "file:gmail.svg",
+        "name": "n8n-nodes-base.gmail",
+        "codex": {
+          "data": {
+            "alias": [
+              "email",
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.gmail/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Gmail"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTYiIGhlaWdodD0iMTkzIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCI+PHBhdGggZmlsbD0iIzQyODVGNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3NyAwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0QTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzNy0yNy4wMjYgMjUuNzk4eiIvPjxwYXRoIGZpbGw9IiNFQTQzMzUiIGQ9Im01OC4xODIgOTMuMTQtNC4xNzQtMzguNjQ3IDQuMTc0LTM2Ljk4OUwxMjggNjkuODY4bDY5LjgxOC01Mi4zNjQgNC42NyAzNC45OTItNC42NyA0MC42NDRMMTI4IDE0NS41MDR6Ii8+PHBhdGggZmlsbD0iI0ZCQkMwNCIgZD0iTTE5Ny44MTggMTcuNTA0VjkzLjE0TDI1NiA0OS41MDRWMjYuMjMxYzAtMjEuNTg1LTI0LjY0LTMzLjg5LTQxLjg5LTIwLjk0NXoiLz48cGF0aCBmaWxsPSIjQzUyMjFGIiBkPSJtMCA0OS41MDQgMjYuNzU5IDIwLjA3TDU4LjE4MiA5My4xNFYxNy41MDRMNDEuODkgNS4yODZDMjQuNjEtNy42NiAwIDQuNjQ2IDAgMjYuMjN6Ii8+PC9zdmc+"
+        },
+        "displayName": "Gmail",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 514,
+        "icon": "fa:pause-circle",
+        "name": "n8n-nodes-base.wait",
+        "codex": {
+          "data": {
+            "alias": [
+              "pause",
+              "sleep",
+              "delay",
+              "timeout"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "Wait",
+          "color": "#804050"
+        },
+        "iconData": {
+          "icon": "pause-circle",
+          "type": "icon"
+        },
+        "displayName": "Wait",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1225,
+        "icon": "file:form.svg",
+        "name": "n8n-nodes-base.formTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "table",
+              "submit",
+              "post"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.formtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Other Trigger Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "On form submission"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NiIgaGVpZ2h0PSI0MCIgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iIzAwQjdCQyIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMzQuOTc4IDM3LjczMmExLjU2IDEuNTYgMCAwIDEtMS41NjIgMS41NjNINi4yNmExLjU2IDEuNTYgMCAwIDEtMS41NjMtMS41NjNWOS42MDdjMC0uNDA1LjE1Ny0uNzk0LjQzOC0xLjA4Nmw2LjMwNC02LjUzMXY1LjM0NEg4LjIxM2ExLjE3MiAxLjE3MiAwIDEgMCAwIDIuMzQzaDQuNDNhMS4xNyAxLjE3IDAgMCAwIDEuMTcxLTEuMTcxVi4yMzJoMTkuNjAyYTEuNTYgMS41NiAwIDAgMSAxLjU2MiAxLjU2M3YxMC4zMjdsLTIuODYgMi44Ni04LjI1MiA4LjI3NmE0MTMuMDA2IDQxMy4wMDYgMCAwIDEtMS42NTQgMS42NjJsLS4zMzcuMzM3YTIgMiAwIDAgMC0uNTU3IDEuMDhMMjAuMyAzMS45MjJjLS4xMDguNjM4LS4yMTUgMS4wNzkuMjExIDEuNDE4LjQwMy4zMi45LjE3NCAxLjU0LjA2Nmw1LjQwOC0uOTI4YTIgMiAwIDAgMCAxLjA4LS41NTZsNi40NC02LjQyOXptLTI0LjAzLTIxLjI2NWExLjE4IDEuMTggMCAwIDAgMS4xNzEgMS4xNzJoMTMuMTYzYTEuMTcyIDEuMTcyIDAgMSAwIDAtMi4zNDRIMTIuMTE5YTEuMTcgMS4xNyAwIDAgMC0xLjE3MiAxLjE3Mm03LjI5NCAxNC43NjZhMS4xNyAxLjE3IDAgMCAwLTEuMTcyLTEuMTcySDEyLjEyYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNC45NTFhMS4xNyAxLjE3IDAgMCAwIDEuMTcyLTEuMTcybS44Ni03LjM5MWExLjE3IDEuMTcgMCAwIDAtMS4xNzItMS4xNzJoLTUuODExYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNS44MWExLjE2NCAxLjE2NCAwIDAgMCAxLjE3My0xLjE3MSIgY2xpcC1ydWxlPSJldmVub2RkIi8+PHBhdGggZmlsbD0iIzAwQjdCQyIgZD0ibTMzLjUzMiAxNi4zOTcgNC4yODktNC4yODkgMy43NTggMy43MSAxLjYxNy0xLjYxNiAyLjI1OCAyLjI1N2MuMjE4LjIxOC4zNC41MTMuMzQzLjgyLS4wMDIuMzExLS4xMjUuNjA4LS4zNDQuODNsLTYuODA0IDYuNzk2YTEuMTMgMS4xMyAwIDAgMS0uODI4LjM0MyAxLjE1IDEuMTUgMCAwIDEtLjgyOC0uMzQzIDEuMTggMS4xOCAwIDAgMSAwLTEuNjU3bDUuOTc2LTUuOTY4LTEuMzEyLTEuMzEzLTEuMzgzIDEuNDE0LTEzLjE0OSAxMy4xMjUtNC42MTcuNzgyLjc4Mi00LjYxNy4zMzYtLjMzNyAyLjU2MiAyLjU1NWExLjEgMS4xIDAgMCAwIC44MjguMzQ0Yy4zMTIuMDA1LjYxMi0uMTIuODI4LS4zNDRhMS4xOCAxLjE4IDAgMCAwIDAtMS42NTZsLTIuNTYyLTIuNTYyek00NC43MzYgMTIuMjRjMCAuNDE0LS4xNjMuODEtLjQ1NCAxLjEwMmwtLjkyMi45MTQtMy44NTItMy44MjguOTMtLjkzYTEuNTYzIDEuNTYzIDAgMCAxIDIuMjAzIDBsMS42NCAxLjY0MWMuMjkxLjI5My40NTUuNjkuNDU1IDEuMTAyIi8+PC9zdmc+"
+        },
+        "displayName": "n8n Form Trigger",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 31,
+        "name": "Content Creation"
+      },
+      {
+        "id": 51,
+        "name": "Multimodal AI"
+      }
+    ],
+    "image": []
+  }
+}

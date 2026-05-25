@@ -1,0 +1,946 @@
+{
+  "workflow": {
+    "id": 15134,
+    "name": "Score customer support AI responses with GPT‑4 judge metrics",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-18T21:12:11.373Z",
+    "description": "Score open-ended AI responses with a judge model. This template shows how to evaluate a customer support agent using a separate LLM that rates each response on correctness and helpfulness, going beyond what exact match scoring can capture.\n\n## What you'll do\n\nOpen the workflow and review the production path (chat trigger, AI Agent generates a support response, response returned to the user). Open the Evaluations tab and click Run Test to feed question + expected answer pairs through the AI Agent. Watch the judge model score each response on correctness (1-5) and helpfulness (1-5). Review per-test-case scores in the Evaluations tab alongside token usage and execution time.\n\n## What you'll learn\n\nHow LLM-as-a-Judge works and when it beats deterministic scoring How to wire a separate judge model into your evaluation path How to write a custom scoring prompt that returns a numeric score and a justification When to use n8n's built-in Correctness and Helpfulness metrics versus a custom judge\n\n## Why it matters \n\nCustomer-facing responses are subjective. A response can be technically accurate but tonally wrong, or polite but useless. LLM-as-a-Judge gives you a measurable signal for the kind of quality that matters but resists simple matching, so you can iterate on prompts with confidence instead of guesswork.\n\nThis template is a learning companion to the Production AI Playbook, a series that explores strategies, shares best practices, and provides practical examples for building reliable AI systems in n8n.",
+    "workflow": {
+      "meta": {
+        "instanceId": "da13b80f35ed9d16adbf337111fadd798f3c80e989940f27089cab3947e57699",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "0787733d-4c2f-43b4-a865-a8bf640982d9",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -448,
+            -80
+          ],
+          "parameters": {
+            "width": 668,
+            "height": 832,
+            "content": "# LLM-as-a-Judge Evaluation\n\n### How it works\n1. **Production path:** A Chat Trigger receives a customer question, the AI Agent generates a support response, and the result is returned via Return chat response.\n2. **Evaluation path:** The Evaluation Trigger reads test cases (question + expected answer) from a Data Table and feeds each one through the same AI Agent.\n3. **Routing:** The Evaluating? node sends production traffic downstream and evaluation traffic into the judge branch.\n4. **Judging:** A separate judge model (Judge - Score Response) evaluates each AI response on correctness and helpfulness, returning a 1-5 score for each dimension.\n5. **Recording:** Evaluation - Set Outputs and Set Metrics record scores in the Evaluations tab alongside token usage and execution time.\n\n### Setup\n1. Add credentials for the OpenAI Chat Model (production agent) and the judge model (evaluation).\n2. Create the Data Table with question + expected answer pairs that reflect real support scenarios.\n3. Open the Evaluations tab in this workflow and click Run Test to score the agent across your test cases.\n\n### Customization\n- Swap the judge model for any capable LLM (Claude, Gemini, GPT-5, etc.). Use a model at least as capable as the one being evaluated.\n- Replace the custom judge prompt with n8n's built-in Correctness or Helpfulness metrics for less setup.\n- Add domain-specific scoring criteria (tone, compliance, completeness) by extending the judge prompt.\n- Use comparative judging (compare prompt A vs prompt B) when iterating on prompts to get more consistent scores.\n\n---\nThis template is a learning companion to the **Production AI Playbook**, a series that explores strategies, shares best practices, and provides practical examples for building reliable AI systems in n8n."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "ec465cf9-b6ec-4ecd-8169-3767ddcb89d0",
+          "name": "When chat message received",
+          "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+          "position": [
+            528,
+            256
+          ],
+          "webhookId": "d7ea9515-aa61-43ae-b75c-5e73a7ddc138",
+          "parameters": {
+            "options": {}
+          },
+          "typeVersion": 1.1
+        },
+        {
+          "id": "fa18df09-357f-44fb-9c77-70e0551b4ff1",
+          "name": "When fetching a dataset row",
+          "type": "n8n-nodes-base.evaluationTrigger",
+          "position": [
+            304,
+            64
+          ],
+          "parameters": {
+            "source": "dataTable",
+            "dataTableId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "VPCxS9mO1gPbvyRa",
+              "cachedResultUrl": "/projects/5xhYaLjYeyMka6t9/datatables/VPCxS9mO1gPbvyRa",
+              "cachedResultName": "Customer Support QA Test Cases"
+            }
+          },
+          "typeVersion": 4.6
+        },
+        {
+          "id": "d48695ff-3f43-4466-8daa-ad978ff3fa2f",
+          "name": "Format eval input",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            528,
+            64
+          ],
+          "parameters": {
+            "jsCode": "const row = $input.first().json;\nreturn [{ json: { chatInput: row.input || row.question } }];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "5a48c44b-8ece-41a8-81ef-d054d5eaa3d7",
+          "name": "AI Agent",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            752,
+            160
+          ],
+          "parameters": {
+            "text": "={{ $json.chatInput }}",
+            "options": {
+              "systemMessage": "You are a friendly and knowledgeable customer support agent. Your role is to help customers with their questions about accounts, billing, subscriptions, and product features. Always be polite, provide clear and accurate information, and offer actionable next steps. If you are unsure about something, let the customer know and offer to escalate to a specialist."
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 1.9
+        },
+        {
+          "id": "9c4243b8-8f78-4276-a082-183c66f6a362",
+          "name": "OpenAI Chat Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            832,
+            384
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o-mini",
+              "cachedResultName": "GPT-4O-MINI"
+            },
+            "options": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "B67YxZwYEqGQkjNE",
+              "name": "OpenAi account 2"
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "a45bd302-1f3d-43c6-a290-8d69d83fc4a8",
+          "name": "Evaluating?",
+          "type": "n8n-nodes-base.evaluation",
+          "position": [
+            1104,
+            160
+          ],
+          "parameters": {
+            "operation": "checkIfEvaluating"
+          },
+          "typeVersion": 4.6
+        },
+        {
+          "id": "843103a0-454b-46cc-8227-bdcc3969b52f",
+          "name": "Return chat response",
+          "type": "n8n-nodes-base.noOp",
+          "position": [
+            1392,
+            256
+          ],
+          "parameters": {},
+          "typeVersion": 1
+        },
+        {
+          "id": "f398d26a-7c0f-4597-9557-19d6cb423fd8",
+          "name": "Judge - Score Response",
+          "type": "@n8n/n8n-nodes-langchain.openAi",
+          "position": [
+            1328,
+            64
+          ],
+          "parameters": {
+            "modelId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o",
+              "cachedResultName": "GPT-4O"
+            },
+            "options": {},
+            "messages": {
+              "values": [
+                {
+                  "content": "=You are an expert evaluator assessing the quality of AI-generated customer support responses.\n\nEvaluate the following response on two dimensions:\n\n**Correctness (1-5):** Does the response contain accurate information? Does it align with the expected answer?\n- 5: Fully correct, matches expected answer\n- 4: Mostly correct, minor omissions\n- 3: Partially correct, some inaccuracies\n- 2: Mostly incorrect\n- 1: Completely wrong or hallucinated\n\n**Helpfulness (1-5):** Does the response actually help the user? Is it clear, actionable, and complete?\n- 5: Extremely helpful, clear next steps\n- 4: Helpful with minor gaps\n- 3: Somewhat helpful but vague\n- 2: Minimally helpful\n- 1: Not helpful at all\n\n---\n\n**User Question:** {{ $('When fetching a dataset row').first().json.input }}\n\n**Expected Answer:** {{ $('When fetching a dataset row').first().json.expected_output }}\n\n**AI Response:** {{ $json.output }}\n\n---\n\nRespond with ONLY valid JSON in this format:\n{\"correctness\": <1-5>, \"helpfulness\": <1-5>, \"correctness_justification\": \"<brief reason>\", \"helpfulness_justification\": \"<brief reason>\"}"
+                }
+              ]
+            }
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "B67YxZwYEqGQkjNE",
+              "name": "OpenAi account 2"
+            }
+          },
+          "typeVersion": 1.8
+        },
+        {
+          "id": "b9d8be76-3b3f-40be-9a66-b1a5ab7fae88",
+          "name": "Evaluation - Set Outputs",
+          "type": "n8n-nodes-base.evaluation",
+          "position": [
+            1680,
+            64
+          ],
+          "parameters": {
+            "source": "dataTable",
+            "outputs": {
+              "values": [
+                {
+                  "outputName": "correctness_score",
+                  "outputValue": "={{ JSON.parse($json.message.content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '')).correctness }}"
+                },
+                {
+                  "outputName": "helpfulness_score",
+                  "outputValue": "={{ JSON.parse($json.message.content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '')).helpfulness }}"
+                },
+                {
+                  "outputName": "avg_score",
+                  "outputValue": "={{ (JSON.parse($json.message.content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '')).correctness + JSON.parse($json.message.content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '')).helpfulness) / 2 }}"
+                }
+              ]
+            },
+            "dataTableId": {
+              "__rl": true,
+              "mode": "list",
+              "value": "VPCxS9mO1gPbvyRa",
+              "cachedResultUrl": "/projects/5xhYaLjYeyMka6t9/datatables/VPCxS9mO1gPbvyRa",
+              "cachedResultName": "Customer Support QA Test Cases"
+            }
+          },
+          "typeVersion": 4.6
+        },
+        {
+          "id": "e1986910-eb71-4465-b501-8c6169dffa62",
+          "name": "Set Metrics",
+          "type": "n8n-nodes-base.evaluation",
+          "position": [
+            1904,
+            64
+          ],
+          "parameters": {
+            "metrics": {
+              "assignments": [
+                {
+                  "id": "m1",
+                  "name": "correctness",
+                  "type": "number",
+                  "value": "={{ JSON.parse($json.message.content.replace(/```json\\n?|\\n?```/g, '').trim()).correctness }}"
+                },
+                {
+                  "id": "m2",
+                  "name": "helpfulness",
+                  "type": "number",
+                  "value": "={{ JSON.parse($json.message.content.replace(/```json\\n?|\\n?```/g, '').trim()).helpfulness }}"
+                }
+              ]
+            },
+            "operation": "setMetrics"
+          },
+          "typeVersion": 4.6
+        },
+        {
+          "id": "57639b04-68c1-4f42-922f-2ca1712a7eb8",
+          "name": "Sticky Note2",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            240,
+            -80
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 448,
+            "height": 640,
+            "content": "## Receive Customer Query"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "c1115cdd-aa6d-42de-aeae-2c81859d377e",
+          "name": "Sticky Note3",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            704,
+            -80
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 336,
+            "height": 640,
+            "content": "## Customer Query AI Reply"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "77114286-a214-46f3-80f7-41af85cc9ed0",
+          "name": "Sticky Note4",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1056,
+            -80
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 1024,
+            "height": 640,
+            "content": "## Evaluate with LLM-as-a-Judge"
+          },
+          "typeVersion": 1
+        }
+      ],
+      "pinData": {
+        "When fetching a dataset row": [
+          {
+            "id": 1,
+            "input": "How do I reset my password? I keep getting an error when trying to log in.",
+            "row_id": 1,
+            "createdAt": "2026-03-29T17:18:45.325Z",
+            "updatedAt": "2026-03-29T17:19:44.099Z",
+            "row_number": 0,
+            "expected_output": "To reset your password, click the Forgot Password link on the login page. Enter your email address and you will receive a reset link within a few minutes. If you do not see the email, check your spam folder. If the issue persists, contact support for further assistance."
+          }
+        ]
+      },
+      "connections": {
+        "AI Agent": {
+          "main": [
+            [
+              {
+                "node": "Evaluating?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Evaluating?": {
+          "main": [
+            [
+              {
+                "node": "Judge - Score Response",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Return chat response",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Format eval input": {
+          "main": [
+            [
+              {
+                "node": "AI Agent",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "OpenAI Chat Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "AI Agent",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Judge - Score Response": {
+          "main": [
+            [
+              {
+                "node": "Evaluation - Set Outputs",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Evaluation - Set Outputs": {
+          "main": [
+            [
+              {
+                "node": "Set Metrics",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "When chat message received": {
+          "main": [
+            [
+              {
+                "node": "AI Agent",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "When fetching a dataset row": {
+          "main": [
+            [
+              {
+                "node": "Format eval input",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 14,
+      "nodeTypes": {
+        "n8n-nodes-base.code": {
+          "count": 1
+        },
+        "n8n-nodes-base.noOp": {
+          "count": 1
+        },
+        "n8n-nodes-base.evaluation": {
+          "count": 3
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 4
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.openAi": {
+          "count": 1
+        },
+        "n8n-nodes-base.evaluationTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.chatTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Elvis Sarvia",
+      "username": "elvissaravia",
+      "bio": "",
+      "verified": true,
+      "links": [],
+      "avatar": "https://gravatar.com/avatar/ea69c5850ff18c010244a46216d72964c80a8d752fafefe2be114bdf6d05ae8a?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 26,
+        "icon": "fa:arrow-right",
+        "name": "n8n-nodes-base.noOp",
+        "codex": {
+          "data": {
+            "alias": [
+              "nothing"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.noop/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "No Operation, do nothing",
+          "color": "#b0b0b0"
+        },
+        "iconData": {
+          "icon": "arrow-right",
+          "type": "icon"
+        },
+        "displayName": "No Operation, do nothing",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1247,
+        "icon": "fa:comments",
+        "name": "@n8n/n8n-nodes-langchain.chatTrigger",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-langchain.chattrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes",
+              "Langchain"
+            ]
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "When chat message received"
+        },
+        "iconData": {
+          "icon": "comments",
+          "type": "icon"
+        },
+        "displayName": "Chat Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1250,
+        "icon": "file:openAi.svg",
+        "name": "@n8n/n8n-nodes-langchain.openAi",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "ChatGPT",
+              "Sora",
+              "DallE",
+              "whisper",
+              "audio",
+              "transcribe",
+              "tts",
+              "assistant"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-langchain.openai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Miscellaneous",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg1IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NiAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MSA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4K"
+        },
+        "displayName": "OpenAI",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1300,
+        "icon": "fa:check-double",
+        "name": "n8n-nodes-base.evaluationTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Test",
+              "Metrics",
+              "Evals",
+              "Set Output",
+              "Set Metrics"
+            ],
+            "categories": []
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "When fetching a dataset row",
+          "color": "#c3c9d5"
+        },
+        "iconData": {
+          "icon": "check-double",
+          "type": "icon"
+        },
+        "displayName": "Evaluation Trigger",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": null,
+            "name": null
+          }
+        ]
+      },
+      {
+        "id": 1301,
+        "icon": "fa:check-double",
+        "name": "n8n-nodes-base.evaluation",
+        "codex": {
+          "data": {
+            "alias": [
+              "Test",
+              "Metrics",
+              "Evals",
+              "Set Output",
+              "Set Metrics"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.evaluation/"
+                }
+              ]
+            },
+            "categories": [
+              "Utility"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Evaluation",
+          "color": "#c3c9d5"
+        },
+        "iconData": {
+          "icon": "check-double",
+          "type": "icon"
+        },
+        "displayName": "Evaluation",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 7,
+            "name": "Utility"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 5,
+        "name": "Engineering"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

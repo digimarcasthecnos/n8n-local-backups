@@ -1,0 +1,1819 @@
+{
+  "workflow": {
+    "id": 14932,
+    "name": "Monitor supply chain risk news with Claude Sonnet 4.5 and Telegram alerts",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-08T17:29:06.928Z",
+    "description": "## Who's it for\n\nSupply chain and logistics specialists, freight forwarders, importers/exporters, and risk teams who need early warning when maritime, carrier, geopolitical, or weather events threaten their cargo or trade lanes.\n\nIf you've ever found out about a Red Sea diversion, an OFAC sanctions package, a Panama Canal restriction, or a Gulf hurricane *after* it hit your bookings - this template fixes that. It turns 12 free public feeds into a single Claude-classified Telegram alert stream, scoped to the chokepoints, lanes, and risk dimensions you actually care about.\n\n## How it works\n\nThe workflow runs every 6 hours and polls 12 free public RSS feeds across 4 supply chain risk dimensions:\n\n- **Maritime**: gCaptain, Maritime Executive, Safety4Sea, Splash247\n- **Carrier**: The Loadstar, FreightWaves, Container News\n- **Geopolitical**: Google News searches for sanctions, tariffs, OFAC, export bans\n- **Weather**: GDACS (Global Disaster Alerts), NOAA Hurricane Center, USGS Significant Earthquakes\n\nEach new item is deduped against past runs using n8n workflow static data - no database needed. Then Claude Sonnet 4.5 (the Sonar Analyst) classifies it into a structured JSON with primary risk dimension, severity 1-5, affected region, geo node, trade lanes affected, source reliability, and recommended action (monitor / alert / escalate). Five few-shot examples cover one case from each dimension plus an \"other\" fallback.\n\nItems at or above your severity threshold are reformatted by a second Claude pass (the Sonar Reporter) into a scannable HTML Telegram alert with dimension-specific emoji, severity color codes, and a direct link to the source. Items below threshold end silently.\n\n## How to set up\n\n1. **Connect your Anthropic API credential** to both Claude Sonnet sub-nodes - the same credential can be reused for both the Analyst and the Reporter.\n2. **Connect your Telegram Bot credential** (token from BotFather) and set the `TELEGRAM_CHAT_ID` environment variable in n8n to your operator chat ID. The Send Telegram Alert node already references this env var, so you only need to set the variable once.\n3. **Open the Configuration node** and adjust:\n   - `severity_threshold` (1-5) - minimum severity to alert on (default: 3)\n   - `watched_dimensions` - comma-separated dimensions: maritime, carrier, geopolitical, weather\n   - `watched_regions` - geographic focus list (defaults cover the major chokepoints + global lanes)\n   - `post_all_clear_digest` - set to true if you want a digest even when nothing critical hit\n4. **Click Execute Workflow** once to test. You'll see items flow through the canvas, the Analyst classify them, and the IF gate filter them. If the result is below threshold you'll see a green checkmark on End (Below Threshold) - that's expected.\n5. **Toggle Active** in the top-right when you're happy. The schedule trigger will fire every 6 hours.\n\n## Requirements\n\n- **Anthropic API key** (Claude Sonnet 4.5 recommended - the prompts are tuned for it)\n- **Telegram Bot token** from BotFather\n- **A Telegram chat ID** for receiving alerts (your personal chat, a group, or a channel)\n\nThat's it. No databases, no Docker, no scraping, no paid APIs. The dedupe Code node uses n8n workflow static data so nothing needs to be installed beyond a working n8n instance.\n\n## How to customize the workflow\n\n**Add or remove RSS feeds** in the lane that matches your dimension. Each lane has its own visual sticky note so you can see at a glance which feeds belong where. To add a feed, copy any existing RSS Feed Read node, change the URL, and connect it to the Merge node.\n\n**Change the schedule** in the Every 6 Hours node - for high-stakes operations you might want every 2 hours; for lower-touch monitoring, daily.\n\n**Edit the Sonar Analyst system prompt** (in the AI Agent node) to add new risk categories, region keywords, or industry-specific few-shot examples. The current schema supports adding new `crisis_type` enum values and new chokepoints without breaking the IF gate.\n\n**Swap Telegram for Slack, Discord, or email** by replacing the final Send Telegram Alert node. The Sonar Reporter outputs HTML which renders cleanly in any of these channels.\n\n**Tighten the dedupe cap** (currently 40 items per run, 800 cached URLs) if your LLM cost is a concern. The cap lives at the top of the Dedupe + Tag Source Code node.\n\n**Localize the alerts** by changing the `alert_language` field in the Configuration node - the Reporter prompt respects it (currently supports english, spanish, french, german).\n\nThe workflow ships as a single importable JSON, 29 nodes total, with one yellow main sticky note explaining the whole template and four neutral lane sticky notes labeling each risk dimension lane. Zero credentials are bundled - you wire your own.\n",
+    "workflow": {
+      "name": "Monitor supply chain risk events from RSS feeds with Claude and Telegram",
+      "tags": [],
+      "nodes": [
+        {
+          "id": "node-sticky-readme",
+          "name": "README",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -592,
+            64
+          ],
+          "parameters": {
+            "width": 848,
+            "height": 940,
+            "content": "## Who's it for\n\nSupply chain operators, freight forwarders, importers/exporters, and risk teams who need early warning when maritime, carrier, geopolitical, or weather events threaten their cargo or trade lanes.\n\n## How it works\n\nThe workflow runs every 6 hours and polls 12 free public RSS feeds across 4 supply chain risk dimensions:\n\n- **Maritime**: gCaptain, Maritime Executive, Safety4Sea, Splash247\n- **Carrier**: The Loadstar, FreightWaves, Container News\n- **Geopolitical**: Google News searches for sanctions, tariffs, OFAC, export bans\n- **Weather**: GDACS, NOAA Hurricane Center, USGS Significant Earthquakes\n\nEach new item is deduped against past runs (n8n static data, no database needed), then classified by Claude Sonnet 4.5 into a primary risk dimension, severity 1-5, affected region, trade lanes, and recommended action (monitor / alert / escalate).\n\nItems at or above your severity threshold are reformatted by a second Claude pass into a scannable HTML Telegram alert with dimension-specific emoji and severity color codes. Items below threshold end silently.\n\n## How to set up\n\n1. Connect your Anthropic API credential to both Claude Sonnet sub-nodes (the same credential can be reused)\n2. Connect your Telegram Bot credential (token from BotFather) and set the `TELEGRAM_CHAT_ID` environment variable in n8n to your operator chat ID\n3. Open the Configuration node and adjust `severity_threshold` (1-5), `watched_dimensions`, and `watched_regions` to match your operation\n4. Click Execute Workflow once to test, then toggle Active\n\n## Requirements\n\n- Anthropic API key (Claude Sonnet 4.5 recommended)\n- Telegram Bot token from BotFather\n- A Telegram chat ID for receiving alerts\n\nNo databases, no Docker, no scraping, no paid APIs.\n\n## How to customize the workflow\n\nAdd or remove RSS feeds in the lane that matches your dimension. Edit the Configuration node to change the severity threshold or watched dimensions list. Extend the Sonar Analyst system prompt with new risk categories or industry-specific few-shot examples. Swap Telegram for Slack, Discord, or email by replacing the final node.\n\nThe dedupe Code node uses n8n workflow static data so no external storage is required, and caps items per run at 40 to control LLM cost."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "node-sticky-maritime",
+          "name": "Lane: Maritime",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            336,
+            64
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 528,
+            "height": 660,
+            "content": "### 🛰️ Maritime Disruption\n4 sources covering chokepoints, port closures, vessel incidents"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "node-sticky-carrier",
+          "name": "Lane: Carrier",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            336,
+            752
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 528,
+            "height": 500,
+            "content": "### 🚢 Carrier & Container\n3 sources covering blank sailings, equipment shortages, schedule reliability"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "node-sticky-geo",
+          "name": "Lane: Geopolitical",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            336,
+            1264
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 528,
+            "height": 360,
+            "content": "### ⚖️ Geopolitical & Trade\n2 Google News searches for sanctions, tariffs, trade bans"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "node-sticky-weather",
+          "name": "Lane: Weather",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            336,
+            1648
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 528,
+            "height": 500,
+            "content": "### 🌪️ Weather & Natural Disaster\n3 sources covering hurricanes, earthquakes, multi-hazard alerts"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "node-schedule",
+          "name": "Every 6 Hours",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "position": [
+            240,
+            992
+          ],
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "field": "hours",
+                  "hoursInterval": 6
+                }
+              ]
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "node-config",
+          "name": "Configuration",
+          "type": "n8n-nodes-base.set",
+          "notes": "Edit these values to tune the cockpit:\n- severity_threshold: minimum severity (1-5) to alert on\n- watched_dimensions: comma-separated dimensions (maritime, carrier, geopolitical, weather)\n- watched_regions: geographic focus list\n- alert_language: english | spanish | french | german\n- post_all_clear_digest: send a digest even when nothing critical",
+          "position": [
+            464,
+            992
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "assign-severity",
+                  "name": "severity_threshold",
+                  "type": "number",
+                  "value": 3
+                },
+                {
+                  "id": "assign-dimensions",
+                  "name": "watched_dimensions",
+                  "type": "string",
+                  "value": "maritime,carrier,geopolitical,weather"
+                },
+                {
+                  "id": "assign-regions",
+                  "name": "watched_regions",
+                  "type": "string",
+                  "value": "Red Sea,Gulf of Aden,Strait of Hormuz,Strait of Malacca,Bab el-Mandeb,Suez Canal,Panama Canal,Black Sea,Taiwan Strait,US Gulf Coast,North Europe,Asia-Europe,Trans-Pacific"
+                },
+                {
+                  "id": "assign-language",
+                  "name": "alert_language",
+                  "type": "string",
+                  "value": "english"
+                },
+                {
+                  "id": "assign-quietmode",
+                  "name": "post_all_clear_digest",
+                  "type": "boolean",
+                  "value": false
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "node-rss-gcaptain",
+          "name": "RSS: gCaptain",
+          "type": "n8n-nodes-base.rssFeedRead",
+          "position": [
+            704,
+            144
+          ],
+          "parameters": {
+            "url": "https://gcaptain.com/feed/",
+            "options": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "node-rss-maritime-exec",
+          "name": "RSS: Maritime Executive",
+          "type": "n8n-nodes-base.rssFeedRead",
+          "position": [
+            704,
+            304
+          ],
+          "parameters": {
+            "url": "https://www.maritime-executive.com/articles.rss",
+            "options": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "node-rss-safety4sea",
+          "name": "RSS: Safety4Sea",
+          "type": "n8n-nodes-base.rssFeedRead",
+          "position": [
+            704,
+            464
+          ],
+          "parameters": {
+            "url": "https://safety4sea.com/feed/",
+            "options": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "node-rss-splash247",
+          "name": "RSS: Splash247",
+          "type": "n8n-nodes-base.rssFeedRead",
+          "position": [
+            704,
+            624
+          ],
+          "parameters": {
+            "url": "https://splash247.com/feed/",
+            "options": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "node-rss-loadstar",
+          "name": "RSS: The Loadstar",
+          "type": "n8n-nodes-base.rssFeedRead",
+          "position": [
+            704,
+            832
+          ],
+          "parameters": {
+            "url": "https://theloadstar.com/feed/",
+            "options": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "node-rss-freightwaves",
+          "name": "RSS: FreightWaves",
+          "type": "n8n-nodes-base.rssFeedRead",
+          "position": [
+            704,
+            992
+          ],
+          "parameters": {
+            "url": "https://www.freightwaves.com/feed/",
+            "options": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "node-rss-container-news",
+          "name": "RSS: Container News",
+          "type": "n8n-nodes-base.rssFeedRead",
+          "position": [
+            704,
+            1152
+          ],
+          "parameters": {
+            "url": "https://container-news.com/feed/",
+            "options": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "node-rss-gnews-tariffs",
+          "name": "Google News: Tariffs & Sanctions",
+          "type": "n8n-nodes-base.rssFeedRead",
+          "position": [
+            704,
+            1344
+          ],
+          "parameters": {
+            "url": "https://news.google.com/rss/search?q=supply+chain+tariff+OR+sanctions&hl=en-US&gl=US&ceid=US:en",
+            "options": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "node-rss-gnews-ofac",
+          "name": "Google News: OFAC & Export Bans",
+          "type": "n8n-nodes-base.rssFeedRead",
+          "position": [
+            704,
+            1504
+          ],
+          "parameters": {
+            "url": "https://news.google.com/rss/search?q=OFAC+OR+%22export+ban%22+shipping&hl=en-US&gl=US&ceid=US:en",
+            "options": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "node-rss-gdacs",
+          "name": "RSS: GDACS (Global Disaster Alerts)",
+          "type": "n8n-nodes-base.rssFeedRead",
+          "position": [
+            704,
+            1728
+          ],
+          "parameters": {
+            "url": "https://www.gdacs.org/xml/rss.xml",
+            "options": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "node-rss-noaa-nhc",
+          "name": "RSS: NOAA Hurricane Center",
+          "type": "n8n-nodes-base.rssFeedRead",
+          "position": [
+            704,
+            1888
+          ],
+          "parameters": {
+            "url": "https://www.nhc.noaa.gov/index-at.xml",
+            "options": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "node-rss-usgs",
+          "name": "RSS: USGS Significant Earthquakes",
+          "type": "n8n-nodes-base.rssFeedRead",
+          "position": [
+            704,
+            2048
+          ],
+          "parameters": {
+            "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.atom",
+            "options": {}
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "node-merge",
+          "name": "Merge All Feeds",
+          "type": "n8n-nodes-base.merge",
+          "notes": "Combines items from all 12 RSS feeds into a single stream.",
+          "position": [
+            960,
+            1088
+          ],
+          "parameters": {
+            "mode": "combine",
+            "options": {},
+            "combineBy": "combineAll"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "node-dedupe",
+          "name": "Dedupe + Tag Source",
+          "type": "n8n-nodes-base.code",
+          "notes": "Filters out items already seen in past runs.\nTags each item with a source-inferred dimension hint (maritime/carrier/geopolitical/weather).\nUses n8n workflow static data - no external storage needed.\nCaps at 800 cached URLs and 40 items per run to protect LLM cost.",
+          "position": [
+            1184,
+            1088
+          ],
+          "parameters": {
+            "jsCode": "// Sonar - Dedupe via workflow static data + source-to-dimension tagging\n// Persists seen URLs across runs (n8n static data, no external DB needed)\nconst staticData = $getWorkflowStaticData('global');\nstaticData.seenUrls = staticData.seenUrls || [];\n\nconst MAX_CACHE = 800;          // cap memory growth\nconst MAX_ITEMS_PER_RUN = 40;   // protect downstream LLM cost\n\n// Source URL fragment → primary dimension hint\nconst dimensionMap = [\n  { match: 'gcaptain.com', dim: 'maritime' },\n  { match: 'maritime-executive.com', dim: 'maritime' },\n  { match: 'safety4sea.com', dim: 'maritime' },\n  { match: 'splash247.com', dim: 'maritime' },\n  { match: 'theloadstar.com', dim: 'carrier' },\n  { match: 'freightwaves.com', dim: 'carrier' },\n  { match: 'container-news.com', dim: 'carrier' },\n  { match: 'news.google.com', dim: 'geopolitical' },\n  { match: 'gdacs.org', dim: 'weather' },\n  { match: 'nhc.noaa.gov', dim: 'weather' },\n  { match: 'earthquake.usgs.gov', dim: 'weather' }\n];\n\nfunction inferDimension(url) {\n  if (!url) return 'other';\n  for (const { match, dim } of dimensionMap) {\n    if (url.includes(match)) return dim;\n  }\n  return 'other';\n}\n\nconst items = $input.all();\nconst fresh = [];\n\nfor (const item of items) {\n  const url = item.json.link || item.json.url || item.json.guid;\n  if (!url) continue;\n  if (staticData.seenUrls.includes(url)) continue;\n\n  staticData.seenUrls.push(url);\n  fresh.push({\n    json: {\n      title: item.json.title || '',\n      summary: (item.json.contentSnippet || item.json.content || item.json.summary || '').slice(0, 800),\n      url,\n      published: item.json.pubDate || item.json.isoDate || new Date().toISOString(),\n      source: item.json.creator || item.json.source || 'unknown',\n      source_dimension_hint: inferDimension(url)\n    }\n  });\n  if (fresh.length >= MAX_ITEMS_PER_RUN) break;\n}\n\n// Trim cache to last MAX_CACHE entries\nif (staticData.seenUrls.length > MAX_CACHE) {\n  staticData.seenUrls = staticData.seenUrls.slice(-MAX_CACHE);\n}\n\nreturn fresh;"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "node-analyst",
+          "name": "Sonar Analyst (Claude)",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            1424,
+            1040
+          ],
+          "parameters": {
+            "text": "=Classify the following news item for supply chain risk across all 4 dimensions.\n\nTitle: {{ $json.title }}\nSummary: {{ $json.summary }}\nURL: {{ $json.url }}\nPublished: {{ $json.published }}\nSource: {{ $json.source }}\nSource-inferred dimension hint: {{ $json.source_dimension_hint }}\n\nWatched dimensions: {{ $node['Configuration'].json.watched_dimensions }}\nWatched regions: {{ $node['Configuration'].json.watched_regions }}\n\nReturn ONLY valid JSON matching the schema in your system prompt. No prose, no markdown fences.",
+            "options": {
+              "systemMessage": "You are the Sonar Analyst - a multi-dimensional supply chain risk classification agent. You receive news items from 12 free public feeds and produce structured JSON classifications across 4 risk dimensions.\n\n## The 4 Risk Dimensions\n\n1. **maritime** - chokepoint disruptions, vessel attacks, port closures, piracy, naval incidents\n2. **carrier** - blank sailings, equipment shortages, schedule reliability, carrier financial distress, freight rate spikes\n3. **geopolitical** - sanctions (OFAC, EU, UN), tariffs, trade bans, export controls, customs disputes\n4. **weather** - hurricanes, typhoons, earthquakes, floods, droughts, volcanic eruptions, extreme cold/heat\n\nEvents that don't clearly fit any of these → primary_dimension = 'other' and severity = 1.\n\n## Severity Scale (always use this exact scale)\n\n1 = Monitoring: Unconfirmed reports, no immediate cargo/route impact\n2 = Advisory: Confirmed event, monitor for escalation\n3 = Alert: Active disruption, cargo or routes likely affected\n4 = Critical: Major disruption, multi-day delays or rerouting confirmed\n5 = Emergency: Catastrophic event, immediate operator action required\n\n## Output Schema\n\nReturn valid JSON ONLY (no markdown fences, no prose):\n{\n  \"crisis_id\": \"DIM-REGION-YYYY-NNN (e.g. MAR-RED-SEA-2026-001 or GEO-RUSSIA-2026-001)\",\n  \"primary_dimension\": \"maritime | carrier | geopolitical | weather | other\",\n  \"crisis_type\": \"specific subtype: missile_attack | port_closure | piracy | blank_sailing | equipment_shortage | rate_spike | sanctions | tariff | export_ban | hurricane | earthquake | flood | drought | strike | accident | other\",\n  \"severity\": 1-5,\n  \"affected_region\": \"human readable region or country name\",\n  \"geo_node\": \"specific port, chokepoint, country, or 'global'\",\n  \"trade_lanes_affected\": [\"e.g. Asia-Europe, Trans-Pacific, US-LATAM, Russia-EU\"],\n  \"source_url\": \"the URL provided exactly\",\n  \"source_reliability\": \"verified | probable | unconfirmed\",\n  \"carrier_advisory_issued\": boolean,\n  \"recommended_action\": \"monitor | alert | escalate\",\n  \"one_line_summary\": \"max 140 chars, action-oriented\",\n  \"confidence\": 0.0-1.0\n}\n\n## Source Reliability Rules\n\n- **verified**: UKMTO, OFAC, EU Council, NOAA, USGS, GDACS, official government/military sources, major carrier advisories\n- **probable**: Reuters, Lloyd's List, gCaptain, Maritime Executive, The Loadstar, FreightWaves, Container News, Safety4Sea, Splash247\n- **unconfirmed**: Google News with no clear primary source, social media, anonymous reports, single-source claims\n\nWhen unconfirmed: cap severity at 2, set confidence below 0.4, recommended_action = monitor.\n\n## Recommended Action Rules\n\n- severity 1-2 → monitor\n- severity 3 OR carrier_advisory_issued = true → alert\n- severity 4-5 OR active operator decision required → escalate\n\n## Dimension Selection Heuristics\n\n- If the source is from gdacs.org / nhc.noaa.gov / earthquake.usgs.gov → almost always **weather** (unless the article is purely informational with no operational impact)\n- If the source is google news AND keywords include 'sanctions', 'tariff', 'OFAC', 'export ban', 'embargo' → **geopolitical**\n- If the source is theloadstar / freightwaves / container-news AND keywords include 'blank sailing', 'equipment', 'rate', 'schedule' → **carrier**\n- If the source is gCaptain / maritime-exec / safety4sea / splash247 AND the event happens at a port, chokepoint, or vessel → **maritime**\n- If the article spans multiple dimensions (e.g. a sanctions package that triggers carrier rerouting), pick the **upstream cause** (geopolitical in this example) and mention the downstream effect in one_line_summary\n\nUse the source_dimension_hint as a strong default but override when the article clearly belongs to a different dimension.\n\n## Few-Shot Examples\n\n### Example 1 - Maritime\nInput: \"Houthi drone attack reported near Bab el-Mandeb. UKMTO confirms vessel struck.\"\nOutput: {\"crisis_id\":\"MAR-BAB-EL-MANDEB-2026-001\",\"primary_dimension\":\"maritime\",\"crisis_type\":\"missile_attack\",\"severity\":4,\"affected_region\":\"Bab el-Mandeb\",\"geo_node\":\"Bab el-Mandeb\",\"trade_lanes_affected\":[\"Asia-Europe\",\"Asia-Mediterranean\"],\"source_url\":\"https://gcaptain.com/...\",\"source_reliability\":\"probable\",\"carrier_advisory_issued\":true,\"recommended_action\":\"escalate\",\"one_line_summary\":\"Houthi drone strikes vessel in Bab el-Mandeb - Asia-Europe rerouting expected\",\"confidence\":0.92}\n\n### Example 2 - Carrier\nInput: \"Maersk announces 8 blank sailings on Asia-Europe in Q2 due to demand weakness\"\nOutput: {\"crisis_id\":\"CAR-ASIA-EU-2026-001\",\"primary_dimension\":\"carrier\",\"crisis_type\":\"blank_sailing\",\"severity\":2,\"affected_region\":\"Asia-Europe\",\"geo_node\":\"global\",\"trade_lanes_affected\":[\"Asia-Europe\"],\"source_url\":\"https://theloadstar.com/...\",\"source_reliability\":\"probable\",\"carrier_advisory_issued\":false,\"recommended_action\":\"monitor\",\"one_line_summary\":\"Maersk blanks 8 Asia-Europe sailings in Q2 - capacity tightening\",\"confidence\":0.85}\n\n### Example 3 - Geopolitical\nInput: \"OFAC adds 12 shipping companies to sanctions list for Russia oil trade\"\nOutput: {\"crisis_id\":\"GEO-RUSSIA-2026-001\",\"primary_dimension\":\"geopolitical\",\"crisis_type\":\"sanctions\",\"severity\":4,\"affected_region\":\"Russia\",\"geo_node\":\"global\",\"trade_lanes_affected\":[\"Russia-EU\",\"Russia-Asia\"],\"source_url\":\"https://news.google.com/...\",\"source_reliability\":\"verified\",\"carrier_advisory_issued\":false,\"recommended_action\":\"escalate\",\"one_line_summary\":\"OFAC sanctions 12 shipping firms for Russia oil trade - shadow fleet exposure\",\"confidence\":0.9}\n\n### Example 4 - Weather\nInput: \"Hurricane Beryl Cat 4 approaching US Gulf Coast - Houston port evacuations underway\"\nOutput: {\"crisis_id\":\"WEA-US-GULF-2026-001\",\"primary_dimension\":\"weather\",\"crisis_type\":\"hurricane\",\"severity\":5,\"affected_region\":\"US Gulf Coast\",\"geo_node\":\"Houston\",\"trade_lanes_affected\":[\"US-LATAM\",\"US-Europe\"],\"source_url\":\"https://www.nhc.noaa.gov/...\",\"source_reliability\":\"verified\",\"carrier_advisory_issued\":true,\"recommended_action\":\"escalate\",\"one_line_summary\":\"Hurricane Beryl Cat 4 hitting Houston - port evacuations, Gulf rerouting\",\"confidence\":0.97}\n\n### Example 5 - Other (drop)\nInput: \"Container shipping company holds annual investor day in Singapore\"\nOutput: {\"crisis_id\":\"OTHER-2026-001\",\"primary_dimension\":\"other\",\"crisis_type\":\"other\",\"severity\":1,\"affected_region\":\"Singapore\",\"geo_node\":\"global\",\"trade_lanes_affected\":[],\"source_url\":\"https://...\",\"source_reliability\":\"probable\",\"carrier_advisory_issued\":false,\"recommended_action\":\"monitor\",\"one_line_summary\":\"Investor day announcement - no operational impact\",\"confidence\":0.3}\n\n## Fallback\n\nIf the item is ambiguous or non-supply-chain, return primary_dimension = 'other', severity = 1, recommended_action = 'monitor', confidence below 0.3. Never hallucinate URLs - use the provided URL exactly."
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 1.7
+        },
+        {
+          "id": "node-analyst-llm",
+          "name": "Claude Sonnet (Analyst)",
+          "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+          "notes": "REVIEWER: configure your Anthropic API credential here.",
+          "position": [
+            1424,
+            1264
+          ],
+          "parameters": {
+            "model": "claude-sonnet-4-5-20250929",
+            "options": {
+              "temperature": 0.1,
+              "maxTokensToSample": 1024
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "node-parse-json",
+          "name": "Parse Analyst JSON",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1648,
+            1040
+          ],
+          "parameters": {
+            "jsCode": "// Sonar - Parse Analyst JSON output safely\nconst items = $input.all();\nconst out = [];\n\nfor (const item of items) {\n  const raw = item.json.output || item.json.text || item.json.response || JSON.stringify(item.json);\n  let parsed;\n  try {\n    // Strip markdown fences if Claude added any\n    const cleaned = String(raw).replace(/```json|```/g, '').trim();\n    parsed = JSON.parse(cleaned);\n  } catch (e) {\n    parsed = { severity: 0, primary_dimension: 'other', parse_error: e.message, raw };\n  }\n  out.push({ json: parsed });\n}\n\nreturn out;"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "node-if-severity",
+          "name": "Severity ≥ Threshold AND Dimension Watched?",
+          "type": "n8n-nodes-base.if",
+          "position": [
+            1872,
+            1040
+          ],
+          "parameters": {
+            "options": {},
+            "conditions": {
+              "options": {
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "combinator": "and",
+              "conditions": [
+                {
+                  "id": "cond-severity",
+                  "operator": {
+                    "type": "number",
+                    "operation": "gte"
+                  },
+                  "leftValue": "={{ $json.severity }}",
+                  "rightValue": "={{ parseInt($node['Configuration'].json.severity_threshold) }}"
+                },
+                {
+                  "id": "cond-dimension",
+                  "operator": {
+                    "type": "string",
+                    "operation": "contains"
+                  },
+                  "leftValue": "={{ $node['Configuration'].json.watched_dimensions }}",
+                  "rightValue": "={{ $json.primary_dimension }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "node-reporter",
+          "name": "Sonar Reporter (Claude)",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            2080,
+            944
+          ],
+          "parameters": {
+            "text": "=Format a Telegram alert for the following classified crisis event.\n\nCrisis JSON:\n{{ JSON.stringify($json) }}\n\nReturn ONLY the message text (HTML-formatted, ready for Telegram parse_mode=HTML). Do not return JSON. Do not return markdown code fences.",
+            "options": {
+              "systemMessage": "You are the Sonar Reporter - you turn classified crisis events into concise, scannable Telegram alerts for supply chain operators.\n\n## Output Format (HTML for Telegram parse_mode=HTML)\n\nUse this exact template:\n\n{severity_emoji} <b>SONAR · {dimension_emoji} {dimension_label}</b>\n<i>{crisis_type} · severity {severity}/5</i>\n\n{one_line_summary}\n\n<b>Region:</b> {affected_region} ({geo_node})\n<b>Lanes:</b> {trade_lanes_affected joined with ', ' or '-' if empty}\n<b>Reliability:</b> {source_reliability}\n<b>Action:</b> {recommended_action}\n<b>Confidence:</b> {confidence}\n\n<a href=\"{source_url}\">Source ↗</a>\n\n- Sonar Cockpit\n\n## Severity Emoji Mapping\n1 → 🔵\n2 → 🟢\n3 → 🟡\n4 → 🟠\n5 → 🔴\n\n## Dimension Emoji + Label Mapping\nmaritime → 🛰️ Maritime\ncarrier → 🚢 Carrier\ngeopolitical → ⚖️ Geopolitical\nweather → 🌪️ Weather\nstrikes → ✊ Strikes\nother → 📡 Other\n\n## Rules\n- Output HTML text ONLY. No JSON wrapper. No markdown code fences. No backticks.\n- Escape any < > & inside text fields if they appear in the source data.\n- Keep the message under 1000 characters total.\n- If a field is missing or null or empty list, write '-' (em dash) in its place.\n- Use the source_url EXACTLY as provided. Never invent URLs.\n- For trade_lanes_affected: join with ', ' if non-empty, otherwise use '-'."
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 1.7
+        },
+        {
+          "id": "node-reporter-llm",
+          "name": "Claude Sonnet (Reporter)",
+          "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+          "notes": "REVIEWER: configure your Anthropic API credential here (can reuse the Analyst credential).",
+          "position": [
+            2080,
+            1168
+          ],
+          "parameters": {
+            "model": "claude-sonnet-4-5-20250929",
+            "options": {
+              "temperature": 0.2,
+              "maxTokensToSample": 600
+            }
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "node-telegram",
+          "name": "Send Telegram Alert",
+          "type": "n8n-nodes-base.telegram",
+          "notes": "Set the TELEGRAM_CHAT_ID environment variable in n8n, OR replace the chatId expression with your operator chat ID directly.",
+          "position": [
+            2304,
+            944
+          ],
+          "webhookId": "13629265-8368-4a94-a2f7-0af6a2c8a62b",
+          "parameters": {
+            "text": "={{ $json.output || $json.text }}",
+            "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+            "additionalFields": {
+              "parse_mode": "HTML",
+              "disable_web_page_preview": false
+            }
+          },
+          "typeVersion": 1.2
+        },
+        {
+          "id": "node-end-low",
+          "name": "End (Below Threshold)",
+          "type": "n8n-nodes-base.noOp",
+          "position": [
+            2080,
+            1280
+          ],
+          "parameters": {},
+          "typeVersion": 1
+        }
+      ],
+      "active": false,
+      "shared": [
+        {
+          "role": "workflow:owner",
+          "project": {
+            "id": "yaiJdlWTHLCTz1ho",
+            "icon": null,
+            "name": "Aleksandrs Sidorecs <aleks@sidorecs.ch>",
+            "type": "personal",
+            "createdAt": "2026-03-14T19:09:22.741Z",
+            "creatorId": "93d906bb-16df-4fb4-b950-4309ac3b09a2",
+            "updatedAt": "2026-03-14T19:17:53.809Z",
+            "description": null
+          },
+          "createdAt": "2026-04-08T13:45:31.459Z",
+          "projectId": "yaiJdlWTHLCTz1ho",
+          "updatedAt": "2026-04-08T13:45:31.459Z",
+          "workflowId": "cGDRVK7qQ1npVD1J"
+        }
+      ],
+      "settings": {
+        "callerPolicy": "workflowsFromSameOwner",
+        "availableInMCP": false,
+        "executionOrder": "v1",
+        "saveManualExecutions": true,
+        "saveExecutionProgress": true
+      },
+      "connections": {
+        "Configuration": {
+          "main": [
+            [
+              {
+                "node": "RSS: gCaptain",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "RSS: Maritime Executive",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "RSS: Safety4Sea",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "RSS: Splash247",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "RSS: The Loadstar",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "RSS: FreightWaves",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "RSS: Container News",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Google News: Tariffs & Sanctions",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Google News: OFAC & Export Bans",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "RSS: GDACS (Global Disaster Alerts)",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "RSS: NOAA Hurricane Center",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "RSS: USGS Significant Earthquakes",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Every 6 Hours": {
+          "main": [
+            [
+              {
+                "node": "Configuration",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "RSS: gCaptain": {
+          "main": [
+            [
+              {
+                "node": "Merge All Feeds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "RSS: Splash247": {
+          "main": [
+            [
+              {
+                "node": "Merge All Feeds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Merge All Feeds": {
+          "main": [
+            [
+              {
+                "node": "Dedupe + Tag Source",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "RSS: Safety4Sea": {
+          "main": [
+            [
+              {
+                "node": "Merge All Feeds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "RSS: FreightWaves": {
+          "main": [
+            [
+              {
+                "node": "Merge All Feeds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "RSS: The Loadstar": {
+          "main": [
+            [
+              {
+                "node": "Merge All Feeds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Parse Analyst JSON": {
+          "main": [
+            [
+              {
+                "node": "Severity ≥ Threshold AND Dimension Watched?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Dedupe + Tag Source": {
+          "main": [
+            [
+              {
+                "node": "Sonar Analyst (Claude)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "RSS: Container News": {
+          "main": [
+            [
+              {
+                "node": "Merge All Feeds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Sonar Analyst (Claude)": {
+          "main": [
+            [
+              {
+                "node": "Parse Analyst JSON",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Claude Sonnet (Analyst)": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Sonar Analyst (Claude)",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "RSS: Maritime Executive": {
+          "main": [
+            [
+              {
+                "node": "Merge All Feeds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Sonar Reporter (Claude)": {
+          "main": [
+            [
+              {
+                "node": "Send Telegram Alert",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Claude Sonnet (Reporter)": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Sonar Reporter (Claude)",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "RSS: NOAA Hurricane Center": {
+          "main": [
+            [
+              {
+                "node": "Merge All Feeds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Google News: OFAC & Export Bans": {
+          "main": [
+            [
+              {
+                "node": "Merge All Feeds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Google News: Tariffs & Sanctions": {
+          "main": [
+            [
+              {
+                "node": "Merge All Feeds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "RSS: USGS Significant Earthquakes": {
+          "main": [
+            [
+              {
+                "node": "Merge All Feeds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "RSS: GDACS (Global Disaster Alerts)": {
+          "main": [
+            [
+              {
+                "node": "Merge All Feeds",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Severity ≥ Threshold AND Dimension Watched?": {
+          "main": [
+            [
+              {
+                "node": "Sonar Reporter (Claude)",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "End (Below Threshold)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      },
+      "activeVersion": null
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 29,
+      "nodeTypes": {
+        "n8n-nodes-base.if": {
+          "count": 1
+        },
+        "n8n-nodes-base.set": {
+          "count": 1
+        },
+        "n8n-nodes-base.code": {
+          "count": 2
+        },
+        "n8n-nodes-base.noOp": {
+          "count": 1
+        },
+        "n8n-nodes-base.merge": {
+          "count": 1
+        },
+        "n8n-nodes-base.telegram": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 5
+        },
+        "n8n-nodes-base.rssFeedRead": {
+          "count": 12
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 2
+        },
+        "n8n-nodes-base.scheduleTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatAnthropic": {
+          "count": 2
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Aleks Sidorecs",
+      "username": "aleks-sidorecs",
+      "bio": "Supply chain practitioner building agentic AI workflows. Automating intelligence across procurement, logistics, planning, operations and manufacturing - from risk monitoring to a full scale intelligent supply chain control towers.\n\nwww.alxsidr.io",
+      "verified": false,
+      "links": [
+        "https://www.linkedin.com/in/alxsidr/"
+      ],
+      "avatar": "https://gravatar.com/avatar/c357b1c48fc2dc26e5b403a25ad483b47ca1e935c4f8fe4a15bd012dc0ccc18f?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 20,
+        "icon": "fa:map-signs",
+        "name": "n8n-nodes-base.if",
+        "codex": {
+          "data": {
+            "alias": [
+              "Router",
+              "Filter",
+              "Condition",
+              "Logic",
+              "Boolean",
+              "Branch"
+            ],
+            "details": "The IF node can be used to implement binary conditional logic in your workflow. You can set up one-to-many conditions to evaluate each item of data being inputted into the node. That data will either evaluate to TRUE or FALSE and route out of the node accordingly.\n\nThis node has multiple types of conditions: Bool, String, Number, and Date & Time.",
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automation-for-maintainers-of-open-source-projects/",
+                  "icon": "🏷️",
+                  "label": "How to automatically manage contributions to open-source projects"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.if/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "If",
+          "color": "#408000"
+        },
+        "iconData": {
+          "icon": "map-signs",
+          "type": "icon"
+        },
+        "displayName": "If",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 24,
+        "icon": "file:merge.svg",
+        "name": "n8n-nodes-base.merge",
+        "codex": {
+          "data": {
+            "alias": [
+              "Join",
+              "Concatenate",
+              "Wait"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/how-to-sync-data-between-two-systems/",
+                  "icon": "🏬",
+                  "label": "How to synchronize data between two systems (one-way vs. two-way sync"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.merge/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Flow",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Merge"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTc3XzUxOCkiPgo8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTAgNDhDMCAyMS40OTAzIDIxLjQ5MDMgMCA0OCAwSDExMkMxMzguNTEgMCAxNjAgMjEuNDkwMyAxNjAgNDhWNTZIMTk2LjI1MkMyNDAuNDM1IDU2IDI3Ni4yNTIgOTEuODE3MiAyNzYuMjUyIDEzNlYxOTJDMjc2LjI1MiAyMTQuMDkxIDI5NC4xNjEgMjMyIDMxNi4yNTIgMjMySDM1MlYyMjRDMzUyIDE5Ny40OSAzNzMuNDkgMTc2IDQwMCAxNzZINDY0QzQ5MC41MSAxNzYgNTEyIDE5Ny40OSA1MTIgMjI0VjI4OEM1MTIgMzE0LjUxIDQ5MC41MSAzMzYgNDY0IDMzNkg0MDBDMzczLjQ5IDMzNiAzNTIgMzE0LjUxIDM1MiAyODhWMjgwSDMxNi4yNTJDMjk0LjE2MSAyODAgMjc2LjI1MiAyOTcuOTA5IDI3Ni4yNTIgMzIwVjM3NkMyNzYuMjUyIDQyMC4xODMgMjQwLjQzNSA0NTYgMTk2LjI1MiA0NTZIMTYwVjQ2NEMxNjAgNDkwLjUxIDEzOC41MSA1MTIgMTEyIDUxMkg0OEMyMS40OTAzIDUxMiAwIDQ5MC41MSAwIDQ2NFY0MDBDMCAzNzMuNDkgMjEuNDkwMyAzNTIgNDggMzUySDExMkMxMzguNTEgMzUyIDE2MCAzNzMuNDkgMTYwIDQwMFY0MDhIMTk2LjI1MkMyMTMuOTI1IDQwOCAyMjguMjUyIDM5My42NzMgMjI4LjI1MiAzNzZWMzIwQzIyOC4yNTIgMjk0Ljc4NCAyMzguODU5IDI3Mi4wNDQgMjU1Ljg1MyAyNTZDMjM4Ljg1OSAyMzkuOTU2IDIyOC4yNTIgMjE3LjIxNiAyMjguMjUyIDE5MlYxMzZDMjI4LjI1MiAxMTguMzI3IDIxMy45MjUgMTA0IDE5Ni4yNTIgMTA0SDE2MFYxMTJDMTYwIDEzOC41MSAxMzguNTEgMTYwIDExMiAxNjBINDhDMjEuNDkwMyAxNjAgMCAxMzguNTEgMCAxMTJWNDhaTTEwNCA0OEMxMDguNDE4IDQ4IDExMiA1MS41ODE3IDExMiA1NlYxMDRDMTEyIDEwOC40MTggMTA4LjQxOCAxMTIgMTA0IDExMkg1NkM1MS41ODE3IDExMiA0OCAxMDguNDE4IDQ4IDEwNFY1NkM0OCA1MS41ODE3IDUxLjU4MTcgNDggNTYgNDhIMTA0Wk00NTYgMjI0QzQ2MC40MTggMjI0IDQ2NCAyMjcuNTgyIDQ2NCAyMzJWMjgwQzQ2NCAyODQuNDE4IDQ2MC40MTggMjg4IDQ1NiAyODhINDA4QzQwMy41ODIgMjg4IDQwMCAyODQuNDE4IDQwMCAyODBWMjMyQzQwMCAyMjcuNTgyIDQwMy41ODIgMjI0IDQwOCAyMjRINDU2Wk0xMTIgNDA4QzExMiA0MDMuNTgyIDEwOC40MTggNDAwIDEwNCA0MDBINTZDNTEuNTgxNyA0MDAgNDggNDAzLjU4MiA0OCA0MDhWNDU2QzQ4IDQ2MC40MTggNTEuNTgxNyA0NjQgNTYgNDY0SDEwNEMxMDguNDE4IDQ2NCAxMTIgNDYwLjQxOCAxMTIgNDU2VjQwOFoiIGZpbGw9IiM1NEI4QzkiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTc3XzUxOCI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Merge",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 26,
+        "icon": "fa:arrow-right",
+        "name": "n8n-nodes-base.noOp",
+        "codex": {
+          "data": {
+            "alias": [
+              "nothing"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.noop/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"organization\"]",
+        "defaults": {
+          "name": "No Operation, do nothing",
+          "color": "#b0b0b0"
+        },
+        "iconData": {
+          "icon": "arrow-right",
+          "type": "icon"
+        },
+        "displayName": "No Operation, do nothing",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 37,
+        "icon": "fa:rss",
+        "name": "n8n-nodes-base.rssFeedRead",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-i-chose-n8n-over-zapier-in-2020/",
+                  "icon": "😍",
+                  "label": "Why I chose n8n over Zapier in 2020"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.rssfeedread/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "RSS Read",
+          "color": "#b02020"
+        },
+        "iconData": {
+          "icon": "rss",
+          "type": "icon"
+        },
+        "displayName": "RSS Read",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 49,
+        "icon": "file:telegram.svg",
+        "name": "n8n-nodes-base.telegram",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/create-a-toxic-language-detector-for-telegram/",
+                  "icon": "🤬",
+                  "label": "Create a toxic language detector for Telegram in 4 step"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/using-automation-to-boost-productivity-in-the-workplace/",
+                  "icon": "💪",
+                  "label": "Using Automation to Boost Productivity in the Workplace"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-telegram-bots-with-n8n-a-no-code-platform/",
+                  "icon": "💬",
+                  "label": "Creating Telegram Bots with n8n, a No-Code Platform"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.telegram/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/telegram/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Telegram"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgNjYgNjYiPjx1c2UgeGxpbms6aHJlZj0iI2EiIHg9Ii41IiB5PSIuNSIvPjxzeW1ib2wgaWQ9ImEiIG92ZXJmbG93PSJ2aXNpYmxlIj48ZyBmaWxsLXJ1bGU9Im5vbnplcm8iIHN0cm9rZT0ibm9uZSI+PHBhdGggZmlsbD0iIzM3YWVlMiIgZD0iTTAgMzJjMCAxNy42NzMgMTQuMzI3IDMyIDMyIDMyczMyLTE0LjMyNyAzMi0zMlM0OS42NzMgMCAzMiAwIDAgMTQuMzI3IDAgMzIiLz48cGF0aCBmaWxsPSIjYzhkYWVhIiBkPSJtMjEuNjYxIDM0LjMzOCAzLjc5NyAxMC41MDhzLjQ3NS45ODMuOTgzLjk4MyA4LjA2OC03Ljg2NCA4LjA2OC03Ljg2NGw4LjQwNy0xNi4yMzctMjEuMTE5IDkuODk4eiIvPjxwYXRoIGZpbGw9IiNhOWM2ZDgiIGQ9Im0yNi42OTUgMzcuMDM0LS43MjkgNy43NDZzLS4zMDUgMi4zNzMgMi4wNjggMGw0LjY0NC00LjIwMyIvPjxwYXRoIGQ9Im0yMS43MyAzNC43MTItNy44MDktMi41NDVzLS45MzItLjM3OC0uNjMzLTEuMjM3Yy4wNjItLjE3Ny4xODYtLjMyOC41NTktLjU4OCAxLjczMS0xLjIwNiAzMi4wMjgtMTIuMDk2IDMyLjAyOC0xMi4wOTZzLjg1Ni0uMjg4IDEuMzYxLS4wOTdjLjIzMS4wODguMzc4LjE4Ny41MDMuNTQ4LjA0NS4xMzIuMDcxLjQxMS4wNjguNjg5LS4wMDMuMjAxLS4wMjcuMzg2LS4wNDUuNjc4LS4xODQgMi45NzgtNS43MDYgMjUuMTk4LTUuNzA2IDI1LjE5OHMtLjMzIDEuMy0xLjUxNCAxLjM0NWMtLjQzMi4wMTYtLjk1Ni0uMDcxLTEuNTgyLS42MS0yLjMyMy0xLjk5OC0xMC4zNTItNy4zOTQtMTIuMTI2LTguNThhLjM0LjM0IDAgMCAxLS4xNDYtLjIzOWMtLjAyNS0uMTI1LjEwOC0uMjguMTA4LS4yOHMxMy45OC0xMi40MjcgMTQuMzUyLTEzLjczMWMuMDI5LS4xMDEtLjA3OS0uMTUxLS4yMjYtLjEwNy0uOTI5LjM0Mi0xNy4wMjUgMTAuNTA2LTE4LjgwMSAxMS42MjktLjEwNC4wNjYtLjM5NS4wMjMtLjM5NS4wMjMiLz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Telegram",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 839,
+        "icon": "fa:clock",
+        "name": "n8n-nodes-base.scheduleTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "Time",
+              "Scheduler",
+              "Polling",
+              "Cron",
+              "Interval"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.scheduletrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"trigger\",\"schedule\"]",
+        "defaults": {
+          "name": "Schedule Trigger",
+          "color": "#31C49F"
+        },
+        "iconData": {
+          "icon": "clock",
+          "type": "icon"
+        },
+        "displayName": "Schedule Trigger",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1145,
+        "icon": "file:anthropic.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+        "codex": {
+          "data": {
+            "alias": [
+              "claude",
+              "sonnet",
+              "opus"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatanthropic/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Anthropic Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NiIgaGVpZ2h0PSIzMiIgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iIzdEN0Q4NyIgZD0iTTMyLjczIDBoLTYuOTQ1TDM4LjQ1IDMyaDYuOTQ1ek0xMi42NjUgMCAwIDMyaDcuMDgybDIuNTktNi43MmgxMy4yNWwyLjU5IDYuNzJoNy4wODJMMTkuOTI5IDB6bS0uNzAyIDE5LjMzNyA0LjMzNC0xMS4yNDYgNC4zMzQgMTEuMjQ2eiIvPjwvc3ZnPg=="
+        },
+        "displayName": "Anthropic Chat Model",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 32,
+        "name": "Market Research"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

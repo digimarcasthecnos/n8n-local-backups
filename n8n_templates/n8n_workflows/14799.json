@@ -1,0 +1,1296 @@
+{
+  "workflow": {
+    "id": 14799,
+    "name": "Analyze sales calls with Whisper transcription, GPT-4o, Airtable and Slack",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-06T11:47:54.898Z",
+    "description": "\nSubmit a call recording and get a full AI-powered analysis delivered automatically. Your recording is transcribed with OpenAI Whisper, then GPT-4o breaks down sentiment, objections, buying signals, deal risk, next steps, and a ready-to-send follow-up email. Results are saved to Airtable, posted to your Slack channel, and shown to the rep as a rich summary page the moment the form is submitted. This workflow is built for sales teams, revenue operations managers, and sales coaches who want consistent call intelligence without manual review.\n\n---\n\n## What This Workflow Does\n\n- **Automatic transcription** — downloads your audio file and converts it to text using OpenAI Whisper, handling mp3, wav, and m4a formats\n- **Deep AI analysis** — GPT-4o reads the full transcript and identifies sentiment, deal risk, momentum, objections with direct quotes, and buying signals\n- **Deal stage recommendation** — suggests whether the deal should advance, stay, or retreat based on what actually happened on the call\n- **Coaching feedback** — generates one specific, actionable coaching tip for the rep based on their talk ratio and call behaviour\n- **CRM-ready note** — writes a professional 2–3 sentence note you can paste directly into any CRM\n- **Follow-up email draft** — generates a warm, personalised follow-up email referencing something the prospect actually said\n- **Multi-channel delivery** — saves the full analysis to Airtable, sends a summary to Slack, and shows the rep an HTML results page instantly\n\n---\n\n## Setup Requirements\n\n### Tools you'll need\n\n- Active n8n instance (self-hosted or n8n Cloud)\n- OpenAI account with API access (Whisper + GPT-4o)\n- Airtable account with a base and table ready\n- Slack workspace with an incoming webhook configured\n\n**Estimated Setup Time: 15–20 minutes**\n\n---\n\n## Step-by-Step Setup\n\n1. **Get your OpenAI API key**\n   Go to https://platform.openai.com/api-keys and create a new secret key.\n   In n8n, open the **4. OpenAI — Transcribe with Whisper1** node → find the Authorization header → replace `YOUR_OPENAI_API_KEY` with your key.\n   &gt; ⚠️ This key appears in 1 node (Whisper). The AI Agent uses a separate n8n credential — see step 2.\n\n2. **Connect your OpenAI credential for the AI Agent**\n   In n8n: go to Credentials → Add credential → OpenAI API → paste your API key.\n   Open the **7. OpenAI — Chat Model (GPT-4o)** node → select your new credential from the dropdown.\n\n3. **Connect your Airtable credential**\n   In n8n: go to Credentials → Add credential → Airtable Personal Access Token → paste your token (get it at https://airtable.com/create/tokens).\n   Open the **9. Airtable — Save Full Analysis** node → select your credential, then choose your base and table from the dropdowns.\n   Your Airtable table should have columns matching these names exactly: `Submission ID`, `Rep Name`, `Rep Email`, `Company`, `Contact Name`, `Contact Email`, `Deal Stage (Before)`, `Deal Stage (AI Recommended)`, `Deal Value`, `Call Duration (min)`, `Word Count`, `Sentiment`, `Sentiment Score`, `Primary Intent`, `Deal Risk`, `Deal Momentum`, `Objection Count`, `Buying Signal Count`, `Competitors Mentioned`, `Summary`, `CRM Note`, `Coaching Tip`, `Rep Talk Ratio`, `Follow-up Email Draft`, `Submitted At`, `Processed At`.\n\n4. **Connect your Slack webhook**\n   In Slack, go to https://api.slack.com/apps → create an app → enable Incoming Webhooks → copy the webhook URL.\n   In n8n, go to Credentials → Add credential → Slack → Webhook → paste the URL.\n   Open the **10. Slack — Post Analysis to Channel** node → select your Slack credential.\n\n5. **Activate the workflow**\n   Click the toggle at the top of the workflow editor to set it to Active. Copy the form URL from the **1. Form — Sales Rep Submits Call1** node and share it with your sales team.\n\n---\n\n## How It Works (Step by Step)\n\n**Step 1 — Form (n8n Form Trigger)**\nThe sales rep fills out a web form with their name, email, the prospect's details, current deal stage, estimated deal value, and a direct link to the audio recording. They can also add optional notes before the analysis runs — for example, flagging that a competitor was mentioned. When they submit, the workflow starts automatically.\n\n**Step 2 — Code: Clean & Validate Form Data**\nThe workflow reads and cleans every field from the form submission. It strips extra whitespace, normalises email addresses to lowercase, and checks that required fields — rep name, email, company, contact name, and audio link — are all present. If anything is missing, the workflow stops and returns an error immediately. A unique submission ID is generated (formatted as `CALL-` followed by a timestamp) so every call record is trackable.\n\n**Step 3 — HTTP: Download Audio File**\nThe workflow makes an HTTP request to the audio URL the rep provided and downloads the file. It supports any direct-download link to an mp3, wav, or m4a file. A 60-second timeout is set in case the file is slow to download.\n\n**Step 4 — OpenAI: Transcribe with Whisper**\nThe downloaded audio is sent to OpenAI's Whisper API. Whisper converts the spoken audio into a full text transcript with timestamps. The response format is set to `verbose_json` so the workflow receives structured output. This step has a 3-minute timeout for long calls.\n\n**Step 5 — Code: Merge Transcript with Call Data**\nThe transcript text is pulled from the Whisper response and checked — if it comes back empty, the workflow throws an error explaining the audio may be silent or corrupted. The word count is calculated, then the transcript is merged together with all the original form data so the next step has everything it needs in one place.\n\n**Step 6 — AI Agent: GPT-4o Sales Analysis**\nThe full transcript and all call metadata are passed to a GPT-4o AI agent with a detailed system prompt. The agent is instructed to return a single valid JSON object containing: a 3–5 sentence summary, overall sentiment with a score out of 100, primary prospect intent, deal risk level, deal momentum, a recommended deal stage, estimated rep talk ratio, a list of objections with direct quotes, buying signals, competitor names, next steps with owners and deadlines, a coaching tip, a CRM note, and a personalised follow-up email draft. The agent is told never to hallucinate — if something isn't in the transcript, it returns an empty array or null.\n\n**Step 7 — Code: Parse & Combine AI Analysis**\nThe raw text output from the AI agent is cleaned of any accidental markdown formatting, then parsed as JSON. The parsed analysis is merged with the original call data into one complete record, and a `processedAt` timestamp is added.\n\n**Step 8, 9, 10 — Fan-out: Airtable, Slack, and HTML Page**\nThe complete record is sent to three places simultaneously. The **9. Airtable — Save Full Analysis** node creates a new row with all 26 fields. The **10. Slack — Post Analysis to Channel** node sends a notification to your sales channel. The **11. Code — Build HTML Confirmation Page** node builds a formatted HTML results page — including summary, sentiment score, objections, next steps, coaching tip, and the full follow-up email draft — which is returned directly to the rep via the **12. Webhook — Show Results Page to Rep** node as their form confirmation.\n\n---\n\n## Key Features\n\n✅ **Audio format flexibility** — works with mp3, wav, and m4a files from any direct-download URL\n✅ **Quote-backed objection detection** — every objection includes a direct quote from the transcript, not a paraphrase\n✅ **Deal stage intelligence** — compares the rep's reported stage with the AI's recommended stage after the call\n✅ **Rep talk ratio** — estimates how much the rep vs. the prospect spoke, enabling targeted coaching\n✅ **Zero-hallucination rules** — the AI is instructed to return empty arrays rather than guess when data isn't present\n✅ **Instant rep results page** — the rep sees their full analysis the moment they submit, no waiting for an email\n✅ **Parallel delivery** — Airtable, Slack, and the results page are all updated in the same execution, not sequentially\n✅ **Submission IDs** — every call gets a unique ID for tracking, filtering, and referencing in follow-up conversations\n\n---\n\n## Customisation Options\n\n**Switch to a cheaper model for high-volume teams**\nOpen the **7. OpenAI — Chat Model (GPT-4o)** node and change the model from `gpt-4o` to `gpt-4o-mini`. This reduces cost by roughly 15× with minimal quality loss for standard sales calls.\n\n**Add a CRM update step after Airtable**\nAfter the **9. Airtable — Save Full Analysis** node, add a HubSpot or Salesforce node to automatically update the deal stage, log the CRM note, and create a follow-up task using the next steps from the analysis.\n\n**Tag the rep in Slack by email**\nIn the **10. Slack — Post Analysis to Channel** node, extend the message template to look up the rep's Slack user ID by their email address using the Slack `users.lookupByEmail` API, then `@mention` them directly in the notification.\n\n**Add a language detection step**\nBefore the AI agent, add a Code node that checks `transcript.length` and language — then pass the detected language to the Whisper node's `language` parameter and adjust the GPT-4o prompt to respond in the same language as the transcript.\n\n**Send the follow-up email automatically**\nAfter the HTML page step, add a Gmail or Outlook node that sends the `analysis.follow_up_email` directly to the prospect's email address (`contactEmail`), so reps can approve and send in one click rather than copy-pasting.\n\n---\n\n## Troubleshooting\n\n**Whisper transcription returns an error:**\n- Check that the audio URL is a direct download link — not a Google Drive share link or a page URL\n- Confirm the file format is mp3, wav, or m4a\n- Verify your OpenAI API key in the **4. OpenAI — Transcribe with Whisper1** node is correct and has available credits\n- Increase the download timeout in the **3. HTTP — Download Audio File1** node if the file is large\n\n**GPT-4o returns an empty or unparseable response:**\n- Open the **8. Code — Parse & Combine AI Analysis** node and check the error message — it will show the first 300 characters of the raw GPT-4o output\n- Make sure the OpenAI credential in the **7. OpenAI — Chat Model (GPT-4o)** node has GPT-4o access enabled on your OpenAI account\n- If the response contains markdown fences, the cleanup code in node 8 handles this automatically — but check that the credential is correctly selected\n\n**Airtable row not being created:**\n- Confirm your Airtable table has columns with names that match exactly (including spaces and capitalisation) — e.g. `Deal Stage (Before)` not `Deal Stage Before`\n- Check that your Airtable Personal Access Token has write access to the correct base\n\n**Slack notification not arriving:**\n- Test your webhook URL directly using a tool like Postman or curl to confirm it's active\n- Verify the credential is selected in the **10. Slack — Post Analysis to Channel** node — a missing credential causes the node to silently fail due to `continueOnFail: true`\n\n**The form submits but the rep never sees the results page:**\n- The workflow uses `responseMode: lastNode`, meaning the form waits for the final webhook response node to complete. If any step errors out silently (Airtable or Slack failures are set to continue on fail), the HTML page should still render — check the **12. Webhook — Show Results Page to Rep** node execution log for errors.\n\n---\n\n## Support\n\nNeed help setting this up or want a custom version built for your team or agency?\n\n📧 Email:[info@isawow.com](info@isawow.com)\n🌐 Website:[https://isawow.com/](https://isawow.com/)\n",
+    "workflow": {
+      "meta": {
+        "instanceId": "bc8ca75c203589705ae2e446cad7181d6f2a7cc1766f958ef9f34810e53b8cb2",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "22022dfd-8c25-441a-8a35-83a676d6b94e",
+          "name": "Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -976,
+            672
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 540,
+            "height": 1012,
+            "content": "## Sales Call AI Analyzer — Whisper + GPT-4o\n\nFor sales managers and revenue teams who want automatic AI analysis of every sales call without manual review. A sales rep submits a call recording link via a web form. The workflow downloads the audio, transcribes it using OpenAI Whisper, and sends the full transcript to a GPT-4o agent for deep analysis. Results include sentiment, objections, buying signals, deal risk, next steps, a coaching tip, and a ready-to-send follow-up email. Everything is saved to Airtable, posted to Slack, and shown to the rep as a rich results page.\n\n## How it works\n- **1. Form — Sales Rep Submits Call** collects rep details, prospect info, deal stage, and audio link\n- **2. Code — Clean and Validate Form Data** normalizes inputs and creates a unique submission ID\n- **3. HTTP — Download Audio File** downloads the audio from the provided URL\n- **4. OpenAI — Transcribe with Whisper** sends the audio to Whisper and returns a full transcript\n- **5. Code — Merge Transcript with Call Data** combines the transcript with all call metadata\n- **6. AI Agent — GPT-4o Sales Analysis** analyses the transcript and returns structured JSON\n- **8. Code — Parse and Combine AI Analysis** cleans and merges the GPT-4o response\n- **9. Airtable — Save Full Analysis** saves the complete record to your Airtable base\n- **10. Slack — Post Analysis to Channel** posts a summary alert to your sales Slack channel\n- **11. Code — Build HTML Confirmation Page** builds the rep-facing results page\n- **12. Webhook — Show Results Page to Rep** returns the HTML page directly to the rep\n\n## Set up steps\n1. In **4. OpenAI — Transcribe with Whisper** — replace YOUR_TOKEN_HERE with your OpenAI API key using an n8n Header Auth credential\n2. In **7. OpenAI — Chat Model (GPT-4o)** — connect your OpenAI credential\n3. In **9. Airtable — Save Full Analysis** — connect your Airtable credential and select your base and table\n4. In **10. Slack — Post Analysis to Channel** — connect your Slack webhook credential\n5. Activate the workflow and share the form URL with your sales team"
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "39c73128-1125-404b-93e5-ada5677ebbc7",
+          "name": "Section — Form Intake",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -400,
+            848
+          ],
+          "parameters": {
+            "color": 5,
+            "width": 420,
+            "height": 484,
+            "content": "## Form Intake\nSales rep submits call details and a direct audio link. Data is cleaned, validated, and assigned a unique submission ID."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "c944e335-b275-4321-a4e9-7cfcf9ccf44b",
+          "name": "Section — Audio Transcription",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            80,
+            848
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 628,
+            "height": 484,
+            "content": "## Audio Transcription\nAudio file is downloaded from the submitted URL and sent to OpenAI Whisper. The full transcript is merged back with all call metadata."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "cf90bad6-4949-4c51-9d38-4ab5a54ff2e9",
+          "name": "Section — AI Analysis",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            768,
+            784
+          ],
+          "parameters": {
+            "color": 6,
+            "width": 276,
+            "height": 564,
+            "content": "## AI Analysis\nGPT-4o analyses the transcript and returns structured JSON covering sentiment, objections, buying signals, deal risk, next steps, coaching tip, follow-up email, and a CRM note."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "65385a83-0da6-481e-b668-7394b743035f",
+          "name": "Section — Output and Delivery",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            1072,
+            784
+          ],
+          "parameters": {
+            "color": 4,
+            "width": 916,
+            "height": 564,
+            "content": "## Output and Delivery\nAnalysis is fanned out to Airtable for long-term records, Slack for team alerts, and an HTML results page shown directly to the rep in the browser."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "99370c45-fbaa-4234-aab3-726eabdf721e",
+          "name": "Note — Exposed API Key",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            -16,
+            1376
+          ],
+          "parameters": {
+            "color": 3,
+            "width": 796,
+            "content": "## ⚠️ API Key Exposed in Plain Text\nThe OpenAI API key is hard-coded as a raw string in this node. Anyone with access to the workflow can read it. Replace YOUR_TOKEN_HERE by creating an n8n Header Auth credential and selecting it via the node credential picker. Never paste API keys directly into request headers."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "a2c0ce6d-4b56-4905-ae8c-be48a3504d58",
+          "name": "1. Form — Sales Rep Submits Call",
+          "type": "n8n-nodes-base.formTrigger",
+          "position": [
+            -368,
+            1024
+          ],
+          "webhookId": "f24bcdcd-d256-43cd-85be-58ad31d3f6d2",
+          "parameters": {
+            "options": {},
+            "formTitle": "Sales Call Submission",
+            "formFields": {
+              "values": [
+                {
+                  "fieldLabel": "Your Name",
+                  "placeholder": "e.g. Jane Smith",
+                  "requiredField": true
+                },
+                {
+                  "fieldType": "email",
+                  "fieldLabel": "Your Email",
+                  "placeholder": "e.g. user@example.com",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Prospect Company Name",
+                  "placeholder": "e.g. Acme Corp",
+                  "requiredField": true
+                },
+                {
+                  "fieldLabel": "Prospect Contact Name",
+                  "placeholder": "e.g. Bob Johnson",
+                  "requiredField": true
+                },
+                {
+                  "fieldType": "email",
+                  "fieldLabel": "Prospect Email",
+                  "placeholder": "e.g. user@example.com",
+                  "requiredField": true
+                },
+                {
+                  "fieldType": "dropdown",
+                  "fieldLabel": "Current Deal Stage",
+                  "fieldOptions": {
+                    "values": [
+                      {
+                        "option": "Prospecting"
+                      },
+                      {
+                        "option": "Discovery"
+                      },
+                      {
+                        "option": "Demo"
+                      },
+                      {
+                        "option": "Proposal"
+                      },
+                      {
+                        "option": "Negotiation"
+                      },
+                      {
+                        "option": "Closed Won"
+                      },
+                      {
+                        "option": "Closed Lost"
+                      }
+                    ]
+                  },
+                  "requiredField": true
+                },
+                {
+                  "fieldType": "number",
+                  "fieldLabel": "Estimated Deal Value (USD)",
+                  "placeholder": "e.g. 15000"
+                },
+                {
+                  "fieldType": "url",
+                  "fieldLabel": "Call Recording Direct Link",
+                  "placeholder": "Paste a direct download link to the audio file (mp3, wav, m4a)",
+                  "requiredField": true
+                },
+                {
+                  "fieldType": "number",
+                  "fieldLabel": "Call Duration (minutes)",
+                  "placeholder": "e.g. 32"
+                },
+                {
+                  "fieldType": "textarea",
+                  "fieldLabel": "Any notes before analysis?",
+                  "placeholder": "Optional — e.g. prospect mentioned budget cuts, competitor Salesforce"
+                }
+              ]
+            },
+            "responseMode": "lastNode",
+            "formDescription": "Submit your sales call recording for automatic AI analysis. You will receive a Slack summary with insights, objections, and next steps."
+          },
+          "typeVersion": 2.2
+        },
+        {
+          "id": "3d7f33b3-3207-4c1e-a5c6-4afe678bf5e9",
+          "name": "2. Code — Clean and Validate Form Data",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            -128,
+            1024
+          ],
+          "parameters": {
+            "jsCode": "// Pull and clean the form submission\nconst form = $input.first().json;\n\n// Build a clean, normalized call record from the form fields\nconst repName        = (form['Your Name']              || '').trim();\nconst repEmail       = (form['Your Email']             || '').trim().toLowerCase();\nconst company        = (form['Prospect Company Name']  || '').trim();\nconst contactName    = (form['Prospect Contact Name']  || '').trim();\nconst contactEmail   = (form['Prospect Email']         || '').trim().toLowerCase();\nconst dealStage      = (form['Current Deal Stage']     || 'Unknown').trim();\nconst dealValue      = parseFloat(form['Estimated Deal Value (USD)']) || null;\nconst audioUrl       = (form['Call Recording Direct Link'] || '').trim();\nconst durationMins   = parseInt(form['Call Duration (minutes)']) || 0;\nconst repNotes       = (form['Any notes before analysis?'] || '').trim();\n\n// Basic checks\nif (!repName || !repEmail)    throw new Error('Rep name and email are required.');\nif (!company || !contactName) throw new Error('Prospect company and contact name are required.');\nif (!audioUrl)                throw new Error('Audio recording link is required.');\n\nconst submissionId = 'CALL-' + Date.now();\n\nreturn [{\n  json: {\n    submissionId,\n    repName,\n    repEmail,\n    company,\n    contactName,\n    contactEmail,\n    dealStage,\n    dealValue,\n    audioUrl,\n    durationMins,\n    repNotes,\n    submittedAt: new Date().toISOString()\n  }\n}];\n"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "90cfeb2e-d1f6-42d1-b257-e8999a72d420",
+          "name": "3. HTTP — Download Audio File",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            128,
+            1024
+          ],
+          "parameters": {
+            "url": "={{ $json.audioUrl }}",
+            "options": {
+              "timeout": 60000,
+              "response": {
+                "response": {
+                  "responseFormat": "file"
+                }
+              }
+            }
+          },
+          "typeVersion": 4.2,
+          "continueOnFail": true
+        },
+        {
+          "id": "8c7a1462-1754-4e5a-99e7-bcc7e01d701c",
+          "name": "4. OpenAI — Transcribe with Whisper",
+          "type": "n8n-nodes-base.httpRequest",
+          "position": [
+            368,
+            1024
+          ],
+          "parameters": {
+            "url": "https://api.openai.com/v1/audio/transcriptions",
+            "method": "POST",
+            "options": {
+              "timeout": 180000
+            },
+            "sendBody": true,
+            "contentType": "multipart-form-data",
+            "sendHeaders": true,
+            "bodyParameters": {
+              "parameters": [
+                {
+                  "name": "model",
+                  "value": "whisper-1"
+                },
+                {
+                  "name": "response_format",
+                  "value": "verbose_json"
+                },
+                {
+                  "name": "language",
+                  "value": "en"
+                }
+              ]
+            },
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer YOUR_TOKEN_HERE"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2,
+          "continueOnFail": true
+        },
+        {
+          "id": "9abd2143-9084-4588-a847-3a852b06265f",
+          "name": "5. Code — Merge Transcript with Call Data",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            608,
+            1024
+          ],
+          "parameters": {
+            "jsCode": "// Merge Whisper output with the original form data\nconst whisper  = $input.first().json;\nconst formData = $('2. Code — Clean and Validate Form Data').first().json;\n\nif (!whisper || whisper.error) {\n  throw new Error('Whisper transcription failed: ' + (whisper?.error?.message || 'Unknown error'));\n}\n\nconst transcript = (whisper.text || '').trim();\nif (!transcript) throw new Error('Transcription came back empty — audio may be silent or corrupted.');\n\nconst wordCount = transcript.split(/\\s+/).filter(w => w).length;\n\nreturn [{\n  json: {\n    ...formData,\n    transcript,\n    wordCount,\n    transcribedAt: new Date().toISOString()\n  }\n}];\n"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "ab26a9d2-da3f-4b93-b39b-f8de606f740f",
+          "name": "6. AI Agent — GPT-4o Sales Analysis",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "position": [
+            816,
+            1024
+          ],
+          "parameters": {
+            "text": "=You are an expert sales call analyst. You will receive a sales call transcript along with call metadata. Your job is to analyze the transcript deeply and return a single valid JSON object — nothing else. No explanation, no markdown, no code fences. Only raw JSON.\n\n---\n\nINPUT YOU WILL RECEIVE:\n- repName: Name of the sales rep\n- company: Prospect company name\n- contactName: Prospect contact person\n- dealStage: Current deal stage (e.g. Discovery, Demo, Proposal)\n- dealValue: Estimated deal value in USD\n- durationMins: Call duration in minutes\n- repNotes: Any notes added by the rep before analysis\n- transcript: Full text transcript of the sales call\n\n---\n\nYOUR JOB:\nCarefully read the transcript and return this exact JSON structure:\n\n{\n  \"summary\": \"A clear 3–5 sentence summary of what happened on this call. What was discussed, what the prospect said, and how the call ended.\",\n\n  \"overall_sentiment\": \"Positive | Neutral | Negative\",\n\n  \"sentiment_score\": A number from 0 to 100. 0 = very negative, 100 = very positive.,\n\n  \"primary_intent\": \"One short phrase describing what the prospect mainly wants. Example: 'Evaluating alternatives to current tool' or 'Ready to buy pending legal approval'\",\n\n  \"deal_risk\": \"Low | Medium | High\",\n\n  \"deal_momentum\": \"Accelerating | Steady | Stalling | Declining\",\n\n  \"recommended_stage\": \"The deal stage you recommend AFTER this call. Choose from: Prospecting, Discovery, Demo, Proposal, Negotiation, Closed Won, Closed Lost\",\n\n  \"rep_talk_ratio\": \"Estimate of how much the rep talked vs the prospect. Example: '65% rep / 35% prospect'\",\n\n  \"objections\": [\n    {\n      \"type\": \"Price | Timeline | Competition | Authority | Need | Other\",\n      \"quote\": \"A short direct quote from the transcript showing this objection\",\n      \"was_addressed\": true or false\n    }\n  ],\n\n  \"buying_signals\": [\n    \"List each buying signal as a short sentence. Example: 'Prospect asked about onboarding timeline' or 'Prospect mentioned they have budget approved'\"\n  ],\n\n  \"competitors_mentioned\": [\n    \"List any competitor names mentioned on the call. Empty array if none.\"\n  ],\n\n  \"next_steps\": [\n    {\n      \"action\": \"What needs to happen next\",\n      \"owner\": \"rep | prospect | both\",\n      \"commitment\": \"Was this committed to on the call? yes or no\",\n      \"deadline\": \"Deadline if mentioned, otherwise null\"\n    }\n  ],\n\n  \"coaching_tip\": \"One specific, actionable coaching tip for the rep based on this call. Be direct and helpful. Example: 'You spoke for 70% of the call — on the next call, ask more open-ended questions and let the prospect lead.'\",\n\n  \"crm_note\": \"A 2–3 sentence CRM note ready to paste into a CRM. Professional tone. Include deal stage, key outcomes, and next steps.\",\n\n  \"follow_up_email\": \"A ready-to-send follow-up email from the rep to the prospect. Include subject line at the top like 'Subject: ...'. Keep it professional, warm, and under 150 words. Reference something specific from the call.\"\n}\n\n---\n\nSTRICT RULES:\n1. Output ONLY the JSON object above. No text before or after it.\n2. Do not wrap in markdown code blocks or backticks.\n3. If something is not mentioned in the transcript, use an empty array [] or null — do not guess or hallucinate.\n4. Quotes in the \"objections\" field must come directly from the transcript.\n5. The follow_up_email must feel personal — reference something the prospect actually said.\n6. Keep all text in English unless the transcript is in another language.",
+            "options": {},
+            "promptType": "define",
+            "hasOutputParser": true
+          },
+          "typeVersion": 3.1
+        },
+        {
+          "id": "5b4f0b02-287d-4e94-8836-16687e8de92c",
+          "name": "7. OpenAI — Chat Model (GPT-4o)",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            816,
+            1200
+          ],
+          "parameters": {
+            "model": {
+              "__rl": true,
+              "mode": "list",
+              "value": "gpt-4o"
+            },
+            "options": {},
+            "builtInTools": {}
+          },
+          "typeVersion": 1.3
+        },
+        {
+          "id": "63ef9dab-2758-4a97-9468-1de515c96603",
+          "name": "8. Code — Parse and Combine AI Analysis",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1120,
+            1024
+          ],
+          "parameters": {
+            "jsCode": "// Parse GPT-4o JSON response and merge everything\nconst gptResponse = $input.first().json;\nconst callData    = $('5. Code — Merge Transcript with Call Data').first().json;\n\nconst rawText = gptResponse?.choices?.[0]?.message?.content || gptResponse?.output || '';\nif (!rawText) throw new Error('GPT-4o returned an empty response.');\n\nconst clean = rawText.replace(/```json\\s*/gi, '').replace(/```/gi, '').trim();\n\nlet analysis;\ntry {\n  analysis = JSON.parse(clean);\n} catch (e) {\n  throw new Error('Could not parse GPT-4o output as JSON. Raw: ' + clean.substring(0, 300));\n}\n\nreturn [{\n  json: {\n    submissionId:  callData.submissionId,\n    repName:       callData.repName,\n    repEmail:      callData.repEmail,\n    company:       callData.company,\n    contactName:   callData.contactName,\n    contactEmail:  callData.contactEmail,\n    dealStage:     callData.dealStage,\n    dealValue:     callData.dealValue,\n    durationMins:  callData.durationMins,\n    wordCount:     callData.wordCount,\n    submittedAt:   callData.submittedAt,\n    analysis,\n    processedAt:   new Date().toISOString()\n  }\n}];\n"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "b9344df7-c761-4e7c-a3b9-84fb3d945d4e",
+          "name": "9. Airtable — Save Full Analysis",
+          "type": "n8n-nodes-base.airtable",
+          "position": [
+            1328,
+            896
+          ],
+          "parameters": {
+            "base": {
+              "__rl": true,
+              "mode": "list",
+              "value": "YOUR_AIRTABLE_BASE_ID"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "list",
+              "value": "YOUR_AIRTABLE_TABLE_ID"
+            },
+            "columns": {
+              "value": {
+                "Company": "={{ $json.company }}",
+                "Summary": "={{ $json.analysis.summary }}",
+                "CRM Note": "={{ $json.analysis.crm_note }}",
+                "Rep Name": "={{ $json.repName }}",
+                "Deal Risk": "={{ $json.analysis.deal_risk }}",
+                "Rep Email": "={{ $json.repEmail }}",
+                "Sentiment": "={{ $json.analysis.overall_sentiment }}",
+                "Deal Value": "={{ $json.dealValue }}",
+                "Word Count": "={{ $json.wordCount }}",
+                "Coaching Tip": "={{ $json.analysis.coaching_tip }}",
+                "Contact Name": "={{ $json.contactName }}",
+                "Processed At": "={{ $json.processedAt }}",
+                "Submitted At": "={{ $json.submittedAt }}",
+                "Contact Email": "={{ $json.contactEmail }}",
+                "Deal Momentum": "={{ $json.analysis.deal_momentum }}",
+                "Submission ID": "={{ $json.submissionId }}",
+                "Primary Intent": "={{ $json.analysis.primary_intent }}",
+                "Rep Talk Ratio": "={{ $json.analysis.rep_talk_ratio }}",
+                "Objection Count": "={{ ($json.analysis.objections || []).length }}",
+                "Sentiment Score": "={{ $json.analysis.sentiment_score }}",
+                "Buying Signal Count": "={{ ($json.analysis.buying_signals || []).length }}",
+                "Call Duration (min)": "={{ $json.durationMins }}",
+                "Deal Stage (Before)": "={{ $json.dealStage }}",
+                "Competitors Mentioned": "={{ ($json.analysis.competitors_mentioned || []).join(', ') }}",
+                "Follow-up Email Draft": "={{ $json.analysis.follow_up_email }}",
+                "Deal Stage (AI Recommended)": "={{ $json.analysis.recommended_stage }}"
+              },
+              "mappingMode": "defineBelow"
+            },
+            "options": {},
+            "operation": "create"
+          },
+          "typeVersion": 2.1,
+          "continueOnFail": true
+        },
+        {
+          "id": "2d6f3d79-9851-4ad1-bab9-8cc6b9481e97",
+          "name": "10. Slack — Post Analysis to Channel",
+          "type": "n8n-nodes-base.slack",
+          "position": [
+            1328,
+            1136
+          ],
+          "webhookId": "YOUR_SLACK_WEBHOOK_ID",
+          "parameters": {
+            "otherOptions": {},
+            "authentication": "webhook"
+          },
+          "typeVersion": 2.3,
+          "continueOnFail": true
+        },
+        {
+          "id": "4aef1caa-9d0f-4911-bc9a-5facabed6e69",
+          "name": "11. Code — Build HTML Confirmation Page",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            1568,
+            1024
+          ],
+          "parameters": {
+            "jsCode": "// Build a clean confirmation page shown to the rep after form submit\nconst d = $input.first().json;\nconst a = d.analysis || {};\n\nconst nextStepsHtml = (a.next_steps || []).map((s, i) =>\n  `<li><strong>${s.action}</strong> — <em>${s.owner}</em> (${s.commitment}${s.deadline ? ', by ' + s.deadline : ''})</li>`\n).join('') || '<li>None identified</li>';\n\nconst objHtml = (a.objections || []).map(o =>\n  `<li><strong>${o.type.toUpperCase()}</strong>: \"${o.quote}\" — Addressed: ${o.was_addressed ? '✅' : '❌'}</li>`\n).join('') || '<li>None detected</li>';\n\nconst html = `\n<div style=\"font-family:sans-serif;max-width:680px;margin:40px auto;padding:24px;border:1px solid #e0e0e0;border-radius:12px\">\n  <h2 style=\"color:#1a73e8\">✅ Call Analysis Complete</h2>\n  <p><strong>Submission ID:</strong> ${d.submissionId}</p>\n  <p><strong>Company:</strong> ${d.company} | <strong>Contact:</strong> ${d.contactName}</p>\n  <p><strong>Deal Stage:</strong> ${d.dealStage} → <strong>${a.recommended_stage || 'No change'}</strong></p>\n\n  <hr/>\n  <h3>Summary</h3>\n  <p>${a.summary || 'No summary generated.'}</p>\n\n  <h3>Sentiment: ${a.overall_sentiment} (${a.sentiment_score}/100)</h3>\n  <p>Intent: ${a.primary_intent} | Deal Risk: <strong>${a.deal_risk}</strong> | Momentum: ${a.deal_momentum}</p>\n\n  <h3>Objections</h3>\n  <ul>${objHtml}</ul>\n\n  <h3>Next Steps</h3>\n  <ul>${nextStepsHtml}</ul>\n\n  <h3>Coaching Tip</h3>\n  <p>${a.coaching_tip || 'N/A'}</p>\n\n  <h3>Suggested Follow-up Email</h3>\n  <pre style=\"background:#f5f5f5;padding:16px;border-radius:8px;white-space:pre-wrap\">${a.follow_up_email || ''}</pre>\n\n  <p style=\"color:#888;font-size:12px\">Full analysis saved to Airtable. Slack notification sent to your sales team.</p>\n</div>`;\n\nreturn [{ json: { html, submissionId: d.submissionId } }];\n"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "3e77b278-cd51-4415-83d5-1dd00a503964",
+          "name": "12. Webhook — Show Results Page to Rep",
+          "type": "n8n-nodes-base.respondToWebhook",
+          "position": [
+            1808,
+            1024
+          ],
+          "parameters": {
+            "options": {},
+            "respondWith": "html"
+          },
+          "typeVersion": 1.1
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "3. HTTP — Download Audio File": {
+          "main": [
+            [
+              {
+                "node": "4. OpenAI — Transcribe with Whisper",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. OpenAI — Chat Model (GPT-4o)": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "6. AI Agent — GPT-4o Sales Analysis",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "1. Form — Sales Rep Submits Call": {
+          "main": [
+            [
+              {
+                "node": "2. Code — Clean and Validate Form Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "4. OpenAI — Transcribe with Whisper": {
+          "main": [
+            [
+              {
+                "node": "5. Code — Merge Transcript with Call Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. AI Agent — GPT-4o Sales Analysis": {
+          "main": [
+            [
+              {
+                "node": "8. Code — Parse and Combine AI Analysis",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "2. Code — Clean and Validate Form Data": {
+          "main": [
+            [
+              {
+                "node": "3. HTTP — Download Audio File",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "11. Code — Build HTML Confirmation Page": {
+          "main": [
+            [
+              {
+                "node": "12. Webhook — Show Results Page to Rep",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. Code — Parse and Combine AI Analysis": {
+          "main": [
+            [
+              {
+                "node": "9. Airtable — Save Full Analysis",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "10. Slack — Post Analysis to Channel",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "11. Code — Build HTML Confirmation Page",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. Code — Merge Transcript with Call Data": {
+          "main": [
+            [
+              {
+                "node": "6. AI Agent — GPT-4o Sales Analysis",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 18,
+      "nodeTypes": {
+        "n8n-nodes-base.code": {
+          "count": 4
+        },
+        "n8n-nodes-base.slack": {
+          "count": 1
+        },
+        "n8n-nodes-base.airtable": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 6
+        },
+        "n8n-nodes-base.formTrigger": {
+          "count": 1
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 2
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 1
+        },
+        "n8n-nodes-base.respondToWebhook": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 1
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "isaWOW",
+      "username": "isawow",
+      "bio": "",
+      "verified": true,
+      "links": [
+        ""
+      ],
+      "avatar": "https://gravatar.com/avatar/8e8c1f17a2be80c0d1b0248585660dff3062cefeda523bbafeafcdb813f52ffa?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 2,
+        "icon": "file:airtable.svg",
+        "name": "n8n-nodes-base.airtable",
+        "codex": {
+          "data": {
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-goals-level-up-your-vocabulary-with-vonage-and-n8n/",
+                  "icon": "🎯",
+                  "label": "2021 Goals: Level Up Your Vocabulary With Vonage and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-sms-the-low-code-way-with-airtable-twilio-programmable-sms-and-n8n/",
+                  "icon": "📱",
+                  "label": "Sending SMS the Low-Code Way with Airtable, Twilio Programmable SMS, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automating-conference-organization-processes-with-n8n/",
+                  "icon": "🙋‍♀️",
+                  "label": "Automating Conference Organization Processes with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.airtable/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/airtable/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Airtable"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMDAgMTcwIj48cGF0aCBmaWxsPSIjZmNiNDAwIiBkPSJNODkgNC44IDE2LjIgMzQuOWMtNC4xIDEuNy00IDcuNC4xIDkuMWw3My4yIDI5YzYuNCAyLjYgMTMuNiAyLjYgMjAgMGw3My4yLTI5YzQuMS0xLjYgNC4xLTcuNC4xLTkuMWwtNzMtMzAuMUMxMDMuMiAyIDk1LjcgMiA4OSA0LjgiLz48cGF0aCBmaWxsPSIjMThiZmZmIiBkPSJNMTA1LjkgODguOXY3Mi41YzAgMy40IDMuNSA1LjggNi43IDQuNWw4MS42LTMxLjdjMS45LS43IDMuMS0yLjUgMy4xLTQuNVY1Ny4yYzAtMy40LTMuNS01LjgtNi43LTQuNUwxMDkgODQuM2MtMS45LjgtMy4xIDIuNi0zLjEgNC42Ii8+PHBhdGggZmlsbD0iI2Y4MmI2MCIgZD0ibTg2LjkgOTIuNi0yNC4yIDExLjctMi41IDEuMkw5LjEgMTMwYy0zLjIgMS42LTcuNC0uOC03LjQtNC40VjU3LjVjMC0xLjMuNy0yLjQgMS42LTMuM3EuNi0uNiAxLjItLjljMS4yLS43IDMtLjkgNC40LS4zbDc3LjUgMzAuN2M0IDEuNSA0LjMgNy4xLjUgOC45Ii8+PHBhdGggZmlsbD0iI2JhMWU0NSIgZD0ibTg2LjkgOTIuNi0yNC4yIDExLjctNTkuNC01MHEuNi0uNiAxLjItLjljMS4yLS43IDMtLjkgNC40LS4zbDc3LjUgMzAuN2M0IDEuNCA0LjMgNyAuNSA4LjgiLz48L3N2Zz4="
+        },
+        "displayName": "Airtable",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "icon": "file:slack.svg",
+        "name": "n8n-nodes-base.slack",
+        "codex": {
+          "data": {
+            "alias": [
+              "human",
+              "form",
+              "wait",
+              "hitl",
+              "approval"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/build-your-own-virtual-assistant-with-n8n-a-step-by-step-guide/",
+                  "icon": "👦",
+                  "label": "Build your own virtual assistant with n8n: A step by step guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-automatically-give-kudos-to-contributors-with-github-slack-and-n8n/",
+                  "icon": "👏",
+                  "label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.slack/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/slack/"
+                }
+              ]
+            },
+            "categories": [
+              "Communication",
+              "HITL"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "HITL": [
+                "Human in the Loop"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "Slack"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiBmaWxsPSIjZmZmIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB2aWV3Qm94PSIwIDAgMTUwLjg1MiAxNTAuODUyIj48dXNlIHhsaW5rOmhyZWY9IiNhIiB4PSIuOTI2IiB5PSIuOTI2Ii8+PHN5bWJvbCBpZD0iYSIgb3ZlcmZsb3c9InZpc2libGUiPjxnIHN0cm9rZS13aWR0aD0iMS44NTIiPjxwYXRoIGZpbGw9IiNlMDFlNWEiIHN0cm9rZT0iI2UwMWU1YSIgZD0iTTQwLjc0MSA5My41NWMwLTguNzM1IDYuNjA3LTE1Ljc3MiAxNC44MTUtMTUuNzcyczE0LjgxNSA3LjAzNyAxNC44MTUgMTUuNzcydjM4LjgyNGMwIDguNzM3LTYuNjA3IDE1Ljc3NC0xNC44MTUgMTUuNzc0cy0xNC44MTUtNy4wMzctMTQuODE1LTE1Ljc3MnoiLz48cGF0aCBmaWxsPSIjZWNiMjJkIiBzdHJva2U9IiNlY2IyMmQiIGQ9Ik05My41NSAxMDcuNDA4Yy04LjczNSAwLTE1Ljc3Mi02LjYwNy0xNS43NzItMTQuODE1czcuMDM3LTE0LjgxNSAxNS43NzItMTQuODE1aDM4LjgyNmM4LjczNSAwIDE1Ljc3MiA2LjYwNyAxNS43NzIgMTQuODE1cy03LjAzNyAxNC44MTUtMTUuNzcyIDE0LjgxNXoiLz48cGF0aCBmaWxsPSIjMmZiNjdjIiBzdHJva2U9IiMyZmI2N2MiIGQ9Ik03Ny43NzggMTUuNzcyQzc3Ljc3OCA3LjAzNyA4NC4zODUgMCA5Mi41OTMgMHMxNC44MTUgNy4wMzcgMTQuODE1IDE1Ljc3MnYzOC44MjZjMCA4LjczNS02LjYwNyAxNS43NzItMTQuODE1IDE1Ljc3MnMtMTQuODE1LTcuMDM3LTE0LjgxNS0xNS43NzJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMSIgc3Ryb2tlPSIjMzZjNWYxIiBkPSJNMTUuNzcyIDcwLjM3MUM3LjAzNyA3MC4zNzEgMCA2My43NjMgMCA1NS41NTZzNy4wMzctMTQuODE1IDE1Ljc3Mi0xNC44MTVoMzguODI2YzguNzM1IDAgMTUuNzcyIDYuNjA3IDE1Ljc3MiAxNC44MTVzLTcuMDM3IDE0LjgxNS0xNS43NzIgMTQuODE1eiIvPjxnIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiPjxwYXRoIGZpbGw9IiNlY2IyMmQiIHN0cm9rZT0iI2VjYjIyZCIgZD0iTTc3Ljc3OCAxMzMuMzMzYzAgOC4yMDggNi42MDcgMTQuODE1IDE0LjgxNSAxNC44MTVzMTQuODE1LTYuNjA3IDE0LjgxNS0xNC44MTUtNi42MDctMTQuODE1LTE0LjgxNS0xNC44MTVINzcuNzc4eiIvPjxwYXRoIGZpbGw9IiMyZmI2N2MiIHN0cm9rZT0iIzJmYjY3YyIgZD0iTTEzMy4zMzQgNzAuMzcxaC0xNC44MTVWNTUuNTU2YzAtOC4yMDcgNi42MDctMTQuODE1IDE0LjgxNS0xNC44MTVzMTQuODE1IDYuNjA3IDE0LjgxNSAxNC44MTUtNi42MDcgMTQuODE1LTE0LjgxNSAxNC44MTV6Ii8+PHBhdGggZmlsbD0iI2UwMWU1YSIgc3Ryb2tlPSIjZTAxZTVhIiBkPSJNMTQuODE1IDc3Ljc3OEgyOS42M3YxNC44MTVjMCA4LjIwNy02LjYwNyAxNC44MTUtMTQuODE1IDE0LjgxNVMwIDEwMC44IDAgOTIuNTkzczYuNjA3LTE0LjgxNSAxNC44MTUtMTQuODE1eiIvPjxwYXRoIGZpbGw9IiMzNmM1ZjEiIHN0cm9rZT0iIzM2YzVmMSIgZD0iTTcwLjM3MSAxNC44MTVWMjkuNjNINTUuNTU2Yy04LjIwNyAwLTE0LjgxNS02LjYwNy0xNC44MTUtMTQuODE1UzQ3LjM0OCAwIDU1LjU1NiAwczE0LjgxNSA2LjYwNyAxNC44MTUgMTQuODE1eiIvPjwvZz48L2c+PC9zeW1ib2w+PC9zdmc+"
+        },
+        "displayName": "Slack",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 6,
+            "name": "Communication"
+          },
+          {
+            "id": 28,
+            "name": "HITL"
+          }
+        ]
+      },
+      {
+        "id": 535,
+        "icon": "file:webhook.svg",
+        "name": "n8n-nodes-base.respondToWebhook",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.respondtowebhook/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes",
+              "Utility"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Respond to Webhook"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTM1IDM3Yy0yLjIgMC00LTEuOC00LTRzMS44LTQgNC00IDQgMS44IDQgNC0xLjggNC00IDQiLz48cGF0aCBmaWxsPSIjMzc0NzRmIiBkPSJNMzUgNDNjLTMgMC01LjktMS40LTcuOC0zLjdsMy4xLTIuNWMxLjEgMS40IDIuOSAyLjMgNC43IDIuMyAzLjMgMCA2LTIuNyA2LTZzLTIuNy02LTYtNmMtMSAwLTIgLjMtMi45LjdsLTEuNyAxTDIzLjMgMTZsMy41LTEuOSA1LjMgOS40YzEtLjMgMi0uNSAzLS41IDUuNSAwIDEwIDQuNSAxMCAxMFM0MC41IDQzIDM1IDQzIi8+PHBhdGggZmlsbD0iIzM3NDc0ZiIgZD0iTTE0IDQzQzguNSA0MyA0IDM4LjUgNCAzM2MwLTQuNiAzLjEtOC41IDcuNS05LjdsMSAzLjlDOS45IDI3LjkgOCAzMC4zIDggMzNjMCAzLjMgMi43IDYgNiA2czYtMi43IDYtNnYtMmgxNXY0SDIzLjhjLS45IDQuNi01IDgtOS44IDgiLz48cGF0aCBmaWxsPSIjZTkxZTYzIiBkPSJNMTQgMzdjLTIuMiAwLTQtMS44LTQtNHMxLjgtNCA0LTQgNCAxLjggNCA0LTEuOCA0LTQgNCIvPjxwYXRoIGZpbGw9IiMzNzQ3NGYiIGQ9Ik0yNSAxOWMtMi4yIDAtNC0xLjgtNC00czEuOC00IDQtNCA0IDEuOCA0IDQtMS44IDQtNCA0Ii8+PHBhdGggZmlsbD0iI2U5MWU2MyIgZD0ibTE1LjcgMzQtMy40LTIgNS45LTkuN2MtMi0xLjktMy4yLTQuNS0zLjItNy4zIDAtNS41IDQuNS0xMCAxMC0xMHMxMCA0LjUgMTAgMTBjMCAuOS0uMSAxLjctLjMgMi41bC0zLjktMWMuMS0uNS4yLTEgLjItMS41IDAtMy4zLTIuNy02LTYtNnMtNiAyLjctNiA2YzAgMi4xIDEuMSA0IDIuOSA1LjFsMS43IDF6Ii8+PC9zdmc+"
+        },
+        "displayName": "Respond to Webhook",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 7,
+            "name": "Utility"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1225,
+        "icon": "file:form.svg",
+        "name": "n8n-nodes-base.formTrigger",
+        "codex": {
+          "data": {
+            "alias": [
+              "table",
+              "submit",
+              "post"
+            ],
+            "resources": {
+              "generic": [],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.formtrigger/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Other Trigger Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"trigger\"]",
+        "defaults": {
+          "name": "On form submission"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NiIgaGVpZ2h0PSI0MCIgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iIzAwQjdCQyIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMzQuOTc4IDM3LjczMmExLjU2IDEuNTYgMCAwIDEtMS41NjIgMS41NjNINi4yNmExLjU2IDEuNTYgMCAwIDEtMS41NjMtMS41NjNWOS42MDdjMC0uNDA1LjE1Ny0uNzk0LjQzOC0xLjA4Nmw2LjMwNC02LjUzMXY1LjM0NEg4LjIxM2ExLjE3MiAxLjE3MiAwIDEgMCAwIDIuMzQzaDQuNDNhMS4xNyAxLjE3IDAgMCAwIDEuMTcxLTEuMTcxVi4yMzJoMTkuNjAyYTEuNTYgMS41NiAwIDAgMSAxLjU2MiAxLjU2M3YxMC4zMjdsLTIuODYgMi44Ni04LjI1MiA4LjI3NmE0MTMuMDA2IDQxMy4wMDYgMCAwIDEtMS42NTQgMS42NjJsLS4zMzcuMzM3YTIgMiAwIDAgMC0uNTU3IDEuMDhMMjAuMyAzMS45MjJjLS4xMDguNjM4LS4yMTUgMS4wNzkuMjExIDEuNDE4LjQwMy4zMi45LjE3NCAxLjU0LjA2Nmw1LjQwOC0uOTI4YTIgMiAwIDAgMCAxLjA4LS41NTZsNi40NC02LjQyOXptLTI0LjAzLTIxLjI2NWExLjE4IDEuMTggMCAwIDAgMS4xNzEgMS4xNzJoMTMuMTYzYTEuMTcyIDEuMTcyIDAgMSAwIDAtMi4zNDRIMTIuMTE5YTEuMTcgMS4xNyAwIDAgMC0xLjE3MiAxLjE3Mm03LjI5NCAxNC43NjZhMS4xNyAxLjE3IDAgMCAwLTEuMTcyLTEuMTcySDEyLjEyYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNC45NTFhMS4xNyAxLjE3IDAgMCAwIDEuMTcyLTEuMTcybS44Ni03LjM5MWExLjE3IDEuMTcgMCAwIDAtMS4xNzItMS4xNzJoLTUuODExYTEuMTcyIDEuMTcyIDAgMSAwIDAgMi4zNDNoNS44MWExLjE2NCAxLjE2NCAwIDAgMCAxLjE3My0xLjE3MSIgY2xpcC1ydWxlPSJldmVub2RkIi8+PHBhdGggZmlsbD0iIzAwQjdCQyIgZD0ibTMzLjUzMiAxNi4zOTcgNC4yODktNC4yODkgMy43NTggMy43MSAxLjYxNy0xLjYxNiAyLjI1OCAyLjI1N2MuMjE4LjIxOC4zNC41MTMuMzQzLjgyLS4wMDIuMzExLS4xMjUuNjA4LS4zNDQuODNsLTYuODA0IDYuNzk2YTEuMTMgMS4xMyAwIDAgMS0uODI4LjM0MyAxLjE1IDEuMTUgMCAwIDEtLjgyOC0uMzQzIDEuMTggMS4xOCAwIDAgMSAwLTEuNjU3bDUuOTc2LTUuOTY4LTEuMzEyLTEuMzEzLTEuMzgzIDEuNDE0LTEzLjE0OSAxMy4xMjUtNC42MTcuNzgyLjc4Mi00LjYxNy4zMzYtLjMzNyAyLjU2MiAyLjU1NWExLjEgMS4xIDAgMCAwIC44MjguMzQ0Yy4zMTIuMDA1LjYxMi0uMTIuODI4LS4zNDRhMS4xOCAxLjE4IDAgMCAwIDAtMS42NTZsLTIuNTYyLTIuNTYyek00NC43MzYgMTIuMjRjMCAuNDE0LS4xNjMuODEtLjQ1NCAxLjEwMmwtLjkyMi45MTQtMy44NTItMy44MjguOTMtLjkzYTEuNTYzIDEuNTYzIDAgMCAxIDIuMjAzIDBsMS42NCAxLjY0MWMuMjkxLjI5My40NTUuNjkuNDU1IDEuMTAyIi8+PC9zdmc+"
+        },
+        "displayName": "n8n Form Trigger",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 39,
+        "name": "CRM"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}

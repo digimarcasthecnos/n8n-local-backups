@@ -1,0 +1,1476 @@
+{
+  "workflow": {
+    "id": 15059,
+    "name": "Score inbound B2B leads with OpenAI GPT-5.4 using Tally and Google Sheets",
+    "views": 0,
+    "recentViews": 0,
+    "totalViews": 0,
+    "createdAt": "2026-04-15T07:02:35.260Z",
+    "description": "## Description\n\nThis workflow automatically scores B2B leads by fetching and analyzing real company website data. It helps marketing and sales teams qualify inbound leads without manually researching each company.\n\n## Overview\n\nA marketing employee submits a company name, LinkedIn URL, website URL, and scoring criteria through a Tally form. The workflow fetches the company's actual homepage, strips it to readable text, and runs it through a chain of three AI agents: one to normalize the input, one to extract intelligence from the real website content (tech stack, industry, company size signals), and one to score the lead against the submitted criteria. The scored, enriched lead is logged to a Google Sheet with a grade and recommended next action for the sales rep.\n\n## Tools Used\n\n- **n8n**: The automation platform that orchestrates the workflow.\n- **Tally**: Free form builder used as the input layer where marketing employees submit companies to research. Create forms at [tally.so](https://tally.so).\n- **OpenAI (GPT-5.4)**: Powers three chained AI agents for data normalization, website content analysis, and lead scoring.\n- **Google Sheets**: Logs every scored lead with timestamp, company details, tech stack, score, grade, reasoning, and recommended action.\n\n## How it works\n\n1. A marketing employee fills out a Tally form with the company name, LinkedIn URL, website URL, and which scoring criteria matter (company size, industry fit, tech stack, geography, funding stage, hiring signals).\n2. The Tally Trigger fires and sends the raw submission to Agent 1, which normalizes the payload into clean structured fields.\n3. An HTTP Request node fetches the company's homepage HTML directly.\n4. A Code node strips the HTML down to plain readable text (removes scripts, styles, navigation, footers) and truncates to 6,000 characters.\n5. Agent 2 reads the actual homepage content and extracts structured intelligence: what the company does, their tech stack, company size signals, industry, and signals relevant to the buyer's criteria.\n6. Agent 3 scores the lead 1-10 against the submitted criteria using the real website intelligence, assigns a grade (A-D), and writes a recommended action for the sales rep.\n7. The enriched lead is appended to a Google Sheet.\n\n## How to Install\n\n1. **Import the Workflow**: Download the .json file and import it into your n8n instance.\n2. **Configure Tally**: Add your Tally API key in n8n credentials (get it from Tally &gt; Settings &gt; Integrations &gt; API). Select your Tally form in the Tally Trigger dropdown.\n3. **Configure OpenAI**: Add your OpenAI API key in n8n credentials.\n4. **Configure Google Sheets**: Add Google Sheets OAuth2 credentials.\n5. **Create a Tally Form**: Create a lead scoring form in Tally with these fields:\n   - Company Name (short text)\n   - LinkedIn URL (URL field)\n   - Company Website URL (URL field)\n   - Scoring Criteria (checkboxes: Company Size, Industry Fit, Tech Stack Match, Geography, Funding Stage, Hiring Signals)\n   - Additional Notes (long text, optional)\n6. **Set Up Google Sheets**: Create a spreadsheet with a tab named exactly `leads` and these column headers in Row 1 (all lowercase, copy-paste ready):\n\n   | timestamp | company | website_url | linkedin_url | criteria | company_summary | tech_stack | score | grade | reasoning | recommended_action |\n   |-----------|---------|-------------|--------------|----------|-----------------|------------|-------|-------|-----------|--------------------|\n\n7. **Connect the Sheet**: Paste your spreadsheet ID into the Append Lead to Sheet node.\n8. **Test**: Submit a test entry through your Tally form to verify data flows through all stages.\n\n## Use Cases\n\n- **Sales Teams**: Qualify inbound leads instantly instead of spending 15 minutes researching each company manually.\n- **SDRs and BDRs**: Prioritize outreach by grade. Focus on A-leads first, batch-reject D-leads.\n- **Marketing Ops**: Score MQLs at the point of capture before they enter the CRM.\n- **Partnership Teams**: Evaluate potential partner companies against tech stack and industry fit criteria.\n- **Agency New Business**: Screen prospect companies submitted by account managers before investing in a pitch.\n\n## Notes\n\n- The HTTP Request fetches the company homepage with a 15-second timeout. If a site blocks the request, the workflow continues with whatever data is available.\n- Homepage text is truncated to 6,000 characters to keep AI costs predictable.\n- GPT-5.4 costs approximately $2.50 per million input tokens and $15 per million output tokens. A typical lead scoring run uses 3 API calls, costing approximately $0.02-0.05 per lead depending on homepage size.\n- To adjust scoring thresholds or add your own criteria weighting, edit the Score the Lead agent's system prompt.\n- The workflow scores against whatever criteria the user submits in the Tally form, so different team members can use different criteria without editing the workflow.\n- Tally's checkbox question type maps well to scoring criteria — each checked option arrives as a separate value in the API payload, making it easy for the AI to evaluate against specific dimensions.\n\n## Connect with Me\n\n- Website: https://www.nofluff.online\n- YouTube: https://www.youtube.com/@YaronBeen/videos\n- LinkedIn: https://www.linkedin.com/in/yaronbeen/\n\n#n8n #automation #tally #openai #gpt5 #leadscoring #b2bsales #salesautomation #googlesheets #leadsqualification #aileadscoring #marketingautomation #n8nworkflow #workflow #nocode #salespipeline #prospecting #leadenrichment #techstack #tallyforms #inboundleads",
+    "workflow": {
+      "meta": {
+        "instanceId": "bbca2d850249c3efb1d7a248ac2480e8f70851d28971d0f6aac68304c20fe13a",
+        "templateCredsSetupCompleted": true
+      },
+      "nodes": [
+        {
+          "id": "877ed4c9-4222-4070-999f-26d05b261e92",
+          "name": "Normalise Tally Payload",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "onError": "continueErrorOutput",
+          "position": [
+            5744,
+            2224
+          ],
+          "parameters": {
+            "text": "=Extract structured fields from this raw Tally form submission:\n\n{{ JSON.stringify($json) }}\n\nReturn a JSON object with exactly: company_name (string), website_url (string), linkedin_url (string), criteria_list (array of strings), submission_id (string). If a field is missing use empty string or empty array. For website_url ensure it starts with https://.",
+            "options": {
+              "systemMessage": "You are a data extraction agent. Parse raw Tally form JSON and return clean structured fields.\n\nCRITICAL: Return ONLY a raw JSON object. No markdown fences, no explanation.\n\nOUTPUT SCHEMA: {\"company_name\": \"string\", \"website_url\": \"string\", \"linkedin_url\": \"string\", \"criteria_list\": [\"string\"], \"submission_id\": \"string\"}"
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "d493f616-dfa2-4531-9e23-26c4244d7f0f",
+          "name": "GPT-5.4 Model",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            5744,
+            2400
+          ],
+          "parameters": {
+            "model": "gpt-5.4",
+            "options": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "pzBaANXQjfIR7mQy",
+              "name": "OpenAI account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "e7b72072-4f0e-4b57-bd87-401b3f3a4a26",
+          "name": "Map Lead Fields",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            6112,
+            2208
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "set-001-a",
+                  "name": "company_name",
+                  "type": "string",
+                  "value": "={{ JSON.parse($json.output).company_name }}"
+                },
+                {
+                  "id": "set-001-b",
+                  "name": "website_url",
+                  "type": "string",
+                  "value": "={{ JSON.parse($json.output).website_url }}"
+                },
+                {
+                  "id": "set-001-c",
+                  "name": "linkedin_url",
+                  "type": "string",
+                  "value": "={{ JSON.parse($json.output).linkedin_url }}"
+                },
+                {
+                  "id": "set-001-d",
+                  "name": "criteria_list",
+                  "type": "array",
+                  "value": "={{ JSON.parse($json.output).criteria_list }}"
+                },
+                {
+                  "id": "set-001-e",
+                  "name": "submission_id",
+                  "type": "string",
+                  "value": "={{ JSON.parse($json.output).submission_id }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "5ba47b50-01da-4bd1-8db2-4d0f2ce68b83",
+          "name": "Fetch Company Homepage",
+          "type": "n8n-nodes-base.httpRequest",
+          "onError": "continueErrorOutput",
+          "position": [
+            6400,
+            2208
+          ],
+          "parameters": {
+            "url": "={{ $json.website_url }}",
+            "options": {
+              "timeout": 15000,
+              "redirect": {
+                "redirect": {
+                  "maxRedirects": 5
+                }
+              },
+              "response": {
+                "response": {
+                  "responseFormat": "text"
+                }
+              }
+            },
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "User-Agent",
+                  "value": "Mozilla/5.0 (compatible; research-bot/1.0)"
+                },
+                {
+                  "name": "Accept",
+                  "value": "text/html"
+                }
+              ]
+            }
+          },
+          "typeVersion": 4.2
+        },
+        {
+          "id": "371b9931-4231-42fc-818b-947d090a07bc",
+          "name": "Strip HTML to Plain Text",
+          "type": "n8n-nodes-base.code",
+          "position": [
+            6688,
+            2208
+          ],
+          "parameters": {
+            "jsCode": "const lead = $('Map Lead Fields').first().json;\nconst html = $input.first().json.data || $input.first().json.body || '';\n\nlet text = html\n  .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n  .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n  .replace(/<nav[\\s\\S]*?<\\/nav>/gi, ' ')\n  .replace(/<footer[\\s\\S]*?<\\/footer>/gi, ' ')\n  .replace(/<head[\\s\\S]*?<\\/head>/gi, ' ')\n  .replace(/<[^>]+>/g, ' ')\n  .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/&nbsp;/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .trim();\n\nconst truncated = text.length > 6000 ? text.substring(0, 6000) + '...[truncated]' : text;\n\nreturn [{ json: { ...lead, homepage_text: truncated } }];"
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "fe570469-82d0-4f53-94ba-b6075b3a5841",
+          "name": "Analyse Website Content",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "onError": "continueErrorOutput",
+          "position": [
+            6896,
+            2208
+          ],
+          "parameters": {
+            "text": "=Analyse this company homepage content and extract B2B intelligence.\n\nCompany name: {{ $json.company_name }}\nWebsite: {{ $json.website_url }}\nBuyer's scoring criteria: {{ ($json.criteria_list || []).join(', ') }}\n\nHomepage text:\n{{ $json.homepage_text }}\n\nExtract: what the company does, tech stack (tool names, integrations, platform mentions visible on page), company size signals, industry, and signals relevant to the buyer's criteria.",
+            "options": {
+              "systemMessage": "You are a B2B intelligence analyst. Read real homepage content and extract structured signals. Only report what is visible on the page — do not invent.\n\nCRITICAL: Return ONLY a raw JSON object. No markdown fences, no explanation.\n\nOUTPUT SCHEMA: {\"company_summary\": \"one sentence\", \"industry\": \"string\", \"company_size_signal\": \"enterprise/mid-market/SMB/unknown\", \"tech_stack\": [\"string\"], \"tech_categories\": {\"category\": [\"tech\"]}, \"criteria_signals\": {\"criterion\": \"what the page says\"}, \"confidence\": \"high/medium/low\"}"
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "69f3db17-e921-4c5e-a482-1dfbc7022718",
+          "name": "GPT-5.4 Model 2",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            6896,
+            2368
+          ],
+          "parameters": {
+            "model": "gpt-5.4",
+            "options": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "pzBaANXQjfIR7mQy",
+              "name": "OpenAI account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "e0c013ac-c4b1-443f-9450-bcb8809f6c60",
+          "name": "Map Website Analysis",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            7472,
+            2192
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "set-002-a",
+                  "name": "company_name",
+                  "type": "string",
+                  "value": "={{ $('Strip HTML to Plain Text').first().json.company_name }}"
+                },
+                {
+                  "id": "set-002-b",
+                  "name": "website_url",
+                  "type": "string",
+                  "value": "={{ $('Strip HTML to Plain Text').first().json.website_url }}"
+                },
+                {
+                  "id": "set-002-c",
+                  "name": "linkedin_url",
+                  "type": "string",
+                  "value": "={{ $('Strip HTML to Plain Text').first().json.linkedin_url }}"
+                },
+                {
+                  "id": "set-002-d",
+                  "name": "criteria_list",
+                  "type": "array",
+                  "value": "={{ $('Strip HTML to Plain Text').first().json.criteria_list }}"
+                },
+                {
+                  "id": "set-002-e",
+                  "name": "company_summary",
+                  "type": "string",
+                  "value": "={{ JSON.parse($json.output).company_summary }}"
+                },
+                {
+                  "id": "set-002-f",
+                  "name": "industry",
+                  "type": "string",
+                  "value": "={{ JSON.parse($json.output).industry }}"
+                },
+                {
+                  "id": "set-002-g",
+                  "name": "company_size_signal",
+                  "type": "string",
+                  "value": "={{ JSON.parse($json.output).company_size_signal }}"
+                },
+                {
+                  "id": "set-002-h",
+                  "name": "tech_stack",
+                  "type": "array",
+                  "value": "={{ JSON.parse($json.output).tech_stack }}"
+                },
+                {
+                  "id": "set-002-i",
+                  "name": "criteria_signals",
+                  "type": "object",
+                  "value": "={{ JSON.parse($json.output).criteria_signals }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "641244a6-5b37-4023-a094-608c175af214",
+          "name": "Score the Lead",
+          "type": "@n8n/n8n-nodes-langchain.agent",
+          "onError": "continueErrorOutput",
+          "position": [
+            7648,
+            2192
+          ],
+          "parameters": {
+            "text": "=Score this B2B lead against the buyer's criteria using real website intelligence:\n\nCompany: {{ $json.company_name }}\nWebsite: {{ $json.website_url }}\nLinkedIn: {{ $json.linkedin_url }}\nBuyer criteria: {{ ($json.criteria_list || []).join(', ') }}\nWhat the company does: {{ $json.company_summary }}\nIndustry: {{ $json.industry }}\nCompany size signal: {{ $json.company_size_signal }}\nTech stack detected: {{ ($json.tech_stack || []).join(', ') }}\nCriteria signals from page: {{ JSON.stringify($json.criteria_signals || {}) }}\n\nScore 1-10. Grade: A (8-10), B (6-7), C (4-5), D (1-3). Write 2-3 sentence reasoning and one-sentence recommended action.",
+            "options": {
+              "systemMessage": "You are a lead scoring agent for a B2B sales team. Score leads based on real website intelligence, not assumptions.\n\nCRITICAL: Return ONLY a raw JSON object. No markdown fences, no explanation.\n\nOUTPUT SCHEMA: {\"score\": 7, \"grade\": \"B\", \"reasoning\": \"2-3 sentence explanation grounded in the website data\", \"recommended_action\": \"one sentence for the sales rep\"}"
+            },
+            "promptType": "define"
+          },
+          "typeVersion": 3
+        },
+        {
+          "id": "b61e1f00-4544-473f-9dbb-09de4890675c",
+          "name": "GPT-5.4 Model 3",
+          "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+          "position": [
+            7648,
+            2352
+          ],
+          "parameters": {
+            "model": "gpt-5.4",
+            "options": {}
+          },
+          "credentials": {
+            "openAiApi": {
+              "id": "pzBaANXQjfIR7mQy",
+              "name": "OpenAI account"
+            }
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "87274bd4-056c-4d50-b3cb-62ebcea28be9",
+          "name": "Build Sheet Row",
+          "type": "n8n-nodes-base.set",
+          "position": [
+            7984,
+            2176
+          ],
+          "parameters": {
+            "options": {},
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "set-003-a",
+                  "name": "timestamp",
+                  "type": "string",
+                  "value": "={{ $now.toISO() }}"
+                },
+                {
+                  "id": "set-003-b",
+                  "name": "company",
+                  "type": "string",
+                  "value": "={{ $('Map Website Analysis').first().json.company_name }}"
+                },
+                {
+                  "id": "set-003-c",
+                  "name": "website_url",
+                  "type": "string",
+                  "value": "={{ $('Map Website Analysis').first().json.website_url }}"
+                },
+                {
+                  "id": "set-003-d",
+                  "name": "linkedin_url",
+                  "type": "string",
+                  "value": "={{ $('Map Website Analysis').first().json.linkedin_url }}"
+                },
+                {
+                  "id": "set-003-e",
+                  "name": "criteria",
+                  "type": "string",
+                  "value": "={{ ($('Map Website Analysis').first().json.criteria_list || []).join(', ') }}"
+                },
+                {
+                  "id": "set-003-f",
+                  "name": "company_summary",
+                  "type": "string",
+                  "value": "={{ $('Map Website Analysis').first().json.company_summary }}"
+                },
+                {
+                  "id": "set-003-g",
+                  "name": "tech_stack",
+                  "type": "string",
+                  "value": "={{ ($('Map Website Analysis').first().json.tech_stack || []).join(', ') }}"
+                },
+                {
+                  "id": "set-003-h",
+                  "name": "score",
+                  "type": "number",
+                  "value": "={{ JSON.parse($json.output).score }}"
+                },
+                {
+                  "id": "set-003-i",
+                  "name": "grade",
+                  "type": "string",
+                  "value": "={{ JSON.parse($json.output).grade }}"
+                },
+                {
+                  "id": "set-003-j",
+                  "name": "reasoning",
+                  "type": "string",
+                  "value": "={{ JSON.parse($json.output).reasoning }}"
+                },
+                {
+                  "id": "set-003-k",
+                  "name": "recommended_action",
+                  "type": "string",
+                  "value": "={{ JSON.parse($json.output).recommended_action }}"
+                }
+              ]
+            }
+          },
+          "typeVersion": 3.4
+        },
+        {
+          "id": "8058a091-67d7-4131-a149-def64a4b9a02",
+          "name": "Tally Trigger",
+          "type": "n8n-nodes-tallyforms.tallyTrigger",
+          "position": [
+            5568,
+            2224
+          ],
+          "webhookId": "YOUR_WEBHOOK_ID",
+          "parameters": {
+            "formId": "YOUR_TALLY_FORM_ID"
+          },
+          "credentials": {
+            "tallyApi": {
+              "id": "cfUShyzQ7ayLs6LW",
+              "name": "Tally account"
+            }
+          },
+          "typeVersion": 2
+        },
+        {
+          "id": "82fa06c7-03dc-41f8-b1e5-efca5ae94b9f",
+          "name": "Sticky Note - Data Capture",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            5536,
+            1888
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 756,
+            "height": 712,
+            "content": "## Data Capture & Normalization\n\nTally Trigger captures lead data on form submit. Agent 1 normalizes the raw payload. Map Lead Fields organizes the data for the research phase."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "1577ddf9-48f7-4f63-b424-dc3fa5e78ee3",
+          "name": "Sticky Note - Research",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            6336,
+            1888
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 1052,
+            "height": 728,
+            "content": "## Website Research & Analysis\n\nFetches the company homepage, strips HTML to plain text, and sends it to Agent 2 for intelligence extraction: industry, tech stack, size signals, and criteria matches."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "27eb2a26-22dc-4916-9dcf-fa75ca20fbef",
+          "name": "Sticky Note - Scoring & Output",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            7424,
+            1888
+          ],
+          "parameters": {
+            "color": 7,
+            "width": 952,
+            "height": 664,
+            "content": "## Lead Scoring & Output\n\nAgent 3 scores 1-10 against the buyer's criteria and assigns a grade. Build Sheet Row formats the data and appends it to Google Sheets."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "34169519-3911-441c-8e01-6254d771ee02",
+          "name": "Sticky Note - Overview",
+          "type": "n8n-nodes-base.stickyNote",
+          "position": [
+            5008,
+            1888
+          ],
+          "parameters": {
+            "width": 500,
+            "height": 884,
+            "content": "## Score Inbound Leads with AI using Tally, OpenAI and Google Sheets\n\n### How it works\n1. A marketing employee submits a Tally form with a company name, LinkedIn URL, website URL, and scoring criteria.\n2. The Tally Trigger fires instantly on submission and passes the raw payload to Agent 1, which normalises it into clean fields.\n3. An HTTP Request fetches the company's actual homepage HTML.\n4. A Code node strips the HTML to readable plain text.\n5. Agent 2 reads the real homepage content and extracts B2B intelligence: what the company does, their tech stack, size signals, and industry.\n6. Agent 3 scores the lead 1-10 against the criteria from the Tally form, assigns a grade A-D, and writes a recommended action.\n7. The scored lead is appended to a Google Sheet.\n\n### Setup\n1. Create your lead scoring form in Tally with fields: Company Name, LinkedIn URL, Company Website URL, Scoring Criteria (checkboxes), and Additional Notes.\n2. Connect the Tally Trigger node and select your Tally form from the dropdown.\n3. Add your OpenAI API key under Credentials > OpenAI.\n4. Add Google Sheets OAuth2 credentials.\n5. Create a Google Sheet with a tab named exactly \"leads\" and these column headers in Row 1 (all lowercase):\n   timestamp | company | website_url | linkedin_url | criteria | company_summary | tech_stack | score | grade | reasoning | recommended_action\n6. Paste your Sheet ID into the Append Lead to Sheet node.\n7. Submit a test entry through your Tally form to verify the full flow."
+          },
+          "typeVersion": 1
+        },
+        {
+          "id": "512d45e1-6c4e-4752-8279-2f61a0080a47",
+          "name": "Append Lead to Sheet",
+          "type": "n8n-nodes-base.googleSheets",
+          "position": [
+            8192,
+            2176
+          ],
+          "parameters": {
+            "columns": {
+              "value": {
+                "grade": "={{ $json.grade }}",
+                "score": "={{ $json.score }}",
+                "company": "={{ $json.company }}",
+                "criteria": "={{ $json.criteria }}",
+                "reasoning": "={{ $json.reasoning }}",
+                "timestamp": "={{ $json.timestamp }}",
+                "tech_stack": "={{ $json.tech_stack }}",
+                "website_url": "={{ $json.website_url }}",
+                "linkedin_url": "={{ $json.linkedin_url }}",
+                "company_summary": "={{ $json.company_summary }}",
+                "recommended_action": "={{ $json.recommended_action }}"
+              },
+              "schema": [
+                {
+                  "id": "timestamp",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "timestamp",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "company",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "company",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "website_url",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "website_url",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "linkedin_url",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "linkedin_url",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "criteria",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "criteria",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "company_summary",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "company_summary",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "tech_stack",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "tech_stack",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "score",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "score",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "grade",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "grade",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "reasoning",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "reasoning",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                },
+                {
+                  "id": "recommended_action",
+                  "type": "string",
+                  "display": true,
+                  "required": false,
+                  "displayName": "recommended_action",
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true
+                }
+              ],
+              "mappingMode": "defineBelow",
+              "matchingColumns": [],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {},
+            "operation": "append",
+            "sheetName": {
+              "__rl": true,
+              "mode": "id",
+              "value": "leads"
+            },
+            "documentId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "YOUR_SPREADSHEET_ID"
+            }
+          },
+          "credentials": {},
+          "typeVersion": 4.7
+        }
+      ],
+      "pinData": {},
+      "connections": {
+        "GPT-5.4 Model": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Normalise Tally Payload",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Tally Trigger": {
+          "main": [
+            [
+              {
+                "node": "Normalise Tally Payload",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Score the Lead": {
+          "main": [
+            [
+              {
+                "node": "Build Sheet Row",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Build Sheet Row": {
+          "main": [
+            [
+              {
+                "node": "Append Lead to Sheet",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "GPT-5.4 Model 2": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Analyse Website Content",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "GPT-5.4 Model 3": {
+          "ai_languageModel": [
+            [
+              {
+                "node": "Score the Lead",
+                "type": "ai_languageModel",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Map Lead Fields": {
+          "main": [
+            [
+              {
+                "node": "Fetch Company Homepage",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Map Website Analysis": {
+          "main": [
+            [
+              {
+                "node": "Score the Lead",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Fetch Company Homepage": {
+          "main": [
+            [
+              {
+                "node": "Strip HTML to Plain Text",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Strip HTML to Plain Text",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Analyse Website Content": {
+          "main": [
+            [
+              {
+                "node": "Map Website Analysis",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Normalise Tally Payload": {
+          "main": [
+            [
+              {
+                "node": "Map Lead Fields",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Strip HTML to Plain Text": {
+          "main": [
+            [
+              {
+                "node": "Analyse Website Content",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "lastUpdatedBy": 1,
+    "workflowInfo": {
+      "nodeCount": 17,
+      "nodeTypes": {
+        "n8n-nodes-base.set": {
+          "count": 3
+        },
+        "n8n-nodes-base.code": {
+          "count": 1
+        },
+        "n8n-nodes-base.stickyNote": {
+          "count": 4
+        },
+        "n8n-nodes-base.httpRequest": {
+          "count": 1
+        },
+        "n8n-nodes-base.googleSheets": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.agent": {
+          "count": 3
+        },
+        "n8n-nodes-tallyforms.tallyTrigger": {
+          "count": 1
+        },
+        "@n8n/n8n-nodes-langchain.lmChatOpenAi": {
+          "count": 3
+        }
+      }
+    },
+    "status": "published",
+    "readyToDemo": null,
+    "user": {
+      "name": "Yaron Been",
+      "username": "yaron-nofluff",
+      "bio": "Building AI Agents and Automations | Growth Marketer | Entrepreneur | Book Author & Podcast Host\n\nIf you need any help with Automations, feel free to reach out via linkedin:\nhttps://www.linkedin.com/in/yaronbeen/\n\nAnd check out my Youtube channel:\nhttps://www.youtube.com/@YaronBeen/videos",
+      "verified": true,
+      "links": [
+        "https://www.nofluff.online/automation-services/"
+      ],
+      "avatar": "https://gravatar.com/avatar/a4e4dcaa1f76ff5266bbf80e8df86d22efda890474c68f7796e72fd82e3f2375?r=pg&d=retro&size=200"
+    },
+    "nodes": [
+      {
+        "id": 18,
+        "icon": "file:googleSheets.svg",
+        "name": "n8n-nodes-base.googleSheets",
+        "codex": {
+          "data": {
+            "alias": [
+              "CSV",
+              "Sheet",
+              "Spreadsheet",
+              "GS"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/love-at-first-sight-ricardos-n8n-journey/",
+                  "icon": "❤️",
+                  "label": "Love at first sight: Ricardo’s n8n journey"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/supercharging-your-conference-registration-process-with-n8n/",
+                  "icon": "🎫",
+                  "label": "Supercharging your conference registration process with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-triggers-for-n8n-workflows-using-polling/",
+                  "icon": "⏲",
+                  "label": "Creating triggers for n8n workflows using polling"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/migrating-community-metrics-to-orbit-using-n8n/",
+                  "icon": "📈",
+                  "label": "Migrating Community Metrics to Orbit using n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/your-business-doesnt-need-you-to-operate/",
+                  "icon": " 🖥️",
+                  "label": "Hey founders! Your business doesn't need you to operate"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-honest-burgers-use-automation-to-save-100k-per-year/",
+                  "icon": "🍔",
+                  "label": "How Honest Burgers Use Automation to Save $100k per year"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-digital-strategist-uses-n8n-for-online-marketing/",
+                  "icon": "💻",
+                  "label": "How a digital strategist uses n8n for online marketing"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-this-product-manager-loves-workflow-automation-with-n8n/",
+                  "icon": "🧠",
+                  "label": "Why this Product Manager loves workflow automation with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/sending-automated-congratulations-with-google-sheets-twilio-and-n8n/",
+                  "icon": "🙌",
+                  "label": "Sending Automated Congratulations with Google Sheets, Twilio, and n8n "
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googlesheets/"
+                }
+              ],
+              "credentialDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
+                }
+              ]
+            },
+            "categories": [
+              "Data & Storage",
+              "Productivity"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0"
+          }
+        },
+        "group": "[\"input\",\"output\"]",
+        "defaults": {
+          "name": "Google Sheets"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNS42OSAxIDUyIDE3LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0OC4yOTMgNjBIMTIuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDkgNTYuMzEyVjQuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTIuNzA3IDF6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM1LjY5IDEgNTIgMTcuMjI1SDM5LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzkuMjExIDE3LjIyNSA1MiAyMi40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTIwLjEyIDMxLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMS42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzEuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjxwYXRoIGZpbGw9IiMyOEI0NDYiIGQ9Ik0zNC42OSAwIDUxIDE2LjIyNXYzOS4wODdhMy42NyAzLjY3IDAgMCAxLTEuMDg0IDIuNjFBMy43IDMuNyAwIDAgMSA0Ny4yOTMgNTlIMTEuNzA3YTMuNyAzLjcgMCAwIDEtMi42MjMtMS4wNzhBMy42NyAzLjY3IDAgMCAxIDggNTUuMzEyVjMuNjg4YTMuNjcgMy42NyAwIDAgMSAxLjA4NC0yLjYxQTMuNyAzLjcgMCAwIDEgMTEuNzA3IDB6Ii8+PHBhdGggZmlsbD0iIzZBQ0U3QyIgZD0iTTM0LjY5IDAgNTEgMTYuMjI1SDM4LjM5N2MtMi4wNTQgMC0zLjcwNy0xLjgyOS0zLjcwNy0zLjg3MnoiLz48cGF0aCBmaWxsPSIjMjE5QjM4IiBkPSJNMzguMjExIDE2LjIyNSA1MSAyMS40OHYtNS4yNTV6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE5LjEyIDMwLjk3NWMwLS44MTcuNjYyLTEuNDc1IDEuNDgzLTEuNDc1aDE3Ljc5NGMuODIxIDAgMS40ODIuNjU4IDEuNDgyIDEuNDc1djE1LjQ4N2MwIC44MTgtLjY2MSAxLjQ3NS0xLjQ4MiAxLjQ3NUgyMC42MDNhMS40NzYgMS40NzYgMCAwIDEtMS40ODItMS40NzRWMzAuOTc0em0yLjIyNSAxLjQ3NWg2LjY3MnYyLjIxMmgtNi42NzJ6bTAgNS4xNjJoNi42NzJ2Mi4yMTNoLTYuNjcyem0wIDUuMTYzaDYuNjcydjIuMjEyaC02LjY3MnptOS42MzgtMTAuMzI1aDYuNjcydjIuMjEyaC02LjY3MnptMCA1LjE2Mmg2LjY3MnYyLjIxM2gtNi42NzJ6bTAgNS4xNjNoNi42NzJ2Mi4yMTJoLTYuNjcyeiIvPjwvZz48L3N2Zz4="
+        },
+        "displayName": "Google Sheets",
+        "typeVersion": 5,
+        "nodeCategories": [
+          {
+            "id": 3,
+            "name": "Data & Storage"
+          },
+          {
+            "id": 4,
+            "name": "Productivity"
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "icon": "file:httprequest.svg",
+        "name": "n8n-nodes-base.httpRequest",
+        "codex": {
+          "data": {
+            "alias": [
+              "API",
+              "Request",
+              "URL",
+              "Build",
+              "cURL"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/why-business-process-automation-with-n8n-can-change-your-daily-life/",
+                  "icon": "🧬",
+                  "label": "Why business process automation with n8n can change your daily life"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-automatically-cross-post-your-content-with-n8n/",
+                  "icon": "✍️",
+                  "label": "Learn how to automatically cross-post your content with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/running-n8n-on-ships-an-interview-with-maranics/",
+                  "icon": "🛳",
+                  "label": "Running n8n on ships: An interview with Maranics"
+                },
+                {
+                  "url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/",
+                  "icon": " 🪢",
+                  "label": "What are APIs and how to use them with no code"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/world-poetry-day-workflow/",
+                  "icon": "📜",
+                  "label": "Celebrating World Poetry Day with a daily poem in Telegram"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-designs-with-bannerbear-and-n8n/",
+                  "icon": "🎨",
+                  "label": "Automate Designs with Bannerbear and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-use-the-http-request-node-the-swiss-army-knife-for-workflow-automation/",
+                  "icon": "🧰",
+                  "label": "How to use the HTTP Request Node - The Swiss Army Knife for Workflow Automation"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-how-to-use-webhooks-with-mattermost-slash-commands/",
+                  "icon": "🦄",
+                  "label": "Learn how to use webhooks with Mattermost slash commands"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/automations-for-activists/",
+                  "icon": "✨",
+                  "label": "How Common Knowledge use workflow automation for activism"
+                },
+                {
+                  "url": "https://n8n.io/blog/creating-scheduled-text-affirmations-with-n8n/",
+                  "icon": "🤟",
+                  "label": "Creating scheduled text affirmations with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"output\"]",
+        "defaults": {
+          "name": "HTTP Request",
+          "color": "#0004F5"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik00MCAyMEM0MCA4Ljk1MzE0IDMxLjA0NjkgMCAyMCAwQzguOTUzMTQgMCAwIDguOTUzMTQgMCAyMEMwIDMxLjA0NjkgOC45NTMxNCA0MCAyMCA0MEMzMS4wNDY5IDQwIDQwIDMxLjA0NjkgNDAgMjBaTTIwIDM2Ljk0NThDMTguODg1MiAzNi45NDU4IDE3LjEzNzggMzUuOTY3IDE1LjQ5OTggMzIuNjk4NUMxNC43OTY0IDMxLjI5MTggMTQuMTk2MSAyOS41NDMxIDEzLjc1MjYgMjcuNjg0N0gyNi4xODk4QzI1LjgwNDUgMjkuNTQwMyAyNS4yMDQ0IDMxLjI5MDEgMjQuNTAwMiAzMi42OTg1QzIyLjg2MjIgMzUuOTY3IDIxLjExNDggMzYuOTQ1OCAyMCAzNi45NDU4Wk0xMi45MDY0IDIwQzEyLjkwNjQgMjEuNjA5NyAxMy4wMDg3IDIzLjE2NCAxMy4yMDAzIDI0LjYzMDVIMjYuNzk5N0MyNi45OTEzIDIzLjE2NCAyNy4wOTM2IDIxLjYwOTcgMjcuMDkzNiAyMEMyNy4wOTM2IDE4LjM5MDMgMjYuOTkxMyAxNi44MzYgMjYuNzk5NyAxNS4zNjk1SDEzLjIwMDNDMTMuMDA4NyAxNi44MzYgMTIuOTA2NCAxOC4zOTAzIDEyLjkwNjQgMjBaTTIwIDMuMDU0MTlDMjEuMTE0OSAzLjA1NDE5IDIyLjg2MjIgNC4wMzA3OCAyNC41MDAxIDcuMzAwMzlDMjUuMjA2NiA4LjcxNDA4IDI1LjgwNzIgMTAuNDA2NyAyNi4xOTIgMTIuMzE1M0gxMy43NTAxQzE0LjE5MzMgMTAuNDA0NyAxNC43OTQyIDguNzEyNTQgMTUuNDk5OCA3LjMwMDY0QzE3LjEzNzcgNC4wMzA4MyAxOC44ODUxIDMuMDU0MTkgMjAgMy4wNTQxOVpNMzAuMTQ3OCAyMEMzMC4xNDc4IDE4LjQwOTkgMzAuMDU0MyAxNi44NjE3IDI5LjgyMjcgMTUuMzY5NUgzNi4zMDQyQzM2LjcyNTIgMTYuODQyIDM2Ljk0NTggMTguMzk2NCAzNi45NDU4IDIwQzM2Ljk0NTggMjEuNjAzNiAzNi43MjUyIDIzLjE1OCAzNi4zMDQyIDI0LjYzMDVIMjkuODIyN0MzMC4wNTQzIDIzLjEzODMgMzAuMTQ3OCAyMS41OTAxIDMwLjE0NzggMjBaTTI2LjI3NjcgNC4yNTUxMkMyNy42MzY1IDYuMzYwMTkgMjguNzExIDkuMTMyIDI5LjM3NzQgMTIuMzE1M0gzNS4xMDQ2QzMzLjI1MTEgOC42NjggMzAuMTA3IDUuNzgzNDYgMjYuMjc2NyA0LjI1NTEyWk0xMC42MjI2IDEyLjMxNTNINC44OTI5M0M2Ljc1MTQ3IDguNjY3ODQgOS44OTM1MSA1Ljc4MzQxIDEzLjcyMzIgNC4yNTUxM0MxMi4zNjM1IDYuMzYwMjEgMTEuMjg5IDkuMTMyMDEgMTAuNjIyNiAxMi4zMTUzWk0zLjA1NDE5IDIwQzMuMDU0MTkgMjEuNjAzIDMuMjc3NDMgMjMuMTU3NSAzLjY5NDg0IDI0LjYzMDVIMTAuMTIxN0M5Ljk0NjE5IDIzLjE0MiA5Ljg1MjIyIDIxLjU5NDMgOS44NTIyMiAyMEM5Ljg1MjIyIDE4LjQwNTcgOS45NDYxOSAxNi44NTggMTAuMTIxNyAxNS4zNjk1SDMuNjk0ODRDMy4yNzc0MyAxNi44NDI1IDMuMDU0MTkgMTguMzk3IDMuMDU0MTkgMjBaTTI2LjI3NjYgMzUuNzQyN0MyNy42MzY1IDMzLjYzOTMgMjguNzExIDMwLjg2OCAyOS4zNzc0IDI3LjY4NDdIMzUuMTA0NkMzMy4yNTEgMzEuMzMyMiAzMC4xMDY4IDM0LjIxNzkgMjYuMjc2NiAzNS43NDI3Wk0xMy43MjM0IDM1Ljc0MjdDOS44OTM2OSAzNC4yMTc5IDYuNzUxNTUgMzEuMzMyNCA0Ljg5MjkzIDI3LjY4NDdIMTAuNjIyNkMxMS4yODkgMzAuODY4IDEyLjM2MzUgMzMuNjM5MyAxMy43MjM0IDM1Ljc0MjdaIiBmaWxsPSIjM0E0MkU5Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "HTTP Request",
+        "typeVersion": 4,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "icon": "fa:pen",
+        "name": "n8n-nodes-base.set",
+        "codex": {
+          "data": {
+            "alias": [
+              "Set",
+              "JS",
+              "JSON",
+              "Filter",
+              "Transform",
+              "Map"
+            ],
+            "resources": {
+              "generic": [
+                {
+                  "url": "https://n8n.io/blog/learn-to-automate-your-factorys-incident-reporting-a-step-by-step-guide/",
+                  "icon": "🏭",
+                  "label": "Learn to Automate Your Factory's Incident Reporting: A Step by Step Guide"
+                },
+                {
+                  "url": "https://n8n.io/blog/2021-the-year-to-automate-the-new-you-with-n8n/",
+                  "icon": "☀️",
+                  "label": "2021: The Year to Automate the New You with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-pulling-and-visualizing-data-with-n8n/",
+                  "icon": "📈",
+                  "label": "Automatically pulling and visualizing data with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/database-monitoring-and-alerting-with-n8n/",
+                  "icon": "📡",
+                  "label": "Database Monitoring and Alerting with n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/automatically-adding-expense-receipts-to-google-sheets-with-telegram-mindee-twilio-and-n8n/",
+                  "icon": "🧾",
+                  "label": "Automatically Adding Expense Receipts to Google Sheets with Telegram, Mindee, Twilio, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/no-code-ecommerce-workflow-automations/",
+                  "icon": "store",
+                  "label": "6 e-commerce workflows to power up your Shopify s"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-build-a-low-code-self-hosted-url-shortener/",
+                  "icon": "🔗",
+                  "label": "How to build a low-code, self-hosted URL shortener in 3 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-your-data-processing-pipeline-in-9-steps-with-n8n/",
+                  "icon": "⚙️",
+                  "label": "Automate your data processing pipeline in 9 steps"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-get-started-with-crm-automation-and-no-code-workflow-ideas/",
+                  "icon": "👥",
+                  "label": "How to get started with CRM automation (with 3 no-code workflow ideas"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-tasks-you-can-automate-with-notion-api/",
+                  "icon": "⚡️",
+                  "label": "5 tasks you can automate with the new Notion API "
+                },
+                {
+                  "url": "https://n8n.io/blog/automate-google-apps-for-productivity/",
+                  "icon": "💡",
+                  "label": "15 Google apps you can combine and automate to increase productivity"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-uproc-scraped-a-multi-page-website-with-a-low-code-workflow/",
+                  "icon": " 🕸️",
+                  "label": "How uProc scraped a multi-page website with a low-code workflow"
+                },
+                {
+                  "url": "https://n8n.io/blog/building-an-expense-tracking-app-in-10-minutes/",
+                  "icon": "📱",
+                  "label": "Building an expense tracking app in 10 minutes"
+                },
+                {
+                  "url": "https://n8n.io/blog/the-ultimate-guide-to-automate-your-video-collaboration-with-whereby-mattermost-and-n8n/",
+                  "icon": "📹",
+                  "label": "The ultimate guide to automate your video collaboration with Whereby, Mattermost, and n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/5-workflow-automations-for-mattermost-that-we-love-at-n8n/",
+                  "icon": "🤖",
+                  "label": "5 workflow automations for Mattermost that we love at n8n"
+                },
+                {
+                  "url": "https://n8n.io/blog/learn-to-build-powerful-api-endpoints-using-webhooks/",
+                  "icon": "🧰",
+                  "label": "Learn to Build Powerful API Endpoints Using Webhooks"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-a-membership-development-manager-automates-his-work-and-investments/",
+                  "icon": "📈",
+                  "label": "How a Membership Development Manager automates his work and investments"
+                },
+                {
+                  "url": "https://n8n.io/blog/a-low-code-bitcoin-ticker-built-with-questdb-and-n8n-io/",
+                  "icon": "📈",
+                  "label": "A low-code bitcoin ticker built with QuestDB and n8n.io"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-to-set-up-a-ci-cd-pipeline-with-no-code/",
+                  "icon": "🎡",
+                  "label": "How to set up a no-code CI/CD pipeline with GitHub and TravisCI"
+                },
+                {
+                  "url": "https://n8n.io/blog/benefits-of-automation-and-n8n-an-interview-with-hubspots-hugh-durkin/",
+                  "icon": "🎖",
+                  "label": "Benefits of automation and n8n: An interview with HubSpot's Hugh Durkin"
+                },
+                {
+                  "url": "https://n8n.io/blog/how-goomer-automated-their-operations-with-over-200-n8n-workflows/",
+                  "icon": "🛵",
+                  "label": "How Goomer automated their operations with over 200 n8n workflows"
+                },
+                {
+                  "url": "https://n8n.io/blog/aws-workflow-automation/",
+                  "label": "7 no-code workflow automations for Amazon Web Services"
+                }
+              ],
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.set/"
+                }
+              ]
+            },
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Edit Fields"
+        },
+        "iconData": {
+          "icon": "pen",
+          "type": "icon"
+        },
+        "displayName": "Edit Fields (Set)",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 565,
+        "icon": "fa:sticky-note",
+        "name": "n8n-nodes-base.stickyNote",
+        "codex": {
+          "data": {
+            "alias": [
+              "Comments",
+              "Notes",
+              "Sticky"
+            ],
+            "categories": [
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers"
+              ]
+            }
+          }
+        },
+        "group": "[\"input\"]",
+        "defaults": {
+          "name": "Sticky Note",
+          "color": "#FFD233"
+        },
+        "iconData": {
+          "icon": "sticky-note",
+          "type": "icon"
+        },
+        "displayName": "Sticky Note",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 834,
+        "icon": "file:code.svg",
+        "name": "n8n-nodes-base.code",
+        "codex": {
+          "data": {
+            "alias": [
+              "cpde",
+              "Javascript",
+              "JS",
+              "Python",
+              "Script",
+              "Custom Code",
+              "Function"
+            ],
+            "details": "The Code node allows you to execute JavaScript in your workflow.",
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.code/"
+                }
+              ]
+            },
+            "categories": [
+              "Development",
+              "Core Nodes"
+            ],
+            "nodeVersion": "1.0",
+            "codexVersion": "1.0",
+            "subcategories": {
+              "Core Nodes": [
+                "Helpers",
+                "Data Transformation"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "Code"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMTcxXzQ0MSkiPgo8cGF0aCBkPSJNMTcwLjI4MyA0OEgxOTYuNUMyMDMuMTI3IDQ4IDIwOC41IDQyLjYyNzQgMjA4LjUgMzZWMTJDMjA4LjUgNS4zNzI1OCAyMDMuMTI3IDAgMTk2LjUgMEgxNzAuMjgzQzEyNi4xIDAgOTAuMjgzIDM1LjgxNzIgOTAuMjgzIDgwVjE3NkM5MC4yODMgMjA2LjkyOCA2NS4yMTA5IDIzMiAzNC4yODMgMjMySDIzQzE2LjM3MjYgMjMyIDExIDIzNy4zNzIgMTEgMjQ0VjI2OEMxMSAyNzQuNjI3IDE2LjM3MjQgMjgwIDIyLjk5OTYgMjgwTDM0LjI4MyAyODBDNjUuMjEwOSAyODAgOTAuMjgzIDMwNS4wNzIgOTAuMjgzIDMzNlY0NDBDOTAuMjgzIDQ3OS43NjQgMTIyLjUxOCA1MTIgMTYyLjI4MyA1MTJIMTk2LjVDMjAzLjEyNyA1MTIgMjA4LjUgNTA2LjYyNyAyMDguNSA1MDBWNDc2QzIwOC41IDQ2OS4zNzMgMjAzLjEyNyA0NjQgMTk2LjUgNDY0SDE2Mi4yODNDMTQ5LjAyOCA0NjQgMTM4LjI4MyA0NTMuMjU1IDEzOC4yODMgNDQwVjMzNkMxMzguMjgzIDMwOS4wMjIgMTI4LjAxMSAyODQuNDQzIDExMS4xNjQgMjY1Ljk2MUMxMDYuMTA5IDI2MC40MTYgMTA2LjEwOSAyNTEuNTg0IDExMS4xNjQgMjQ2LjAzOUMxMjguMDExIDIyNy41NTcgMTM4LjI4MyAyMDIuOTc4IDEzOC4yODMgMTc2VjgwQzEzOC4yODMgNjIuMzI2OSAxNTIuNjEgNDggMTcwLjI4MyA0OFoiIGZpbGw9IiNGRjk5MjIiLz4KPHBhdGggZD0iTTMwNSAzNkMzMDUgNDIuNjI3NCAzMTAuMzczIDQ4IDMxNyA0OEgzNDIuOTc5QzM2MC42NTIgNDggMzc0Ljk3OCA2Mi4zMjY5IDM3NC45NzggODBWMTc2QzM3NC45NzggMjAyLjk3OCAzODUuMjUxIDIyNy41NTcgNDAyLjA5OCAyNDYuMDM5QzQwNy4xNTMgMjUxLjU4NCA0MDcuMTUzIDI2MC40MTYgNDAyLjA5OCAyNjUuOTYxQzM4NS4yNTEgMjg0LjQ0MyAzNzQuOTc4IDMwOS4wMjIgMzc0Ljk3OCAzMzZWNDMyQzM3NC45NzggNDQ5LjY3MyAzNjAuNjUyIDQ2NCAzNDIuOTc5IDQ2NEgzMTdDMzEwLjM3MyA0NjQgMzA1IDQ2OS4zNzMgMzA1IDQ3NlY1MDBDMzA1IDUwNi42MjcgMzEwLjM3MyA1MTIgMzE3IDUxMkgzNDIuOTc5QzM4Ny4xNjEgNTEyIDQyMi45NzggNDc2LjE4MyA0MjIuOTc4IDQzMlYzMzZDNDIyLjk3OCAzMDUuMDcyIDQ0OC4wNTEgMjgwIDQ3OC45NzkgMjgwSDQ5MEM0OTYuNjI3IDI4MCA1MDIgMjc0LjYyOCA1MDIgMjY4VjI0NEM1MDIgMjM3LjM3MyA0OTYuNjI4IDIzMiA0OTAgMjMyTDQ3OC45NzkgMjMyQzQ0OC4wNTEgMjMyIDQyMi45NzggMjA2LjkyOCA0MjIuOTc4IDE3NlY4MEM0MjIuOTc4IDM1LjgxNzIgMzg3LjE2MSAwIDM0Mi45NzkgMEgzMTdDMzEwLjM3MyAwIDMwNSA1LjM3MjU4IDMwNSAxMlYzNloiIGZpbGw9IiNGRjk5MjIiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xMTcxXzQ0MSI+CjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="
+        },
+        "displayName": "Code",
+        "typeVersion": 2,
+        "nodeCategories": [
+          {
+            "id": 5,
+            "name": "Development"
+          },
+          {
+            "id": 9,
+            "name": "Core Nodes"
+          }
+        ]
+      },
+      {
+        "id": 1119,
+        "icon": "fa:robot",
+        "name": "@n8n/n8n-nodes-langchain.agent",
+        "codex": {
+          "data": {
+            "alias": [
+              "LangChain",
+              "Chat",
+              "Conversational",
+              "Plan and Execute",
+              "ReAct",
+              "Tools"
+            ],
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Agents",
+                "Root Nodes"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "AI Agent",
+          "color": "#404040"
+        },
+        "iconData": {
+          "icon": "robot",
+          "type": "icon"
+        },
+        "displayName": "AI Agent",
+        "typeVersion": 3,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      },
+      {
+        "id": 1153,
+        "icon": "file:openAiLight.svg",
+        "name": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "codex": {
+          "data": {
+            "resources": {
+              "primaryDocumentation": [
+                {
+                  "url": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/"
+                }
+              ]
+            },
+            "categories": [
+              "AI",
+              "Langchain"
+            ],
+            "subcategories": {
+              "AI": [
+                "Language Models",
+                "Root Nodes"
+              ],
+              "Language Models": [
+                "Chat Models (Recommended)"
+              ]
+            }
+          }
+        },
+        "group": "[\"transform\"]",
+        "defaults": {
+          "name": "OpenAI Chat Model"
+        },
+        "iconData": {
+          "type": "file",
+          "fileBuffer": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTM2Ljg2NzEgMTYuMzcxOEMzNy43NzQ2IDEzLjY0OCAzNy40NjIxIDEwLjY2NDIgMzYuMDEwOCA4LjE4NjYxQzMzLjgyODIgNC4zODY1MyAyOS40NDA3IDIuNDMxNDkgMjUuMTU1NiAzLjM1MTUxQzIzLjI0OTMgMS4yMDM5NiAyMC41MTA1IC0wLjAxNzMxNDggMTcuNjM5MiAwLjAwMDE4NTUzM0MxMy4yNTkxIC0wLjAwOTgxNDY4IDkuMzcyNzMgMi44MTAyNSA4LjAyNTIgNi45Nzc4M0M1LjIxMTM5IDcuNTU0MSAyLjc4MjU4IDkuMzE1MzggMS4zNjEzIDExLjgxMTdDLTAuODM3NDkzIDE1LjYwMTggLTAuMzM2MjMyIDIwLjM3OTQgMi42MDEzMyAyMy42Mjk0QzEuNjkzODEgMjYuMzUzMiAyLjAwNjMyIDI5LjMzNzEgMy40NTc2IDMxLjgxNDZDNS42NDAxNSAzNS42MTQ3IDEwLjAyNzcgMzcuNTY5NyAxNC4zMTI4IDM2LjY0OTdDMTYuMjE3OSAzOC43OTczIDE4Ljk1NzkgNDAuMDE4NSAyMS44MjkyIDM5Ljk5OThDMjYuMjExOCA0MC4wMTEgMzAuMDk5NCAzNy4xODg1IDMxLjQ0NjkgMzMuMDE3MUMzNC4yNjA4IDMyLjQ0MDkgMzYuNjg5NiAzMC42Nzk2IDM4LjExMDggMjguMTgzM0M0MC4zMDcxIDI0LjM5MzIgMzkuODA0NiAxOS42MTk0IDM2Ljg2ODMgMTYuMzY5M0wzNi44NjcxIDE2LjM3MThaTTIxLjgzMTcgMzcuMzg2QzIwLjA3OCAzNy4zODg1IDE4LjM3OTIgMzYuNzc0NyAxNy4wMzI5IDM1LjY1MDlDMTcuMDk0MSAzNS42MTg0IDE3LjIwMDQgMzUuNTU5NyAxNy4yNjkxIDM1LjUxNzJMMjUuMjM0MyAzMC45MTcxQzI1LjY0MTggMzAuNjg1OCAyNS44OTE4IDMwLjI1MjEgMjUuODg5MyAyOS43ODMzVjE4LjU1NDNMMjkuMjU1NyAyMC40OTgxQzI5LjI5MTkgMjAuNTE1NiAyOS4zMTU3IDIwLjU1MDYgMjkuMzIwNyAyMC41OTA2VjI5Ljg4OTZDMjkuMzE1NyAzNC4wMjQ3IDI1Ljk2NjggMzcuMzc3MiAyMS44MzE3IDM3LjM4NlpNNS43MjY0IDMwLjUwNzFDNC44NDc2MyAyOC45ODk2IDQuNTMxMzcgMjcuMjEwOCA0LjgzMjYzIDI1LjQ4NDVDNC44OTEzOCAyNS41MTk1IDQuOTk1MTMgMjUuNTgzMiA1LjA2ODg4IDI1LjYyNTdMMTMuMDM0MSAzMC4yMjU4QzEzLjQzNzggMzAuNDYyMSAxMy45Mzc4IDMwLjQ2MjEgMTQuMzQyOCAzMC4yMjU4TDI0LjA2NjggMjQuNjEwN1YyOC40OTgzQzI0LjA2OTMgMjguNTM4MyAyNC4wNTA1IDI4LjU3NyAyNC4wMTkzIDI4LjYwMkwxNS45Njc5IDMzLjI1MDlDMTIuMzgxNSAzNS4zMTU5IDcuODAxNDQgMzQuMDg4NCA1LjcyNzY1IDMwLjUwNzFINS43MjY0Wk0zLjYzMDEgMTMuMTIwNUM0LjUwNTEyIDExLjYwMDQgNS44ODY0IDEwLjQzNzkgNy41MzE0NCA5LjgzNDE1QzcuNTMxNDQgOS45MDI5IDcuNTI3NjkgMTAuMDI0MiA3LjUyNzY5IDEwLjEwOTJWMTkuMzEwNkM3LjUyNTE5IDE5Ljc3ODEgNy43NzUxOSAyMC4yMTE5IDguMTgxNDUgMjAuNDQzMUwxNy45MDU0IDI2LjA1N0wxNC41MzkxIDI4LjAwMDhDMTQuNTA1MyAyOC4wMjMzIDE0LjQ2MjggMjguMDI3IDE0LjQyNTMgMjguMDEwOEw2LjM3MjY2IDIzLjM1ODJDMi43OTM4MyAyMS4yODU2IDEuNTY2MzEgMTYuNzA2OCAzLjYyODg1IDEzLjEyMTdMMy42MzAxIDEzLjEyMDVaTTMxLjI4ODIgMTkuNTU2OUwyMS41NjQyIDEzLjk0MTdMMjQuOTMwNiAxMS45OTkyQzI0Ljk2NDMgMTEuOTc2NyAyNS4wMDY4IDExLjk3MjkgMjUuMDQ0MyAxMS45ODkyTDMzLjA5NyAxNi42MzhDMzYuNjgyMSAxOC43MDkzIDM3LjkxMDggMjMuMjk1NyAzNS44Mzk1IDI2Ljg4MDhDMzQuOTYzMyAyOC4zOTgzIDMzLjU4MzIgMjkuNTYwOCAzMS45Mzk1IDMwLjE2NThWMjAuNjg5NEMzMS45NDMyIDIwLjIyMTkgMzEuNjk0NSAxOS43ODk0IDMxLjI4OTQgMTkuNTU2OUgzMS4yODgyWk0zNC42MzgzIDE0LjUxNDJDMzQuNTc5NSAxNC40NzggMzQuNDc1OCAxNC40MTU1IDM0LjQwMiAxNC4zNzNMMjYuNDM2OCA5Ljc3Mjg5QzI2LjAzMzEgOS41MzY2NCAyNS41MzMxIDkuNTM2NjQgMjUuMTI4MSA5Ljc3Mjg5TDE1LjQwNDEgMTUuMzg4VjExLjUwMDRDMTUuNDAxNiAxMS40NjA0IDE1LjQyMDQgMTEuNDIxNyAxNS40NTE2IDExLjM5NjdMMjMuNTAzIDYuNzUxNThDMjcuMDg5NCA0LjY4Mjc5IDMxLjY3NDUgNS45MTQwNiAzMy43NDIgOS41MDE2NEMzNC42MTU4IDExLjAxNjcgMzQuOTMyIDEyLjc5MDUgMzQuNjM1OCAxNC41MTQySDM0LjYzODNaTTEzLjU3NDEgMjEuNDQzMUwxMC4yMDY1IDE5LjQ5OTRDMTAuMTcwMiAxOS40ODE5IDEwLjE0NjUgMTkuNDQ2OCAxMC4xNDE1IDE5LjQwNjhWMTAuMTA3OUMxMC4xNDQgNS45Njc4MSAxMy41MDI4IDIuNjEyNzQgMTcuNjQyOSAyLjYxNTI0QzE5LjM5NDIgMi42MTUyNCAyMS4wODkyIDMuMjMwMjUgMjIuNDM1NSA0LjM1MDI4QzIyLjM3NDMgNC4zODI3OCAyMi4yNjkzIDQuNDQxNTMgMjIuMTk5MiA0LjQ4NDAzTDE0LjIzNDEgOS4wODQxM0MxMy44MjY2IDkuMzE1MzggMTMuNTc2NiA5Ljc0Nzg5IDEzLjU3OTEgMTAuMjE2N0wxMy41NzQxIDIxLjQ0MDZWMjEuNDQzMVpNMTUuNDAyOSAxNy41MDA2TDE5LjczNDIgMTQuOTk5M0wyNC4wNjU1IDE3LjQ5OTNWMjIuNTAwN0wxOS43MzQyIDI1LjAwMDdMMTUuNDAyOSAyMi41MDA3VjE3LjUwMDZaIiBmaWxsPSIjN0Q3RDg3Ii8+Cjwvc3ZnPgo="
+        },
+        "displayName": "OpenAI Chat Model",
+        "typeVersion": 1,
+        "nodeCategories": [
+          {
+            "id": 25,
+            "name": "AI"
+          },
+          {
+            "id": 26,
+            "name": "Langchain"
+          }
+        ]
+      }
+    ],
+    "categories": [
+      {
+        "id": 37,
+        "name": "Lead Generation"
+      },
+      {
+        "id": 49,
+        "name": "AI Summarization"
+      }
+    ],
+    "image": []
+  }
+}
