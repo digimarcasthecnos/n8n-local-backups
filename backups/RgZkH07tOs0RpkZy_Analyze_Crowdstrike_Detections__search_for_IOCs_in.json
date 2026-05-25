@@ -1,0 +1,551 @@
+{
+  "updatedAt": "2026-05-15T09:38:01.166Z",
+  "createdAt": "2026-05-15T09:38:01.166Z",
+  "id": "RgZkH07tOs0RpkZy",
+  "name": "Analyze_Crowdstrike_Detections__search_for_IOCs_in_VirusTotal__create_a_ticket_in_Jira_and_post_a_message_in_Slack",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "bd1234f2-631c-457d-8423-cec422852bbc",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [
+        -880,
+        602
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "typeVersion": 1.1
+    },
+    {
+      "id": "b9f134cd-06de-49cd-83a2-19f705fd18c6",
+      "name": "Split out detections",
+      "type": "n8n-nodes-base.itemLists",
+      "notes": "So we can process each one individually",
+      "position": [
+        -440,
+        602
+      ],
+      "parameters": {
+        "options": {},
+        "fieldToSplitOut": "resources"
+      },
+      "notesInFlow": true,
+      "typeVersion": 3
+    },
+    {
+      "id": "8d1fc16d-bcbd-4ca2-ac2d-ea676cde4403",
+      "name": "Get recent detections from Crowdstrike",
+      "type": "n8n-nodes-base.httpRequest",
+      "disabled": true,
+      "position": [
+        -660,
+        602
+      ],
+      "parameters": {
+        "url": "https://api.us-2.crowdstrike.com/detects/queries/detects/v1",
+        "options": {},
+        "sendQuery": true,
+        "authentication": "predefinedCredentialType",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filter",
+              "value": "status:'new'"
+            }
+          ]
+        },
+        "nodeCredentialType": "crowdStrikeOAuth2Api"
+      },
+      "credentials": {
+        "crowdStrikeOAuth2Api": {
+          "id": "tRdRtergnonxM2oS",
+          "name": "CrowdStrike account"
+        }
+      },
+      "typeVersion": 4.1
+    },
+    {
+      "id": "bda81386-f301-44ac-ba91-2301ecdad6c3",
+      "name": "Get detection details",
+      "type": "n8n-nodes-base.httpRequest",
+      "disabled": true,
+      "position": [
+        -220,
+        602
+      ],
+      "parameters": {
+        "url": "https://api.us-2.crowdstrike.com/detects/entities/summaries/GET/v1",
+        "method": "POST",
+        "options": {},
+        "jsonBody": "={\n   \"ids\":[\"{{ $json.resources }}\"]\n}",
+        "sendBody": true,
+        "sendQuery": true,
+        "specifyBody": "json",
+        "authentication": "predefinedCredentialType",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "ids",
+              "value": "={{ $json.resources }}"
+            }
+          ]
+        },
+        "nodeCredentialType": "crowdStrikeOAuth2Api"
+      },
+      "credentials": {
+        "crowdStrikeOAuth2Api": {
+          "id": "tRdRtergnonxM2oS",
+          "name": "CrowdStrike account"
+        }
+      },
+      "typeVersion": 4.1
+    },
+    {
+      "id": "ed6fe708-c67e-4cd1-800f-e13ab999c1c2",
+      "name": "Split out behaviours",
+      "type": "n8n-nodes-base.itemLists",
+      "position": [
+        280,
+        362
+      ],
+      "parameters": {
+        "options": {},
+        "fieldToSplitOut": "resources[0].behaviors"
+      },
+      "typeVersion": 3
+    },
+    {
+      "id": "4d6c708c-56c3-43b7-ae06-0078d917ebd5",
+      "name": "Look up SHA in Virustotal",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        720,
+        362
+      ],
+      "parameters": {
+        "url": "=https://www.virustotal.com/api/v3/files/{{ $json.dsha256 }}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "virusTotalApi"
+      },
+      "credentials": {
+        "virusTotalApi": {
+          "id": "JXVMMSznhawgxP9S",
+          "name": "Virus Total account"
+        }
+      },
+      "typeVersion": 4.1,
+      "continueOnFail": true
+    },
+    {
+      "id": "3e9f63a1-7a2a-43e3-998c-32eef23f8066",
+      "name": "Look up IOC in Virustotal",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        940,
+        362
+      ],
+      "parameters": {
+        "url": "=https://www.virustotal.com/api/v3/files/{{ $('Split out behaviours').item.json.ioc_value }}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "virusTotalApi"
+      },
+      "credentials": {
+        "virusTotalApi": {
+          "id": "JXVMMSznhawgxP9S",
+          "name": "Virus Total account"
+        }
+      },
+      "typeVersion": 4.1,
+      "continueOnFail": true
+    },
+    {
+      "id": "4249e16a-e84b-4af8-98e7-8a771a9016f0",
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [
+        60,
+        602
+      ],
+      "parameters": {
+        "options": {},
+        "batchSize": 1
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "a6de25ad-195d-44a8-a8da-3ec14bfaec66",
+      "name": "Merge behaviour descriptions",
+      "type": "n8n-nodes-base.itemLists",
+      "position": [
+        1460,
+        360
+      ],
+      "parameters": {
+        "options": {},
+        "operation": "summarize",
+        "fieldsToSummarize": {
+          "values": [
+            {
+              "field": "details",
+              "separateBy": "other",
+              "aggregation": "concatenate",
+              "customSeparator": "\\n\\n"
+            }
+          ]
+        }
+      },
+      "typeVersion": 3
+    },
+    {
+      "id": "fdc43a7b-579b-44ea-841b-cfebf2447ab9",
+      "name": "Set behaviour descriptions",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        1240,
+        360
+      ],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "details",
+              "value": "=| Link | https://falcon.us-2.crowdstrike.com/activity/detections/detail/{{ $('Split out behaviours').item.json.control_graph_id.replaceAll(':', '/').substring(4) }} |\n| Confidence |  {{ $('Split out behaviours').item.json.confidence }} |\n| Filename |  {{ $('Split out behaviours').item.json.filename }} |\n| Username |  {{ $('Split out behaviours').item.json.user_name }} |\n| VT link | https://www.virustotal.com/gui/file/{{ $('Split out behaviours').item.json.sha256 }}/detection |\n| VT creation date |  {{ $('Look up SHA in Virustotal').item.json.data.attributes.creation_date }} |\n| VT tags |  {{ $('Look up SHA in Virustotal').item.json.data.attributes.tags.join(', ') }} |\n| IOC |  {{ $('Split out behaviours').item.json.ioc_value }} |\n| IOC VT score |  {{ $json.data.attributes.last_analysis_stats.malicious }} |\n| IOC source | {{ $('Split out behaviours').item.json.ioc_source }} |\n| IOC description | {{ $('Split out behaviours').item.json.ioc_description }} |"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "d11c8794-ca93-4916-87b2-86b87751d64e",
+      "name": "Create Jira issue",
+      "type": "n8n-nodes-base.jira",
+      "disabled": true,
+      "position": [
+        1680,
+        360
+      ],
+      "parameters": {
+        "project": {
+          "__rl": true,
+          "mode": "list",
+          "value": "10000",
+          "cachedResultName": "My Kanban Project"
+        },
+        "summary": "=CrowdStrike {{ $('Split In Batches').item.json.resources[0].max_severity_displayname.toLowerCase() }} severity alert ({{ $('Split In Batches').item.json.resources[0].device.hostname }})",
+        "issueType": {
+          "__rl": true,
+          "mode": "list",
+          "value": "10001",
+          "cachedResultName": "Task"
+        },
+        "additionalFields": {
+          "description": "=\nAlert details\n\n| Severity | {{ $('Split In Batches').item.json.resources[0].max_severity_displayname }} |\n| Host | {{ $('Split In Batches').item.json.resources[0].device.hostname }} |\n| Device ID | {{ $('Split In Batches').item.json.resources[0].device.device_id }} |\n| IP (external) | {{ $('Split In Batches').item.json.resources[0].device.external_ip }}|\n| IP (internal) | {{ $('Split In Batches').item.json.resources[0].device.local_ip }}|\n| Platform | {{ $('Split In Batches').item.json.resources[0].device.platform_name }} |\n| OS version | {{ $('Split In Batches').item.json.resources[0].device.os_version }}|\n\nBehaviours\n\n{{ $json.concatenated_details }}"
+        }
+      },
+      "credentials": {
+        "jiraSoftwareCloudApi": {
+          "id": "1rCcjDO7MfM4b9ho",
+          "name": "David Jira SW Cloud account"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "ac44f600-31b3-418b-8f75-5c42094f2b5b",
+      "name": "Post notification on Slack",
+      "type": "n8n-nodes-base.slack",
+      "disabled": true,
+      "position": [
+        2080,
+        400
+      ],
+      "parameters": {
+        "text": "=New CrowdStrike {{ $('Split In Batches').item.json.resources[0].max_severity_displayname.toLowerCase() }} severity alert ({{ $('Split In Batches').item.json.resources[0].device.hostname }})\n<{{ $json.self }}|Jira ticket>",
+        "user": {
+          "__rl": true,
+          "mode": "list",
+          "value": "U034NUWQ7M5",
+          "cachedResultName": "david"
+        },
+        "select": "user",
+        "otherOptions": {},
+        "authentication": "oAuth2"
+      },
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "262",
+          "name": "Slack David (User)"
+        }
+      },
+      "typeVersion": 2.1,
+      "webhookId": "6823fd1b-dbd7-4e67-bc81-4d19da4279cd"
+    },
+    {
+      "id": "2c5c81bd-096c-4613-aa85-e1c01eac484e",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -940,
+        200
+      ],
+      "parameters": {
+        "width": 907.2533697472911,
+        "height": 622.2432296251139,
+        "content": "![crowdstrike](https://i.imgur.com/bXWeemY.png)\n## Workflow Overview\nThis n8n workflow is a robust orchestration tool designed to streamline and automate the response to cybersecurity threats detected by CrowdStrike. By running daily, the script systematically gathers new detection data, enriches it with external intelligence from VirusTotal, and then creates tickets in Jira for incident tracking and resolution. Finally, it posts notifications to Slack to alert the security team promptly. \n\n## Get details of recent CrowdStrike detections\nThis section initiates the workflow, scheduled to run daily at midnight, by fetching new detection events from CrowdStrike. It leverages an HTTP Request to query the CrowdStrike API, receiving a list of recent detections. These detections are then individually parsed for further analysis, ensuring that each detection is handled separately and efficiently.\n"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "34f3178a-f333-44ae-bb84-775748a40871",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        456,
+        85.94250946457566
+      ],
+      "parameters": {
+        "width": 684.9176314093856,
+        "height": 498.43309582729387,
+        "content": "![VirusTotal](https://upload.wikimedia.org/wikipedia/commons/thumb/b/b7/VirusTotal_logo.svg/320px-VirusTotal_logo.svg.png)\n## Enrich each detection using VirusTotal\n\nEach detection is enhanced with additional intelligence by querying VirusTotal. The process involves looking up SHA256 hashes and other indicators of compromise (IOCs) to gather comprehensive threat information. With rate-limiting in mind, a 1-second pause is included between requests to maintain compliance with VirusTotal's API usage policies.\n"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "9b248ed5-0a9b-4737-a571-ce20340a48af",
+      "name": "Pause 1 second",
+      "type": "n8n-nodes-base.wait",
+      "notes": "To avoid overloading VT",
+      "position": [
+        500,
+        362
+      ],
+      "webhookId": "be50455f-f28d-4621-87aa-60a5d46c219e",
+      "parameters": {
+        "unit": "seconds"
+      },
+      "notesInFlow": true,
+      "typeVersion": 1
+    },
+    {
+      "id": "854bbab6-b725-4a01-b179-1f1c944b7ea5",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1180,
+        89.58126014061668
+      ],
+      "parameters": {
+        "width": 732.8033084720628,
+        "height": 495.2133868905577,
+        "content": "![Jira](https://i.imgur.com/Ko72Qxa.png)\n## Create a Jira Ticket:\nFor actionable response and tracking, the workflow creates a Jira ticket for each detection. The ticket includes detailed information from CrowdStrike and enrichment data from VirusTotal, such as detection links, confidence scores, and relevant tags. This step is crucial for documenting incidents and initiating the incident response protocol.\n"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "da8ca7ef-714f-42b1-a642-3165c479b5df",
+      "name": "Sticky Note3",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1940,
+        90.04831844240124
+      ],
+      "parameters": {
+        "width": 348.9781174689024,
+        "height": 490.93784005768947,
+        "content": "![Slack](https://i.imgur.com/iKyMV0N.png)\n## Post Notification in Slack\nTo ensure prompt attention, a notification is sent to a designated Slack channel with the severity level of the alert and a link to the corresponding Jira ticket. This immediate notification allows for quick engagement from the security team to review and act upon the detection as needed.\n"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "a10f5365-85bc-435d-9b56-1154987af962",
+      "name": "Sticky Note4",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        0,
+        -96.97284326663032
+      ],
+      "parameters": {
+        "width": 432.3140705656865,
+        "height": 908.8964372010092,
+        "content": "![n8n](https://i.imgur.com/lKnBNnH.png)\n## Iterate Through Detection Events\nThe \"`Split In Batches`\" node is configured with a batch size of one, ensuring that the array of detections from CrowdStrike is divided into individual items for processing. \n\nThis approach allows for a focused analysis of each detection, ensuring no detail is overlooked. \n\nFollowing this, the \"`Split out behaviours`\" node further dissects each detection to extract and separately handle the array of behaviors associated with them. \n\nBy processing these elements one by one, we effectively manage the workflow's load, maintaining optimal performance and adherence to external APIs' rate limits, crucial for the seamless operation of our security protocols.\n\n"
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Pause 1 second": {
+      "main": [
+        [
+          {
+            "node": "Look up SHA in Virustotal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get recent detections from Crowdstrike",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [
+          {
+            "node": "Split out behaviours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Jira issue": {
+      "main": [
+        [
+          {
+            "node": "Post notification on Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split out behaviours": {
+      "main": [
+        [
+          {
+            "node": "Pause 1 second",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split out detections": {
+      "main": [
+        [
+          {
+            "node": "Get detection details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get detection details": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Look up IOC in Virustotal": {
+      "main": [
+        [
+          {
+            "node": "Set behaviour descriptions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Look up SHA in Virustotal": {
+      "main": [
+        [
+          {
+            "node": "Look up IOC in Virustotal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post notification on Slack": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set behaviour descriptions": {
+      "main": [
+        [
+          {
+            "node": "Merge behaviour descriptions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge behaviour descriptions": {
+      "main": [
+        [
+          {
+            "node": "Create Jira issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get recent detections from Crowdstrike": {
+      "main": [
+        [
+          {
+            "node": "Split out detections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "b21de32b-2650-44a6-b353-f3221fd6504e",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-15T09:38:01.166Z",
+      "createdAt": "2026-05-15T09:38:01.166Z",
+      "role": "workflow:owner",
+      "workflowId": "RgZkH07tOs0RpkZy",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

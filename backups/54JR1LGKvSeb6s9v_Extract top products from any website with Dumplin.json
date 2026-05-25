@@ -1,0 +1,365 @@
+{
+  "updatedAt": "2026-05-13T23:32:44.273Z",
+  "createdAt": "2026-05-13T23:32:44.273Z",
+  "id": "54JR1LGKvSeb6s9v",
+  "name": "Extract top products from any website with Dumpling AI and GPT-4o",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "1eeaa578-6212-406b-b616-5f1defb3c052",
+      "name": "Receive Website URL",
+      "type": "n8n-nodes-base.formTrigger",
+      "position": [
+        -624,
+        96
+      ],
+      "webhookId": "333e17a2-05f7-4085-8549-3881c8f52afc",
+      "parameters": {
+        "options": {},
+        "formTitle": "Website",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Website URL"
+            }
+          ]
+        }
+      },
+      "typeVersion": 2.2
+    },
+    {
+      "id": "b175fbcb-280f-4b27-94c4-7334b6114bbb",
+      "name": "Crawl Website with Dumpling AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -400,
+        96
+      ],
+      "parameters": {
+        "url": "https://app.dumplingai.com/api/v1/crawl ",
+        "method": "POST",
+        "options": {},
+        "jsonBody": "={\n  \"url\": \"{{ $json['Website URL'] }}\",\n  \"limit\": \"2\"\n} ",
+        "sendBody": true,
+        "specifyBody": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "credential-id",
+          "name": "httpHeaderAuth Credential"
+        }
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "ffafa7c3-da7a-4a23-b329-8aca3761c6d4",
+      "name": "Split Crawled Pages",
+      "type": "n8n-nodes-base.splitOut",
+      "position": [
+        -176,
+        96
+      ],
+      "parameters": {
+        "options": {},
+        "fieldToSplitOut": "results"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "18448414-70d6-4f3f-8159-0d896dc2c822",
+      "name": "Take Screenshot of Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        48,
+        96
+      ],
+      "parameters": {
+        "url": "https://app.dumplingai.com/api/v1/screenshot",
+        "method": "POST",
+        "options": {},
+        "jsonBody": "={\n  \"url\": \"{{ $json.url }}\", \n  \"fullPage\": \"false\"\n}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "credential-id",
+          "name": "httpHeaderAuth Credential"
+        }
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "7338ac22-a81f-4bf7-97eb-bb091840aa3e",
+      "name": "Analyze Screenshot with GPT-4o",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "position": [
+        272,
+        96
+      ],
+      "parameters": {
+        "text": "=You are a shopping assistant that analyzes screenshots of website product listings.\n\nYour job is to extract details of products shown in the image and return the top 3 **best-value picks** in JSON format. Prioritize products that meet these criteria:\n\n1. **Free delivery** is available\n2. The **closest delivery date** compared to the current date Here is the current date: {{ $now.format('MMMM D, YYYY') }}\n\n3. The **lowest affordable price** among similar items\n\nUse the current date (provided in the input) to compare delivery timelines. Each product must include:\n\n- `name`: product name\n- `price`: total price shown\n- `reviews`: number of reviews (if visible)\n- `free_delivery_date`: exact free delivery date if shown, else skip the product\n\nIf fewer than 3 qualified products exist, return only those that match the criteria.\n\nYour output must be a JSON array of objects with this structure:\n\n```json\n[\n  {\n    \"name\": \"Product Name\",\n    \"price\": \"$24.99\",\n    \"reviews\": 1283,\n    \"free_delivery_date\": \"September 15, 2025\"\n  },\n  ...\n]\n\nOutput Must only be 3 result or less, but never more",
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "chatgpt-4o-latest",
+          "cachedResultName": "CHATGPT-4O-LATEST"
+        },
+        "options": {},
+        "resource": "image",
+        "imageUrls": "={{ $json.screenshotUrl }}",
+        "operation": "analyze"
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "credential-id",
+          "name": "openAiApi Credential"
+        }
+      },
+      "typeVersion": 1.8
+    },
+    {
+      "id": "d33fb66f-5610-4575-ab45-489f5c893bee",
+      "name": "Parse and Extract Product Data",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        496,
+        96
+      ],
+      "parameters": {
+        "jsCode": "// Extract and merge JSON product data from markdown-formatted strings\n\nconst results = [];\n\nfor (const item of items) {\n  const raw = item.json.content;\n\n  // Remove the ```json and ``` wrappers\n  const cleaned = raw.replace(/^```json\\n/, \"\").replace(/\\n```$/, \"\");\n\n  try {\n    const parsed = JSON.parse(cleaned);\n    results.push(...parsed);\n  } catch (e) {\n    // Optional: you can skip or throw error depending on your use case\n    throw new Error(\"Failed to parse product JSON: \" + e.message);\n  }\n}\n\n// Return as individual items\nreturn results.map(product => ({ json: product }));\n"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "493ff62b-b627-4421-bdef-cc62e5e89bc9",
+      "name": "Save Products to Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "position": [
+        720,
+        96
+      ],
+      "parameters": {
+        "columns": {
+          "value": {
+            "price": "={{ $json.price }}",
+            "reviews no.": "={{ $json.reviews }}",
+            "product name": "={{ $json.name }}",
+            "free_delivery_date": "={{ $json.free_delivery_date }}"
+          },
+          "schema": [
+            {
+              "id": "product name",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "product name",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "price",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "price",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reviews no.",
+              "type": "string",
+              "display": true,
+              "removed": false,
+              "required": false,
+              "displayName": "reviews no.",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "free_delivery_date",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "free_delivery_date",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ],
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {},
+        "operation": "append",
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1n6LGWBqzDrolzPUR3rhrOWd1YHXuUktnRnH7oU76IwY/edit#gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1n6LGWBqzDrolzPUR3rhrOWd1YHXuUktnRnH7oU76IwY/edit?usp=drivesdk",
+          "cachedResultName": "Product Analysis"
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "credential-id",
+          "name": "googleSheetsOAuth2Api Credential"
+        }
+      },
+      "typeVersion": 4.7
+    },
+    {
+      "id": "708fce5d-d947-44b3-9028-e383eb209f3e",
+      "name": "Send Email with Product Link",
+      "type": "n8n-nodes-base.gmail",
+      "position": [
+        944,
+        96
+      ],
+      "webhookId": "1cf017ab-c775-429f-aed2-026582888de8",
+      "parameters": {
+        "sendTo": "user@example.com",
+        "message": "<!DOCTYPE html>\n<html>\n  <body style=\"font-family: Arial, sans-serif; font-size: 16px; color: #333;\">\n    <p>The product analysis is complete. Please check the full details using the link below:</p>\n    <p>\n      <a href=\"https://docs.google.com/spreadsheets/d/1n6LGWBqzDrolzPUR3rhrOWd1YHXuUktnRnH7oU76IwY/edit?gid=0#gid=0\" target=\"_blank\">\n        View Product Analysis Sheet\n      </a>\n    </p>\n  </body>\n</html>\n",
+        "options": {
+          "appendAttribution": false
+        },
+        "subject": "Your Product Comparison Report is Ready – Check the Results"
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "credential-id",
+          "name": "gmailOAuth2 Credential"
+        }
+      },
+      "executeOnce": true,
+      "typeVersion": 2.1
+    },
+    {
+      "id": "fe451299-95fe-4ad9-9836-1d18cf4089a0",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -688,
+        -432
+      ],
+      "parameters": {
+        "width": 960,
+        "height": 544,
+        "content": "## 🛍️ Smart Product Picker from Website Screenshot\n\nThis workflow lets you analyze product listing pages (e.g., Amazon) and pick the top 3 best-value items. You only need to submit the URL.\n\n### Here's what it does:\n1. Receive a website URL via a form\n2. Crawl it with Dumpling AI to extract result pages\n3. For each result:\n   - Take a screenshot\n   - Analyze with GPT-4o using image understanding\n   - Extract product name, price, reviews, and free delivery date\n4. Clean and format the output using a code node\n5. Save the best picks into a Google Sheet\n6. Send an email with the link to view the results\n\n### Requirements:\n- Dumpling AI token stored in HTTP credentials\n- OpenAI key for GPT-4o model\n- Connected Google Sheet with columns:\n  - `product name`, `price`, `reviews no.`, `free_delivery_date`\n\n> You can adapt this for other types of image-based analysis by changing the AI prompt.\n"
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Receive Website URL": {
+      "main": [
+        [
+          {
+            "node": "Crawl Website with Dumpling AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Crawled Pages": {
+      "main": [
+        [
+          {
+            "node": "Take Screenshot of Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Take Screenshot of Page": {
+      "main": [
+        [
+          {
+            "node": "Analyze Screenshot with GPT-4o",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Products to Google Sheet": {
+      "main": [
+        [
+          {
+            "node": "Send Email with Product Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Screenshot with GPT-4o": {
+      "main": [
+        [
+          {
+            "node": "Parse and Extract Product Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crawl Website with Dumpling AI": {
+      "main": [
+        [
+          {
+            "node": "Split Crawled Pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse and Extract Product Data": {
+      "main": [
+        [
+          {
+            "node": "Save Products to Google Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "0946983e-5ac8-4de7-82ad-e366658bb99a",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:32:44.273Z",
+      "createdAt": "2026-05-13T23:32:44.273Z",
+      "role": "workflow:owner",
+      "workflowId": "54JR1LGKvSeb6s9v",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

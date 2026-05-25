@@ -1,0 +1,270 @@
+{
+  "updatedAt": "2026-05-13T23:00:10.468Z",
+  "createdAt": "2026-05-13T23:00:10.468Z",
+  "id": "qtqfc80elq8Ix91V",
+  "name": "Search and download torrents using transmission-daemon",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        310,
+        300
+      ],
+      "webhookId": "6be952e8-e30f-4dd7-90b3-bc202ae9f174",
+      "parameters": {
+        "path": "6be952e8-e30f-4dd7-90b3-bc202ae9f174",
+        "options": {
+          "rawBody": true
+        },
+        "httpMethod": "POST"
+      },
+      "typeVersion": 1,
+      "id": "54e489b2-ea96-4f6d-865e-4c23478c5310"
+    },
+    {
+      "name": "SearchTorrent",
+      "type": "n8n-nodes-base.functionItem",
+      "position": [
+        530,
+        300
+      ],
+      "parameters": {
+        "functionCode": "const TorrentSearchApi = require('torrent-search-api');\n\nTorrentSearchApi.enableProvider('KickassTorrents');\nTorrentSearchApi.enableProvider('Rarbg');\n\nitem.title = $node[\"Webhook\"].json[\"body\"].title.trim();\n\nconst torrents = await TorrentSearchApi.search(item.title, 'All', 5);\n\nitem.torrents = torrents;\nitem.found = true;\n\nif(!torrents.length)\n  item.found = false;\n  \nconsole.log('Done!');\n\nreturn item;"
+      },
+      "typeVersion": 1,
+      "id": "008717fb-af07-442f-bf45-d6f91e8c6d18"
+    },
+    {
+      "name": "Start download",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        960,
+        280
+      ],
+      "parameters": {
+        "url": "http://localhost:9091/transmission/rpc",
+        "options": {},
+        "requestMethod": "POST",
+        "authentication": "basicAuth",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\"method\":\"torrent-add\",\"arguments\":{\"paused\":false,\"download-dir\":\"/media/FILM/TORRENT\",\"filename\":\"{{$node[\"SearchTorrent\"].json[\"torrents\"][0][\"magnet\"]}}\"}}",
+        "headerParametersJson": "{\"X-Transmission-Session-Id\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      },
+      "credentials": {
+        "httpBasicAuth": "Transmission-basic-auth"
+      },
+      "typeVersion": 1,
+      "continueOnFail": true,
+      "id": "eb496f12-f513-4bc0-befc-86452441f59d"
+    },
+    {
+      "name": "IF",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        740,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"found\"]}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "typeVersion": 1,
+      "id": "bf0a82e7-384a-44a9-85dd-91a75f56dac5"
+    },
+    {
+      "name": "Torrent not found",
+      "type": "n8n-nodes-base.telegram",
+      "position": [
+        960,
+        470
+      ],
+      "parameters": {
+        "text": "=Film {{$node[\"Webhook\"].json[\"body\"].title}} non trovato.",
+        "chatId": "00000000",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": "your_bot_credential"
+      },
+      "typeVersion": 1,
+      "id": "8d88fe1e-e243-4768-add9-e3cd6d60d8ec",
+      "webhookId": "ed47bfea-b017-460d-8f98-62fe1ff9b5d0"
+    },
+    {
+      "name": "Telegram1",
+      "type": "n8n-nodes-base.telegram",
+      "position": [
+        1500,
+        490
+      ],
+      "parameters": {
+        "text": "=Scarico {{$node[\"Webhook\"].json[\"body\"].title}}!\nTitolo: {{$node[\"SearchTorrent\"].json[\"torrents\"][0][\"title\"]}}",
+        "chatId": "0000000",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": null,
+          "name": "your_bot_credential"
+        }
+      },
+      "typeVersion": 1,
+      "id": "ea66d4a8-631a-4a72-b73b-e2694bbbc7b6",
+      "webhookId": "9c5c2872-ea38-4095-a164-3786c86d9b4e"
+    },
+    {
+      "name": "IF2",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        1150,
+        280
+      ],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "=\"{{$json[\"error\"][\"statusCode\"]}}\"",
+              "value2": "=\"409\""
+            }
+          ]
+        }
+      },
+      "typeVersion": 1,
+      "id": "eabf0ce1-22fb-4d4b-bd0d-27285b5da2f7"
+    },
+    {
+      "name": "Start download new token",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        1340,
+        260
+      ],
+      "parameters": {
+        "url": "http://localhost:9091/transmission/rpc",
+        "options": {},
+        "requestMethod": "POST",
+        "authentication": "basicAuth",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\"method\":\"torrent-add\",\"arguments\":{\"paused\":false,\"download-dir\":\"/media/FILM/TORRENT\",\"filename\":\"{{$node[\"SearchTorrent\"].json[\"torrents\"][0][\"magnet\"]}}\"}}",
+        "headerParametersJson": "={\"X-Transmission-Session-Id\":\"{{$node[\"Start download\"].json[\"error\"][\"response\"][\"headers\"][\"x-transmission-session-id\"]}}\"}"
+      },
+      "credentials": {
+        "httpBasicAuth": {
+          "id": null,
+          "name": "Transmission-basic-auth"
+        }
+      },
+      "typeVersion": 1,
+      "id": "eaa67348-e522-40d2-b211-070fe35e2b17"
+    }
+  ],
+  "connections": {
+    "IF": {
+      "main": [
+        [
+          {
+            "node": "Start download",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Torrent not found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF2": {
+      "main": [
+        [
+          {
+            "node": "Start download new token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "SearchTorrent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SearchTorrent": {
+      "main": [
+        [
+          {
+            "node": "IF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start download": {
+      "main": [
+        [
+          {
+            "node": "IF2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start download new token": {
+      "main": [
+        [
+          {
+            "node": "Telegram1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "278c1365-eca9-481b-b3e6-a317a57fee9f",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:00:10.468Z",
+      "createdAt": "2026-05-13T23:00:10.468Z",
+      "role": "workflow:owner",
+      "workflowId": "qtqfc80elq8Ix91V",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

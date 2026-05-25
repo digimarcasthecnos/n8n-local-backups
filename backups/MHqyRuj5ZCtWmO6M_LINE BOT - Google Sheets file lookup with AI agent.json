@@ -1,0 +1,297 @@
+{
+  "updatedAt": "2026-05-13T23:11:26.210Z",
+  "createdAt": "2026-05-13T23:11:26.210Z",
+  "id": "MHqyRuj5ZCtWmO6M",
+  "name": "LINE BOT - Google Sheets file lookup with AI agent",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "1b48836c-485b-4d84-9f9a-ea86770472eb",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        -1100,
+        480
+      ],
+      "webhookId": "line-webhook",
+      "parameters": {
+        "path": "line-webhook",
+        "options": {},
+        "httpMethod": "POST"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "66e06f78-07c8-4b85-89f6-c4fe67275b3a",
+      "name": "Google Sheets Lookup",
+      "type": "n8n-nodes-base.googleSheets",
+      "position": [
+        -340,
+        480
+      ],
+      "parameters": {
+        "range": "=A:B",
+        "options": {
+          "returnAllMatches": true
+        },
+        "sheetId": "",
+        "operation": "lookup",
+        "lookupValue": "={{ $json.output }}",
+        "lookupColumn": "Filename",
+        "authentication": "oAuth2"
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "credential-id",
+          "name": "googleSheetsOAuth2Api Credential"
+        }
+      },
+      "notesInFlow": true,
+      "retryOnFail": false,
+      "typeVersion": 1,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "da38d327-be4c-463a-8d7e-a3d54fd0f195",
+      "name": "IF File Exists",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        -160,
+        480
+      ],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json['File URL'] }}",
+              "operation": "isEmpty"
+            }
+          ]
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "fdbbedea-6ef4-4bdd-aae1-f1d33bd3bf15",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        -680,
+        480
+      ],
+      "parameters": {
+        "text": "={{ $json.textinput }}",
+        "agent": "conversationalAgent",
+        "options": {
+          "systemMessage": "You are an AI chatbot that helps extract filenames from user messages.\nUsers will send messages related to file searches, such as:\n\n\"Please find file 1.pdf for me.\"\n\"Can you get me file 2.pdf?\"\n\"Is there a file related to project ABC?\"\n\"Show me all my documents.\"\nAnalyze the message and extract the filename the user is requesting. Respond with only the filename, such as:\n\n\"1.pdf\"\n\"Project ABC Document.pdf\"\nIf no filename is found in the message, respond with \"No filename detected.\""
+        },
+        "promptType": "define",
+        "hasOutputParser": true
+      },
+      "typeVersion": 1.7
+    },
+    {
+      "id": "df1b9c92-75ea-4090-955b-bfaf9010f1eb",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "position": [
+        -680,
+        720
+      ],
+      "parameters": {
+        "options": {}
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "credential-id",
+          "name": "openAiApi Credential"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "c5780ae1-d123-4f89-9060-a41182e7e5e3",
+      "name": "Edit Fields",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        -880,
+        480
+      ],
+      "parameters": {
+        "options": {},
+        "assignments": {
+          "assignments": [
+            {
+              "id": "",
+              "name": "textinput",
+              "type": "string",
+              "value": "={{ $json.body.events[0].message.text }}"
+            }
+          ]
+        }
+      },
+      "typeVersion": 3.4
+    },
+    {
+      "id": "56fcdeed-3016-4670-a8b0-282869c93841",
+      "name": "HTTP Request - Found",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        80,
+        620
+      ],
+      "parameters": {
+        "url": "https://api.line.me/v2/bot/message/reply",
+        "method": "POST",
+        "options": {},
+        "jsonBody": "={\n  \"replyToken\": \"{{ $('Webhook').item.json.body.events[0].replyToken }}\",\n  \"messages\": [\n    {\n      \"type\": \"text\",\n      \"text\": \"{{ $json['File URL'] }}\"\n    }\n  ]\n}\n",
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "credential-id",
+          "name": "httpHeaderAuth Credential"
+        }
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "b84e4116-4c13-4ac3-bfe6-2cfa1ec4b750",
+      "name": "HTTP Request - Not Found",
+      "type": "n8n-nodes-base.httpRequest",
+      "disabled": true,
+      "position": [
+        80,
+        400
+      ],
+      "parameters": {
+        "url": "https://api.line.me/v2/bot/message/reply",
+        "method": "POST",
+        "options": {},
+        "jsonBody": "={\n  \"replyToken\": \"{{ $('Webhook').item.json.body.events[0].replyToken }}\",\n  \"messages\": [\n    {\n      \"type\": \"text\",\n      \"text\": \"\"\n    }\n  ]\n}\n",
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "credential-id",
+          "name": "httpHeaderAuth Credential"
+        }
+      },
+      "typeVersion": 4.2
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF File Exists": {
+      "main": [
+        [],
+        [
+          {
+            "node": "HTTP Request - Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Lookup": {
+      "main": [
+        [
+          {
+            "node": "IF File Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "6105a256-84e1-43e0-9e4a-61461f8e036b",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:11:26.210Z",
+      "createdAt": "2026-05-13T23:11:26.210Z",
+      "role": "workflow:owner",
+      "workflowId": "MHqyRuj5ZCtWmO6M",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

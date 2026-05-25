@@ -1,0 +1,863 @@
+{
+  "updatedAt": "2026-05-13T23:36:23.887Z",
+  "createdAt": "2026-05-13T23:36:23.887Z",
+  "id": "wDnVKueYFPyMPzld",
+  "name": "Automated property & restaurant bookings with AI voice calls via Telegram",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "6c5d6cf8-0dfa-48a5-8872-cf5cc69e049b",
+      "name": "Section: Webhook & Post-call Analysis",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1776,
+        2320
+      ],
+      "parameters": {
+        "width": 1080,
+        "height": 576,
+        "content": "**Webhook & Post-call Analysis**\n- Retell Webhook\n- Filter call_ended events\n- AI analyzes transcript"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "9782dbb6-bae4-4888-8c90-232d1e64c3de",
+      "name": "Gemini 2.0 Flash",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "position": [
+        -768,
+        1616
+      ],
+      "parameters": {
+        "options": {}
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "credential-id",
+          "name": "googlePalmApi Credential"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "996cc320-5576-4751-a5e0-bd8c0f562f4f",
+      "name": "Retell Create Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -224,
+        1408
+      ],
+      "parameters": {
+        "url": "https://api.retellai.com/v2/create-phone-call",
+        "method": "POST",
+        "options": {},
+        "jsonBody": "={{ $json.output }}",
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "credential-id",
+          "name": "httpBearerAuth Credential"
+        },
+        "httpHeaderAuth": {
+          "id": "credential-id",
+          "name": "httpHeaderAuth Credential"
+        }
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "a1aae24d-ec39-4545-b09a-07cc0e5c752e",
+      "name": "Retell Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        -1648,
+        2464
+      ],
+      "webhookId": "retell-webhook-agent",
+      "parameters": {
+        "path": "retell-webhook-agent",
+        "options": {},
+        "httpMethod": "POST"
+      },
+      "typeVersion": 1.1
+    },
+    {
+      "id": "f65ae764-312f-407e-9666-2b4b6ed93a62",
+      "name": "AI Agent Parse Call",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        -1232,
+        2464
+      ],
+      "parameters": {
+        "text": "=Aquí esta la respuesta de Retellai con los datos y la transcripcion de la llamada analizala: {{ $json.body.call.transcript }} call.status {{ $json.body.call.call_status }} disconection_reason: {{ $json.body.call.disconnection_reason }} ",
+        "options": {
+          "systemMessage": "=[ROL]\nEres un experto en análisis de transcripciones de llamadas. Tu trabajo es decidir si la cita quedó REALMENTE confirmada y, solo entonces, crear el evento en Google Calendar con tu tool.\n\n[ENTRADAS DISPONIBLES]\n- now: {{ $now }} (fecha/hora actual)\n- transcript: transcripción completa de la llamada (agent/user)\n- disconnection_reason: motivo de fin de llamada (ej.: agent_hangup, user_hangup, inactivity, voicemail_reached, error_*)\n- started_at / ended_at / duration\n- direccion_fallback: direccion (dirección que yo tenía preparada)\n- precio: precio \n\n[CRITERIOS PARA CONSIDERAR “VISITA CONFIRMADA”]\nDebes cumplir TODOS:\n1) Fin de llamada correcto: disconnection_reason ∈ {agent_hangup, user_hangup, call_transfer}. Rechaza voicemail_reached, inactivity, max_duration_reached, dial_*, error_*.\n2) Confirmación explícita del INTERLOCUTOR (no del agente). Acepta frases inequívocas como:\n   - “sí, perfecto”, “de acuerdo”, “ok”, “confirmo”, “queda para …”, “quedamos …”, “nos vemos …”, “me viene bien …”.\n3) Fecha y hora claras:\n   - Convierte lenguaje natural (“jueves”, “mañana”, “a las cinco”) a fecha/hora (YYYY-MM-DD, HH:mm) en zona horaria de España.\n   - La hora debe estar DENTRO de alguna franja de slots_json para ese día (from ≤ hora < to).\n   - Si el usuario propone fuera de franja, NO confirmes; marca fallo.\n4) Dirección:\n   - Si el usuario dijo la dirección, úsala tal cual (normaliza números en dígitos: “sesenta y siete” → “67” y respeta tildes: “López”).\n   - Si no se dijo, usa direccion_fallback.\n5) Coherencia final:\n   - En los últimos turnos debe verse un resumen o aceptación de la cita (del agente o del usuario). Si termina por silencio u omisión, NO confirmes.\n\n[CUANDO NO CONFIRMAR]\n- transcript vacío o casi sin contenido.\n- Falta de confirmación explícita del usuario.\n- Hora fuera de slots_json o sin fecha/hora claras.\n- Cualquier disconnection_reason distinto a los permitidos.\n- Cierre confuso (ej.: solo el agente resume pero el usuario no acepta).\n\n[EXTRACCIÓN DE DATOS]\n- fecha: YYYY-MM-DD\n- hora: HH:mm (24h)\n- direccion: string\n- nombre_contacto y telefono_contacto si aparecen (opcionales)\n- who_hung_up: “agent” / “user” / “other” (según disconnection_reason)\n- resumen_llamada: 1–2 frases objetivas (qué se acordó o por qué falló)\n\n[ACCIÓN DE CALENDARIO]\n- Solo si “Visita confirmada” según las reglas de arriba: crea evento en Google Calendar (usa tu tool) con:\n  - title: \"Visita piso – direccion\"\n  - start: fecha + hora (zona horaria España)\n  - end: start + 30 o 45 min (elige 45 min por defecto si no se indicó duración)\n  - description: incluir nombre_contacto, telefono_contacto (si hay), disconnection_reason, precio (si relevante) y el resumen_llamada.\n- Si NO cumple, NO crees evento.\n\n[FORMATO DE SALIDA – SIEMPRE ASÍ]\n\n- ✅ Visita confirmada!\n  - Si el evento se creó: añade en la segunda línea “✅ Evento creado en tu calendario.”\n  - Si falló al crear por un error técnico: “⚠️ Confirmada pero el evento no se pudo crear: <motivo>”\n- ❌ No se ha podido confirmar la cita.\n- Si fue FALLO, añade “Motivo: <razón>” (p. ej., “hora fuera de disponibilidad”, “sin confirmación explícita”, “voicemail”, etc.)\n- Evaluación final que tal fue la llamada,sono convincente? fue bien?\n\n\n\n[POLÍTICAS DE INTERPRETACIÓN]\n- Fechas relativas: interpreta “jueves” como el próximo jueves posterior a started_at.\n- Horas: normaliza “cinco de la tarde” → 17:00.\n- Nombres y calles: respeta tildes (López, Alcalá). “sesenta y siete” → “67”.\n- Si hay varias fechas/horas en la conversación, usa la ÚLTIMA confirmada por el USUARIO.\n- Si slots_json no tiene ese día/hora, NO confirmes.\n\n[EJEMPLOS RÁPIDOS]\n- Usuario: “El jueves a las 17:00.” (slots_json: solo ≥ 19:00) → ❌ No confirmado (fuera de franja).\n- Usuario: “Quedamos el jueves a las 19:00.” + dirección dicha → ✅ Confirmada y crear evento.\n- Agente: “Queda para el jueves a las 19:00, ¿correcto?” Usuario: (silencio) → ❌ No confirmado.\n"
+        },
+        "promptType": "define"
+      },
+      "typeVersion": 1.7
+    },
+    {
+      "id": "e7d4003b-97dc-4839-9886-021ff1f0f3e5",
+      "name": "Gemini 2.0 Flash 2",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "position": [
+        -1232,
+        2688
+      ],
+      "parameters": {
+        "options": {}
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "credential-id",
+          "name": "googlePalmApi Credential"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "07d76d6b-97e0-44c3-aa6e-1de1b6be8a76",
+      "name": "Notify Success",
+      "type": "n8n-nodes-base.telegram",
+      "position": [
+        -944,
+        2448
+      ],
+      "webhookId": "9275ea18-e94f-4a3a-86f4-fb02b92f3fe0",
+      "parameters": {
+        "text": "=\n{{ $json.output }}",
+        "chatId": "=245284777",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "credential-id",
+          "name": "telegramApi Credential"
+        }
+      },
+      "typeVersion": 1.1
+    },
+    {
+      "id": "0394bc79-5900-43fb-a8f6-f26d6c31a9cb",
+      "name": "Get an event in Google Calendar",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "position": [
+        -672,
+        1648
+      ],
+      "parameters": {
+        "eventId": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Event_ID', `Ver si hay disponibilidad ese día y hora en el calendario`, 'string') }}",
+        "options": {},
+        "calendar": {
+          "__rl": true,
+          "mode": "list",
+          "value": "user@example.com",
+          "cachedResultName": "alpa y muton"
+        },
+        "operation": "get"
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "credential-id",
+          "name": "googleCalendarOAuth2Api Credential"
+        }
+      },
+      "typeVersion": 1.3
+    },
+    {
+      "id": "5bb4a072-bfa9-4769-a902-bbadf2e8e179",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "position": [
+        -544,
+        1552
+      ],
+      "parameters": {
+        "autoFix": true,
+        "jsonSchemaExample": "{\n  \"from_number\": \"+1234567890\",\n  \"to_number\": \"complete_llm\",\n  \"retell_llm_dynamic_variables\": {\n    \"direccion\": \"complete_llm\",\n    \"slots_disponibles\": \"complete_llm\"\n  }\n}"
+      },
+      "typeVersion": 1.3
+    },
+    {
+      "id": "d2515717-c624-4eec-ab39-4bde25c452e1",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "position": [
+        -544,
+        1728
+      ],
+      "parameters": {
+        "options": {}
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "credential-id",
+          "name": "googlePalmApi Credential"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "c3887391-2f0f-4d7d-8ad1-dbcc6390f312",
+      "name": "Filter",
+      "type": "n8n-nodes-base.filter",
+      "position": [
+        -1424,
+        2464
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "e970c523-87ca-43f2-8eb8-6cb3a4811b95",
+              "operator": {
+                "name": "filter.operator.equals",
+                "type": "string",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.body.event }}",
+              "rightValue": "call_ended"
+            }
+          ]
+        }
+      },
+      "typeVersion": 2.2
+    },
+    {
+      "id": "a9f6708f-7028-4a5f-9dfe-3e188a3b7d20",
+      "name": "Create an event in Google Calendar",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "position": [
+        -1088,
+        2704
+      ],
+      "parameters": {
+        "end": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('End', ``, 'string') }}",
+        "start": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Start', ``, 'string') }}",
+        "calendar": {
+          "__rl": true,
+          "mode": "list",
+          "value": "user@example.com",
+          "cachedResultName": "alpa y muton"
+        },
+        "additionalFields": {
+          "summary": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Summary', ``, 'string') }}",
+          "attendees": [
+            "user@example.com",
+            "user@example.com"
+          ],
+          "description": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Description', ``, 'string') }}"
+        },
+        "useDefaultReminders": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Use_Default_Reminders', ``, 'boolean') }}"
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "credential-id",
+          "name": "googleCalendarOAuth2Api Credential"
+        }
+      },
+      "typeVersion": 1.3
+    },
+    {
+      "id": "4e18400a-65d1-4951-91b1-5cf142396ca6",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "position": [
+        -1696,
+        1680
+      ],
+      "webhookId": "ea1688c0-4e5b-4439-b21e-054c1ceb2aa9",
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "credential-id",
+          "name": "telegramApi Credential"
+        }
+      },
+      "typeVersion": 1.2
+    },
+    {
+      "id": "ee853319-7d74-44c2-bde1-6d9be7ce3d33",
+      "name": "Send a text message",
+      "type": "n8n-nodes-base.telegram",
+      "position": [
+        -1488,
+        1680
+      ],
+      "webhookId": "0ffac095-d83a-48ff-96e8-9fb3223634d2",
+      "parameters": {
+        "text": "Comenzando llamada",
+        "chatId": "={{ $json.message.chat.id }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "credential-id",
+          "name": "telegramApi Credential"
+        }
+      },
+      "typeVersion": 1.2
+    },
+    {
+      "id": "be55dfc4-a7b5-483c-8701-9c8163ffb13f",
+      "name": "Gemini 2.0 Flash1",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "position": [
+        -768,
+        2144
+      ],
+      "parameters": {
+        "options": {}
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "credential-id",
+          "name": "googlePalmApi Credential"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "8d309cbf-b0b6-4598-a28b-024c5ff7154d",
+      "name": "Retell Create Call1",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -224,
+        1904
+      ],
+      "parameters": {
+        "url": "https://api.retellai.com/v2/create-phone-call",
+        "method": "POST",
+        "options": {},
+        "jsonBody": "={{ $json.output }}",
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "credential-id",
+          "name": "httpHeaderAuth Credential"
+        }
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "acaf744a-3e24-4e79-9d12-eb75b8f3eb9f",
+      "name": "Get an event in Google Calendar1",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "position": [
+        -656,
+        2176
+      ],
+      "parameters": {
+        "eventId": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Event_ID', `Ver si hay disponibilidad ese día y hora en el calendario`, 'string') }}",
+        "options": {},
+        "calendar": {
+          "__rl": true,
+          "mode": "list",
+          "value": "user@example.com",
+          "cachedResultName": "alpa y muton"
+        },
+        "operation": "get"
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "credential-id",
+          "name": "googleCalendarOAuth2Api Credential"
+        }
+      },
+      "typeVersion": 1.3
+    },
+    {
+      "id": "76c3d2af-9370-4614-8319-b733a0ffedb4",
+      "name": "Structured Output Parser1",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "position": [
+        -544,
+        2160
+      ],
+      "parameters": {
+        "autoFix": true,
+        "jsonSchemaExample": "{\n  \"from_number\": \"+1234567890\",\n  \"to_number\": \"complete_llm\",\n  \"override_agent_id\": \"agent_6f8860a113d84673ea6e52cfe2\",\n  \"retell_llm_dynamic_variables\": {\n    \"num_personas\": \"complete_llm\",\n    \"hora_deseada\": \"complete_llm\"\n  }\n}"
+      },
+      "typeVersion": 1.3
+    },
+    {
+      "id": "7d88c75e-a24c-4d31-9401-8192442e8780",
+      "name": "Google Gemini Chat Model1",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "position": [
+        -544,
+        2272
+      ],
+      "parameters": {
+        "options": {}
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "credential-id",
+          "name": "googlePalmApi Credential"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "d3abfa2a-6f9a-4ba6-bbfc-a93ab1b0d4db",
+      "name": "AI Agent Reserva Restaurantes",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        -704,
+        2016
+      ],
+      "parameters": {
+        "text": "=Eres un asistente experto en reservar mesa en restaurantes\n\n**Comando recibido:** {{ $('Telegram Trigger').item.json.message.text }}\n\n**Tu tarea:**\n1. **Extraer datos del comando** `/cita <telefono> [direccion] [notas]`\n   - Normaliza el teléfono a formato E.164 español (+34XXXXXXXXX)\n   - Valida que sea móvil español (6,7,8,9 + 8 dígitos)\n   - Extrae número de personas y la hora deseada\n\n\n2. **Preparar llamada con Retell AI:**\n   - Teléfono destino: el extraído del comando\n   - Genera un prompt natural para el agente de voz:\n     * Solicitar visita al piso en [dirección]\n     * Proponer los 3 slots disponibles\n     * Confirmar: dirección\n     * Ser breve y profesional\n   - Incluir metadata: chatId, direccion, intentos:0\n\n3. **Devolver JSON** para hacer la llamada:\n```json\n{\n  \"from_number\": \"+34949960018\",\n  \"to_number\": \"complete_llm\",\n  \"override_agent_id\": \"agent_6f8860a113d84673ea6e52cfe2\",\n  \"retell_llm_dynamic_variables\": {\n    \"num_personas\": \"complete_llm\",\n    \"hora_deseada\": \"complete_llm\"\n  }\n}\n```\n\n\n**Timezone:** Europe/Madrid\n**Fecha actual:** {{ $now.toISO() }}",
+        "options": {
+          "systemMessage": "Eres un asistente de IA experto en scheduling y automatización. Usas herramientas para obtener datos de calendarios y generar llamadas telefónicas. Siempre devuelves JSON válido y bien estructurado."
+        },
+        "promptType": "define",
+        "hasOutputParser": true
+      },
+      "retryOnFail": true,
+      "typeVersion": 1.7
+    },
+    {
+      "id": "e4308412-51fe-4f44-8fe3-5b3f5a0feb2f",
+      "name": "Switch",
+      "type": "n8n-nodes-base.switch",
+      "position": [
+        -1280,
+        1680
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "outputKey": "pisos",
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "leftValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "7fafd93a-8ce4-4ddd-a983-4e3934efe1bb",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notStartsWith"
+                    },
+                    "leftValue": "={{ $('Telegram Trigger').item.json.message.text }}",
+                    "rightValue": "/reserva"
+                  }
+                ]
+              },
+              "renameOutput": true
+            },
+            {
+              "outputKey": "Reserva restaurante",
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "leftValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "611dbffc-c663-48c9-9e10-c045f26f4505",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    },
+                    "leftValue": "={{ $('Telegram Trigger').item.json.message.text }}",
+                    "rightValue": "/reserva"
+                  }
+                ]
+              },
+              "renameOutput": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "typeVersion": 3.2
+    },
+    {
+      "id": "199a1023-342c-48c9-9851-e313a22ac3f6",
+      "name": "Setup Notes1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2464,
+        1744
+      ],
+      "parameters": {
+        "width": 608,
+        "height": 624,
+        "content": "**QUICK SETUP: RetellAI, Telegram & Google Calendar**\n\n**1. RetellAI (Voice Calling)**\n   - Create an agent at Retell.ai and get your API Key.\n   - In n8n, create \"HTTP Bearer YOUR_TOKEN_HERE\" credentials with that API key.\n   - Assign the credentials to the `Retell Create Call` nodes.\n   - In RetellAI, set the webhook to point to your `Retell Webhook` node's URL.\n   - Set your outbound phone number (`from_number`).\n\n**2. Telegram (Bot)**\n   - Create a bot with @BotFather to get the token.\n   - In n8n, create \"Telegram API\" credentials with the token.\n   - Assign the credentials to the Telegram nodes.\n   - Get your Chat ID by starting a conversation with the bot and use it where needed (e.g., `Notify Success`).\n\n**3. Google Calendar**\n   - In Google Cloud, enable the Google Calendar API and create OAuth 2.0 credentials.\n   - Add the n8n callback URL to the authorized redirect URIs.\n   - In n8n, create and authorize \"Google Calendar OAuth2 API\" credentials.\n   - Replace the sample Calendar ID with yours in the calendar nodes.\n\n**Final Checklist:**\n- [ ] Replace all sample data (IDs, phone numbers).\n- [ ] Run a full test by sending a command from Telegram.\n- [ ] Adjust the timezone if necessary."
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "cd2945c3-53e9-4abe-8e7b-0d2cba4b9037",
+      "name": "Section: Triggers",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1728,
+        1584
+      ],
+      "parameters": {
+        "width": 200,
+        "height": 288,
+        "content": "**Triggers**\n- Telegram Trigger"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "4079fb64-f95c-4227-a886-8e1a2bb7fa33",
+      "name": "Section: Parsing & Routing",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1520,
+        1584
+      ],
+      "parameters": {
+        "width": 420,
+        "height": 288,
+        "content": "**Parsing & Routing**\n- Switch routes commands\n- Initial Telegram reply"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "d5831d91-7d57-45f6-9c2a-13f8f3cf1a09",
+      "name": "Section: Agent – Property Viewings",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -800,
+        1264
+      ],
+      "parameters": {
+        "width": 516,
+        "height": 608,
+        "content": "**Agent: Property Viewings**\n- LLM generates call JSON\n- Calendar availability logic"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "3d64406e-42e0-4e8f-8380-9475f267234a",
+      "name": "AI Agent: Property Viewings",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        -768,
+        1408
+      ],
+      "parameters": {
+        "text": "=Eres un asistente experto en agendar visitas a pisos.\n\n**Comando recibido:** {{ $('Telegram Trigger').item.json.message.text }}\n\n**Tu tarea:**\n1. **Extraer datos del comando** `/cita <telefono> [direccion] [notas]`\n   - Normaliza el teléfono a formato E.164 español (+34XXXXXXXXX)\n   - Valida que sea móvil español (6,7,8,9 + 8 dígitos)\n   - Extrae dirección y notas\n\n2. **Consultar con tu tool Google Calendar y ver que huecos están ocupados y cuales no** \n   - Usa la herramienta de Google Calendar\n   - Obtén todos los eventos existentes\n\n3. **Generar slots disponibles** según horarios:\n   - Lunes-Jueves: ≥19:00\n   - Viernes: ≥16:00\n   - Sábado-Domingo: 11:00-21:00\n   - Duración: 30 min + 20 min buffer = 50 min bloque\n   - Intervalos: cada 30 minutos\n   - Filtra colisiones con eventos del calendario\n   - Selecciona los mejores 5 slots\n   - las  fechas en slots disponibles pasalas en texto no en números por ejemplo y dale 3 opciones depende del día de hoy, si es más pronto de las 19:00 dile: tengo disponible hoy a partir de las 7 de la tarde, mañana y pasado igual (contando con que no sea viernes o festivo). Si hoy es jueves por ejemplo le dirías tengo disponible hoy a partir de las 7, mañana a partir de las 4  y fin de semana a cualquier hora a partir de las 11\n\n4. **Preparar llamada con Retell AI:**\n   - Teléfono destino: el extraído del comando\n   - Genera un prompt natural para el agente de voz:\n     * Solicitar visita al piso en [dirección]\n     * Proponer los 3 slots disponibles\n     * Confirmar: dirección\n     * Ser breve y profesional\n   - Incluir metadata: chatId, direccion, intentos:0\n\n5. **Devolver JSON** para hacer la llamada:\n```json\n{\n  \"from_number\": \"+34949960018\",\n  \"to_number\": \"complete_llm\",\n  \"retell_llm_dynamic_variables\": {\n    \"direccion\": \"complete_llm\",\n    \"slots_disponibles\": \"complete_llm\"\n  }\n}\n```\n\n\n**Timezone:** Europe/Madrid\n**Fecha actual:** {{ $now.toISO() }}",
+        "options": {
+          "systemMessage": "Eres un asistente de IA experto en scheduling y automatización. Usas herramientas para obtener datos de calendarios y generar llamadas telefónicas. Siempre devuelves JSON válido y bien estructurado."
+        },
+        "promptType": "define",
+        "hasOutputParser": true
+      },
+      "retryOnFail": true,
+      "typeVersion": 1.7
+    },
+    {
+      "id": "7b44caf1-1760-4b86-ac5c-111414917495",
+      "name": "Section: Retell AI Calls1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -288,
+        1264
+      ],
+      "parameters": {
+        "width": 360,
+        "height": 800,
+        "content": "**Retell AI Calls**\n- Create outbound calls via HTTP"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "7b9e4403-19f6-43e2-bb32-8cbb0428578a",
+      "name": "Section: Agent – Restaurant Reservations1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -800,
+        1872
+      ],
+      "parameters": {
+        "width": 516,
+        "height": 528,
+        "content": "**Agent: Restaurant Reservations**\n- LLM prepares booking call\n- Collects party size and time"
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "AI Agent Parse Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "AI Agent: Property Viewings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent Reserva Restaurantes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retell Webhook": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini 2.0 Flash": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent: Property Viewings",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini 2.0 Flash1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent Reserva Restaurantes",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini 2.0 Flash 2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent Parse Call",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent Parse Call": {
+      "main": [
+        [
+          {
+            "node": "Notify Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Structured Output Parser",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent: Property Viewings",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Structured Output Parser1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent Reserva Restaurantes",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent: Property Viewings": {
+      "main": [
+        [
+          {
+            "node": "Retell Create Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent Reserva Restaurantes": {
+      "main": [
+        [
+          {
+            "node": "Retell Create Call1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get an event in Google Calendar": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent: Property Viewings",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get an event in Google Calendar1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent Reserva Restaurantes",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create an event in Google Calendar": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent Parse Call",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "ec24b27c-9c00-4afc-9f84-dc6aae4a8b5f",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:36:23.887Z",
+      "createdAt": "2026-05-13T23:36:23.887Z",
+      "role": "workflow:owner",
+      "workflowId": "wDnVKueYFPyMPzld",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

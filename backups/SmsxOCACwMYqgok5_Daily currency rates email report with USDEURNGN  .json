@@ -1,0 +1,266 @@
+{
+  "updatedAt": "2026-05-13T23:32:07.513Z",
+  "createdAt": "2026-05-13T23:32:07.513Z",
+  "id": "SmsxOCACwMYqgok5",
+  "name": "Daily currency rates email report with USD→EUR/NGN & BTC/ETH price tracking",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "1ba443db-fe26-4caf-a247-e3f5bf4157d7",
+      "name": "Daily 8AM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [
+        -256,
+        224
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "seconds"
+            }
+          ]
+        }
+      },
+      "typeVersion": 1.1
+    },
+    {
+      "id": "493a3fe9-2c87-494a-8baa-70ff0de03530",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -480,
+        16
+      ],
+      "parameters": {
+        "width": 350,
+        "height": 380,
+        "content": "💰 CURRENCY TRACKER WORKFLOW:\nGet daily exchange rates delivered to your email every morning at 8 AM.\n\n📊 CURRENCIES TRACKED:\n• USD to EUR\n• USD to NGN (Nigerian Naira)\n• Bitcoin (BTC) to USD\n• Ethereum (ETH) to USD\n\n📧 DELIVERY:\n• Professional HTML email\n• Sent daily at 8:00 AM\n• Includes percentage changes\n• Mobile-friendly format"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "c70f0f99-2259-405a-a305-bdd3062c52aa",
+      "name": "Get Fiat Exchange Rates",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -32,
+        144
+      ],
+      "parameters": {
+        "url": "https://api.exchangerate-api.com/v4/latest/USD",
+        "options": {}
+      },
+      "typeVersion": 4.1
+    },
+    {
+      "id": "5ba231d1-5077-4f06-a4e6-28090ce56a4e",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -160,
+        -144
+      ],
+      "parameters": {
+        "color": 6,
+        "width": 350,
+        "height": 280,
+        "content": "🌍 FIAT CURRENCY RATES:\nFetches USD exchange rates from a free API.\n\n📡 API Used: ExchangeRate-API\n• Free, no signup required\n• Updates multiple times daily\n• Reliable and fast\n\n💱 Returns rates for:\n• EUR (Euro)\n• NGN (Nigerian Naira)\n• 168+ other currencies\n\n🔧 No configuration needed - just works!"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "f252dd92-67e3-4b8b-9deb-b1ed3b601f8f",
+      "name": "Get Crypto Prices",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -32,
+        304
+      ],
+      "parameters": {
+        "url": "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true",
+        "options": {}
+      },
+      "typeVersion": 4.1
+    },
+    {
+      "id": "48a20f94-5687-42da-8b76-80c000fc282d",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        624,
+        304
+      ],
+      "parameters": {
+        "width": 350,
+        "height": 280,
+        "content": "₿ CRYPTOCURRENCY PRICES:\nFetches Bitcoin and Ethereum prices from CoinGecko.\n\n📡 API Used: CoinGecko\n• Free, reliable crypto data\n• Includes 24hr price changes\n• No API key required\n\n💰 Returns:\n• Bitcoin (BTC) price in USD\n• Ethereum (ETH) price in USD\n• 24-hour percentage change\n• Real-time market data"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "dc21acae-14ff-483d-a912-e7368bf3451e",
+      "name": "Format Email Content",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        352,
+        208
+      ],
+      "parameters": {
+        "jsCode": "// n8n Code (v2): Better \"Format Email Content\"\n// - Auto-detects fiat vs crypto inputs (works regardless of Merge order)\n// - Defensive parsing + nice HTML + text fallback\n// - Uses Africa/Lagos by default for display time (change tz if needed)\n\nconst TZ = 'Africa/Lagos';\nconst NOW = new Date();\n\nconst items = $input.all(); // merged inputs\nif (!items || items.length < 2) {\n  throw new Error('Expected 2 inputs (fiat + crypto), but received ' + (items ? items.length : 0));\n}\n\n// Identify which payload is which regardless of order\nlet fiatData, cryptoData;\nfor (const it of items) {\n  const j = it.json || {};\n  if (j.rates && j.base && j.date) fiatData = j;\n  if (j.bitcoin || j.ethereum) cryptoData = j;\n}\n\nif (!fiatData) {\n  throw new Error('Fiat data not found. Ensure the ExchangeRate-API node is connected to the Merge before this Code node.');\n}\nif (!cryptoData) {\n  throw new Error('Crypto data not found. Ensure the CoinGecko node is connected to the Merge before this Code node.');\n}\n\n// Extract fiat\nconst eurRate = Number(fiatData?.rates?.EUR);\nconst ngnRate = Number(fiatData?.rates?.NGN);\nconst lastUpdated = String(fiatData?.date || 'N/A');\n\n// Extract crypto\nconst btcPrice  = Number(cryptoData?.bitcoin?.usd);\nconst btcChange = Number(cryptoData?.bitcoin?.usd_24h_change);\nconst ethPrice  = Number(cryptoData?.ethereum?.usd);\nconst ethChange = Number(cryptoData?.ethereum?.usd_24h_change);\n\n// Helpers\nconst fmtNum = (num, decimals = 2) =>\n  isFinite(num) ? new Intl.NumberFormat('en-US', {\n    minimumFractionDigits: decimals, maximumFractionDigits: decimals\n  }).format(num) : '—';\n\nconst arrow = (n) => (isFinite(n) ? (n >= 0 ? '▲' : '▼') : '');\nconst color = (n) => (isFinite(n) ? (n >= 0 ? '#0FA958' : '#E03E2F') : '#6B7280');\nconst sign  = (n) => (isFinite(n) && n > 0 ? '+' : '');\n\nconst fmtPct = (n) =>\n  isFinite(n)\n    ? `<span style=\"color:${color(n)};font-weight:600\">${sign(n)}${fmtNum(n, 2)}%</span> ${arrow(n)}`\n    : '<span style=\"color:#6B7280\">—</span>';\n\nconst fmtDate = (d=NOW, tz=TZ) =>\n  d.toLocaleString('en-US', { timeZone: tz, weekday:'long', year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' });\n\n// Build HTML\nconst html = `\n<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width\">\n<title>Daily Currency Report</title>\n</head>\n<body style=\"margin:0;padding:24px;background:#F5F7FB;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;\">\n  <div style=\"max-width:640px;margin:0 auto;background:#ffffff;border-radius:12px;box-shadow:0 8px 24px rgba(16,24,40,0.08);overflow:hidden;\">\n    <div style=\"background:linear-gradient(135deg,#667EEA 0%,#764BA2 100%);padding:28px 24px;text-align:center;\">\n      <div style=\"font-size:28px;color:#fff;letter-spacing:0.2px\">💰 Daily Currency Report</div>\n      <div style=\"margin-top:6px;color:rgba(255,255,255,0.9);font-size:14px\">${fmtDate()}</div>\n    </div>\n\n    <div style=\"padding:24px\">\n      <h2 style=\"margin:0 0 12px 0;font-size:18px;color:#111827\">🌍 Fiat Exchange Rates (USD base)</h2>\n      <div style=\"display:grid;gap:12px\">\n        <div style=\"background:#F8FAFC;border-left:4px solid #3B82F6;padding:16px;border-radius:8px\">\n          <div style=\"display:flex;justify-content:space-between;align-items:center\">\n            <div>\n              <div style=\"font-weight:600;color:#111827\">🇺🇸 USD → 🇪🇺 EUR</div>\n              <div style=\"color:#6B7280;font-size:12px\">US Dollar to Euro</div>\n            </div>\n            <div style=\"font-weight:700;color:#1D4ED8;font-size:20px\">${fmtNum(eurRate, 4)}</div>\n          </div>\n        </div>\n\n        <div style=\"background:#F8FAFC;border-left:4px solid #10B981;padding:16px;border-radius:8px\">\n          <div style=\"display:flex;justify-content:space-between;align-items:center\">\n            <div>\n              <div style=\"font-weight:600;color:#111827\">🇺🇸 USD → 🇳🇬 NGN</div>\n              <div style=\"color:#6B7280;font-size:12px\">US Dollar to Nigerian Naira</div>\n            </div>\n            <div style=\"font-weight:700;color:#065F46;font-size:20px\">₦${fmtNum(ngnRate, 2)}</div>\n          </div>\n        </div>\n      </div>\n\n      <h2 style=\"margin:24px 0 12px 0;font-size:18px;color:#111827\">₿ Cryptocurrency Prices</h2>\n      <div style=\"display:grid;gap:12px\">\n        <div style=\"background:#FFFBEB;border-left:4px solid #F59E0B;padding:16px;border-radius:8px\">\n          <div style=\"display:flex;justify-content:space-between;align-items:center\">\n            <div>\n              <div style=\"font-weight:600;color:#111827\">₿ Bitcoin (BTC)</div>\n              <div style=\"color:#6B7280;font-size:12px\">24h change: ${fmtPct(btcChange)}</div>\n            </div>\n            <div style=\"font-weight:700;color:#B45309;font-size:20px\">$${fmtNum(btcPrice, 0)}</div>\n          </div>\n        </div>\n\n        <div style=\"background:#EEF2FF;border-left:4px solid #6366F1;padding:16px;border-radius:8px\">\n          <div style=\"display:flex;justify-content:space-between;align-items:center\">\n            <div>\n              <div style=\"font-weight:600;color:#111827\">⟠ Ethereum (ETH)</div>\n              <div style=\"color:#6B7280;font-size:12px\">24h change: ${fmtPct(ethChange)}</div>\n            </div>\n            <div style=\"font-weight:700;color:#3730A3;font-size:20px\">$${fmtNum(ethPrice, 0)}</div>\n          </div>\n        </div>\n      </div>\n\n      <div style=\"margin-top:20px;color:#6B7280;font-size:12px;border-top:1px solid #E5E7EB;padding-top:12px\">\n        📊 Fiat updated: ${lastUpdated} &nbsp;|&nbsp; ⏱️ Generated: ${fmtDate()} (${TZ})\n      </div>\n    </div>\n\n    <div style=\"background:#F9FAFB;padding:14px;text-align:center;color:#6B7280;font-size:12px;border-top:1px solid #E5E7EB\">\n      This email was generated automatically by your n8n currency tracker.\n    </div>\n  </div>\n</body>\n</html>\n`;\n\n// Plain text\nconst text = [\n  `Daily Currency Report — ${NOW.toLocaleDateString('en-US', { timeZone: TZ })}`,\n  ``,\n  `Fiat (USD base)`,\n  `• USD → EUR: ${fmtNum(eurRate, 4)}`,\n  `• USD → NGN: ₦${fmtNum(ngnRate, 2)}`,\n  ``,\n  `Crypto`,\n  `• BTC: $${fmtNum(btcPrice, 0)} (24h: ${sign(btcChange)}${fmtNum(btcChange, 2)}%)`,\n  `• ETH: $${fmtNum(ethPrice, 0)} (24h: ${sign(ethChange)}${fmtNum(ethChange, 2)}%)`,\n  ``,\n  `Fiat updated: ${lastUpdated} | Generated: ${fmtDate()} (${TZ})`\n].join('\\n');\n\nreturn [\n  {\n    json: {\n      subject: `💰 Daily Currency Report — ${NOW.toLocaleDateString('en-US', { timeZone: TZ })}`,\n      html,\n      text,\n      summary: {\n        usd_eur: eurRate,\n        usd_ngn: ngnRate,\n        btc_usd: btcPrice,\n        btc_change_24h: btcChange,\n        eth_usd: ethPrice,\n        eth_change_24h: ethChange,\n        fiat_date: lastUpdated,\n        generated_at: fmtDate()\n      }\n    }\n  }\n];\n"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "1fb2c7a0-f562-4a0d-95cb-250c06ac7c22",
+      "name": "Sticky Note3",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        240,
+        -224
+      ],
+      "parameters": {
+        "color": 7,
+        "width": 380,
+        "height": 300,
+        "content": "🎨 EMAIL FORMATTING:\nThis JavaScript code creates a beautiful HTML email with all currency data.\n\n✨ Features:\n• Professional design with gradients\n• Mobile-responsive layout\n• Color-coded price changes (green/red)\n• Proper number formatting\n• Both HTML and plain text versions\n\n📧 Email Contains:\n• Daily date in subject line\n• Fiat rates: USD→EUR, USD→NGN\n• Crypto prices: BTC, ETH with 24hr changes\n• Professional footer with timestamps"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "96c07871-73a2-4507-bb48-4e4d3acd0213",
+      "name": "Send Daily Currency Email",
+      "type": "n8n-nodes-base.emailSend",
+      "position": [
+        576,
+        224
+      ],
+      "webhookId": "ee553940-a01e-4b5c-a0b4-492c0dac7f72",
+      "parameters": {
+        "html": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        },
+        "subject": "={{ $json.subject }}",
+        "toEmail": "user@example.com",
+        "fromEmail": "user@example.com",
+        "emailFormat": "html"
+      },
+      "credentials": {
+        "smtp": {
+          "id": "credential-id",
+          "name": "smtp Credential"
+        }
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "4c14b55a-2fa2-4597-9fc8-4fd59ed0931c",
+      "name": "Sticky Note4",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        656,
+        -96
+      ],
+      "parameters": {
+        "color": 3,
+        "width": 350,
+        "height": 320,
+        "content": "📨 EMAIL DELIVERY:\nSends your beautiful currency report via email.\n\n🔧 SETUP REQUIRED:\n1. Change 'your-email@gmail.com' to your sender email\n2. Change 'recipient@email.com' to where you want the report sent\n3. Configure SMTP credentials (Gmail, Outlook, etc.)\n\n📧 GMAIL SETUP:\n• SMTP Server: smtp.gmail.com\n• Port: 587\n• Use App Password (not regular password)\n\n✅ Ready to receive daily currency updates at 8 AM!"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "88b956bc-370f-492b-a87b-04aefedcd2f6",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "position": [
+        112,
+        208
+      ],
+      "parameters": {},
+      "typeVersion": 3.2
+    }
+  ],
+  "connections": {
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Format Email Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 8AM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Fiat Exchange Rates",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Crypto Prices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Crypto Prices": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Email Content": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Currency Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Fiat Exchange Rates": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "9f08dfd9-1e18-4db4-ab32-21aaf49c4fba",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:32:07.513Z",
+      "createdAt": "2026-05-13T23:32:07.513Z",
+      "role": "workflow:owner",
+      "workflowId": "SmsxOCACwMYqgok5",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

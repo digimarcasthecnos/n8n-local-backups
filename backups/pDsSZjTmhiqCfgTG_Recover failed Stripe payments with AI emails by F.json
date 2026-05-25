@@ -1,0 +1,458 @@
+{
+  "updatedAt": "2026-05-13T23:33:31.177Z",
+  "createdAt": "2026-05-13T23:33:31.177Z",
+  "id": "pDsSZjTmhiqCfgTG",
+  "name": "Recover failed Stripe payments with AI emails (by FlyCode)",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "d5c159bf-cf8b-4247-b8c2-e2ec52325c8c",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "7c277748-d5fe-46f1-a33b-771acf6a7fe5",
+      "parameters": {
+        "path": "7c277748-d5fe-46f1-a33b-771acf6a7fe5",
+        "options": {},
+        "httpMethod": "POST"
+      },
+      "typeVersion": 2.1
+    },
+    {
+      "id": "3736d60f-82a0-4012-b703-22e895abcbac",
+      "name": "Code in JavaScript",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        416,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Process all incoming items from Webhook (Run Once mode)\nconst items = $input.all();\n\nreturn items.map(({ json }) => {\n  const obj = json?.body?.data?.object ?? {};\n\n  // Extract and split name on the FIRST space\n  const fullName = String(obj.customer_name ?? \"\").trim().replace(/\\s+/g, \" \");\n  const spaceIdx = fullName.indexOf(\" \");\n  const firstName = spaceIdx === -1 ? fullName : fullName.slice(0, spaceIdx);\n  const lastName  = spaceIdx === -1 ? \"\"       : fullName.slice(spaceIdx + 1);\n\n  // Other fields\n  const currency           = obj.currency ?? \"\";\n  const customer_email     = obj.customer_email ?? \"\";\n  const hosted_invoice_url = obj.hosted_invoice_url ?? \"\";\n  const invoice_number     = obj.number ?? \"\";\n  const invoice_amount     = obj.total != null ? obj.total / 100 : null; // cents -> float\n  const type               = json?.body?.type ?? \"\";\n  const billing_reason     = obj.billing_reason ?? \"\";\n  const collection         = obj.collection_method ?? \"\";\n  const account_name       = obj.account_name ?? \"\";\n\n  // Description: prefer top-level; fallback to first line item\n  const lineItemDesc =\n    Array.isArray(obj?.lines?.data) && obj.lines.data.length > 0\n      ? obj.lines.data[0]?.description ?? \"\"\n      : \"\";\n\n  const description = obj.description ?? lineItemDesc ?? \"\";\n\n  return {\n    json: {\n      firstName,\n      lastName,\n      currency,\n      customer_email,\n      hosted_invoice_url,\n      invoice_number,\n      invoice_amount,\n      type,\n      billing_reason,\n      collection,\n      description,\n      account_name,\n    },\n  };\n});"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "aa432ab0-badb-4f64-a2c0-e8f6d64dc207",
+      "name": "If",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "4b276567-deec-472c-b5a9-f3c9ff36a627",
+              "operator": {
+                "name": "filter.operator.equals",
+                "type": "string",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "invoice.payment_failed"
+            },
+            {
+              "id": "47631a70-18f9-4c67-a096-3f90b25c99c6",
+              "operator": {
+                "name": "filter.operator.equals",
+                "type": "string",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.billing_reason }}",
+              "rightValue": "subscription_cycle"
+            },
+            {
+              "id": "9d8725bd-25d0-42bf-91e6-b093ace80808",
+              "operator": {
+                "name": "filter.operator.equals",
+                "type": "string",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.collection }}",
+              "rightValue": "charge_automatically"
+            }
+          ]
+        }
+      },
+      "typeVersion": 2.2
+    },
+    {
+      "id": "4356bb04-49c4-4343-a2dd-f48dc2f87669",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        1024,
+        -128
+      ],
+      "parameters": {
+        "text": "=You are writing a short, friendly, and urgent FAILED PAYMENT email.\n\nVARIABLES (may be missing):\n- firstName: {{ $json.firstName }}\n- lastName: {{ $json.lastName }}\n- account_name: {{ $json.account_name }}\n- customer_email: {{ $json.customer_email }}\n- hosted_invoice_url: {{ $json.hosted_invoice_url }}\n- invoice_number: {{ $json.invoice_number }}\n- invoice_amount: {{ $json.invoice_amount }}\n- currency: {{ $json.currency }}\n- description: {{ $json.description }}\n- type: {{ $json.type }}\n- billing_reason: {{ $json.billing_reason }}\n- collection: {{ $json.collection }}\n\nGOAL:\nPolitely but clearly convey urgency to pay the failed invoice to avoid interruption/cancellation.\n\nSUBSCRIPTION NAME:\n- If \"description\" exists, extract the plan name by removing any leading \"<qty> × \" and taking the text before the first \"(\"; trim.\n  Example: \"1 × daily_test_2 (at $2.00 / day)\" -> \"daily_test_2\".\n- Otherwise use \"{{ $json.account_name }} subscription\".\n\nAMOUNT FORMATTING:\n- Two decimals.\n- Currency symbol map: usd->$, eur->€, gbp->£; otherwise render as \"<amount> <UPPERCASE CODE>\" (e.g., 12.00 AUD).\n\nEMAIL BODY REQUIREMENTS (HTML):\n- Produce valid, minimal HTML **snippet** (no <html> or <body> tags). Use ASCII only (no smart quotes).\n- Structure:\n  - Use <p> for paragraphs; use <br> only for small line breaks inside a paragraph (e.g., in the signature).\n  - Include: greeting, the subscription/plan name, the invoice number, the formatted amount due, and the consequence of non-payment (interruption/cancellation).\n  - Include ONE clear call-to-action as a **hyperlink button** to {{ $json.hosted_invoice_url }}:\n    <a href=\"{{ $json.hosted_invoice_url }}\" target=\"_blank\" rel=\"noopener\"\n       style=\"display:inline-block;padding:10px 16px;text-decoration:none;border-radius:6px;border:1px solid #222;\">\n       Pay invoice\n    </a>\n    Do not paste the raw URL in the body; use only the hyperlink above.\n  - Close with a polite reassurance and a **signature block** like:\n    <p>Thank you,<br>{{ $json.account_name }} Billing Team</p>\n    If account_name is missing, render \"Billing Team\" only.\n- Tone: polite, reassuring, action-oriented, concise (about 120–180 words).\n\nFALLBACKS:\n- If any variable is missing, use an empty string.\n- If the link is missing, set href=\"#\" but still render the button.\n\nOUTPUT FORMAT (STRICT):\n- Output ONE valid JSON object ONLY (no code fences, no markdown, no extra keys, no arrays).\n- Start with \"{\" and end with \"}\".\n- EXACT keys with string values:\n  {\n    \"to_email\": \"...\",\n    \"email_subject\": \"...\",\n    \"email_body\": \"...\"   // HTML string; do not escape tags; normal JSON string quoting is OK\n  }\n- \"to_email\" MUST be {{ $json.customer_email }} if present, else \"\".\n- Subject pattern: \"Action required: Payment failed for <subscription or account_name> (Invoice <invoice_number>)\".\n- Greeting rule: \"Hi {{ $json.firstName }},\" else \"Hi there,\".",
+        "options": {
+          "systemMessage": "You are the company’s Billing & Payments Manager. Write a warm, personal one-to-one email to the customer about their field subscription invoice."
+        },
+        "promptType": "define"
+      },
+      "typeVersion": 2.2
+    },
+    {
+      "id": "154b2939-f614-4023-9d4b-16e3b47bd525",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "position": [
+        1024,
+        64
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {
+          "responseFormat": "json_object"
+        }
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "credential-id",
+          "name": "openAiApi Credential"
+        }
+      },
+      "typeVersion": 1.2
+    },
+    {
+      "id": "f053f493-2898-41d4-bec3-b3fe21bc53a6",
+      "name": "HTTP Request1",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        1584,
+        -128
+      ],
+      "parameters": {
+        "url": "https://api.postmarkapp.com/email",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "sendHeaders": true,
+        "authentication": "predefinedCredentialType",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "From",
+              "value": "{{POSTMARK_FROM_EMAIL}}"
+            },
+            {
+              "name": "To",
+              "value": "={{ $json.to_email }}"
+            },
+            {
+              "name": "Subject",
+              "value": "={{ $json.email_subject }}"
+            },
+            {
+              "name": "HtmlBody",
+              "value": "={{ $json.email_body }}"
+            },
+            {
+              "name": "MessageStream",
+              "value": "n8n_demo"
+            }
+          ]
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "nodeCredentialType": "postmarkApi"
+      },
+      "credentials": {
+        "postmarkApi": {
+          "id": "credential-id",
+          "name": "postmarkApi Credential"
+        }
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "6dea1a66-716b-4420-a8b0-6ac8f8a25ce4",
+      "name": "Code in JavaScript1",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        1376,
+        -128
+      ],
+      "parameters": {
+        "jsCode": "// Use this if you only ever have one incoming item.\nfunction extractJsonString(s) {\n  if (typeof s !== 'string') return '';\n  let t = s.trim();\n  t = t.replace(/^```(?:json)?\\n?/, '').replace(/```$/, '').trim();\n  if (t.startsWith('{') && t.endsWith('}')) return t;\n  const m = t.match(/{[\\s\\S]*}/);\n  return m ? m[0] : '';\n}\n\nconst raw = $json?.text ?? $json?.output ?? '';\nconst jsonStr = extractJsonString(raw);\nif (!jsonStr) {\n  throw new Error('Could not find a JSON object in the model response.');\n}\nconst obj = JSON.parse(jsonStr);\nreturn [{ json: obj }];\n"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "810cbecc-938d-4635-b73b-0c4624a14503",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        336,
+        -400
+      ],
+      "parameters": {
+        "width": 304,
+        "height": 368,
+        "content": "## Code in JavaScript1\nextracts fields from `body.data.object` and maps:\n- firstName\n- lastName (split on first space)\n- currency\n- customer_email,\n- hosted_invoice_url\n- invoice_number\n- invoice_amount (divide total by 100)\n- type\n- billing_reason\n- collection\n- description (falls back to first line item)\n- account_name"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "a992aba3-badc-4f9a-8dcd-acd159d99934",
+      "name": "Filter",
+      "type": "n8n-nodes-base.filter",
+      "position": [
+        208,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "ee074e73-33fe-4291-baa5-7bf601bfa74f",
+              "operator": {
+                "name": "filter.operator.equals",
+                "type": "string",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.body.data.object.object }}",
+              "rightValue": "invoice"
+            },
+            {
+              "id": "59ae193e-bc21-4e4a-a2ca-f1e332652cf5",
+              "operator": {
+                "name": "filter.operator.equals",
+                "type": "string",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.body.object }}",
+              "rightValue": "event"
+            }
+          ]
+        }
+      },
+      "typeVersion": 2.2
+    },
+    {
+      "id": "6b6bef23-3e45-4f81-8e76-9c7d98354687",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        144,
+        128
+      ],
+      "parameters": {
+        "height": 176,
+        "content": "## Filter non-stripe webhooks\nIf you might receive non-Stripe posts on the Webhook, add a quick guard in the first Code node to bail if."
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "0e2b8c1e-c4f3-4a35-b8f4-b6272981fa83",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        576,
+        128
+      ],
+      "parameters": {
+        "width": 288,
+        "height": 176,
+        "content": "## Filter non recurring  subscription invoices  \nIf — guards the flow so you only email on the exact scenario. And ensures one-off invoices or manual-collection accounts don’t get this email."
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "fd8c7a80-ea7f-4f3f-9e69-9f70f6637c22",
+      "name": "Sticky Note3",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -96,
+        -192
+      ],
+      "parameters": {
+        "width": 288,
+        "height": 176,
+        "content": "## Webhook\nReceives Stripe events.\n\n*Path is currently a mock UUID; Don't forget to replace it with the path generated by n8n.*"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "32d67c3f-e485-4bac-93a4-3425d9f3891b",
+      "name": "Sticky Note5",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1280,
+        32
+      ],
+      "parameters": {
+        "width": 288,
+        "height": 144,
+        "content": "## Code in JavaScript2\nParses the model’s JSON string returned by AI Agent to a real JSON object (`to_email`, `email_subject`, `email_body`)."
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "d07fa2e0-ba3e-477c-92c0-e7b8ab20dba3",
+      "name": "Sticky Note6",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        944,
+        -272
+      ],
+      "parameters": {
+        "width": 384,
+        "height": 128,
+        "content": "## AI Agent + OpenAI Chat Model\nGenerates the email JSON from Stripe invoice data using the prompt. Returns a single JSON object with keys: `to_email`, `email_subject`, `email_body`.\n\n*Don't forget replace the sender (From) and attach your own Postmark credentials at import time.*"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "0ac3ec94-8cad-4c6a-814f-ebf1b70ffb23",
+      "name": "Sticky Note7",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1456,
+        -320
+      ],
+      "parameters": {
+        "width": 368,
+        "height": 176,
+        "content": "## HTTP Request to POSTMARK\nSends the email using, `From`, `To`, `Subject`, `HtmlBody`, and `MessageStream`. \n\n*Don't forget replace the sender (From) and attach your own Postmark credentials at import time.*"
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "If": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "fba20aef-bc41-4923-8670-ab3597d191c3",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:33:31.177Z",
+      "createdAt": "2026-05-13T23:33:31.177Z",
+      "role": "workflow:owner",
+      "workflowId": "pDsSZjTmhiqCfgTG",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

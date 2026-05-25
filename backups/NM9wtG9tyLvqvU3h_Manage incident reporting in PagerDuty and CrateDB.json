@@ -1,0 +1,294 @@
+{
+  "updatedAt": "2026-05-13T23:23:32.801Z",
+  "createdAt": "2026-05-13T23:23:32.801Z",
+  "id": "NM9wtG9tyLvqvU3h",
+  "name": "Manage incident reporting in PagerDuty and CrateDB",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "name": "Values higher than 50°C",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        250,
+        550
+      ],
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$node[\"Data from factory sensors\"].json[\"body\"][\"temperature_celsius\"]}}",
+              "value2": 50,
+              "operation": "largerEqual"
+            }
+          ]
+        }
+      },
+      "typeVersion": 1,
+      "id": "c6af604a-a9c2-4d69-a3a8-a13f0c35da57"
+    },
+    {
+      "name": "Data from factory sensors",
+      "type": "n8n-nodes-base.amqpTrigger",
+      "position": [
+        50,
+        700
+      ],
+      "parameters": {
+        "sink": "berlin_factory_01",
+        "options": {}
+      },
+      "credentials": {
+        "amqp": ""
+      },
+      "typeVersion": 1,
+      "id": "ce303888-82cf-433a-914f-d6b6ded37582"
+    },
+    {
+      "name": "Set sensor data",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        450,
+        850
+      ],
+      "parameters": {
+        "values": {
+          "number": [
+            {
+              "name": "temeprature_fahrenheit",
+              "value": "={{$node[\"Data enrichment (°C to °F)\"].json[\"temperature_fahrenheit\"]}}"
+            },
+            {
+              "name": "temperature_celsius",
+              "value": "={{$node[\"Data enrichment (°C to °F)\"].json[\"body\"][\"temperature_celsius\"]}}"
+            },
+            {
+              "name": "machine_uptime",
+              "value": "={{$node[\"Data from factory sensors\"].json[\"body\"][\"machine_id\"][\"uptime\"]}}"
+            },
+            {
+              "name": "time_stamp",
+              "value": "={{$node[\"Data from factory sensors\"].json[\"body\"][\"time_stamp\"]}}"
+            }
+          ],
+          "string": [
+            {
+              "name": "machine_name",
+              "value": "={{$node[\"Data from factory sensors\"].json[\"body\"][\"machine_id\"][\"name\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "typeVersion": 1,
+      "id": "dea13b49-f600-40bf-b52f-a7e623a095d3"
+    },
+    {
+      "name": "Ingest machine data",
+      "type": "n8n-nodes-base.crateDb",
+      "position": [
+        650,
+        850
+      ],
+      "parameters": {
+        "table": "machine_data",
+        "columns": "temperature_fahrenheit, temperature_celsius, machine_name, machine_uptime, time_stamp"
+      },
+      "credentials": {
+        "crateDb": ""
+      },
+      "typeVersion": 1,
+      "id": "fdcb54fe-2342-45c3-acd7-0549e241d00d"
+    },
+    {
+      "name": "Ingest incident data",
+      "type": "n8n-nodes-base.crateDb",
+      "position": [
+        850,
+        450
+      ],
+      "parameters": {
+        "table": "incident_data",
+        "columns": "incident_id, html_url, incident_timestamp"
+      },
+      "credentials": {
+        "crateDb": {
+          "id": null,
+          "name": ""
+        }
+      },
+      "typeVersion": 1,
+      "id": "8ed3614c-4ac0-4ec0-ba29-2d3331379578"
+    },
+    {
+      "name": "Set incident info",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        650,
+        450
+      ],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "incident_id",
+              "value": "={{$node[\"Create an incident\"].json[\"id\"]}}"
+            },
+            {
+              "name": "html_url",
+              "value": "={{$node[\"Create an incident\"].json[\"html_url\"]}}"
+            },
+            {
+              "name": "incident_timestamp",
+              "value": "={{$node[\"Create an incident\"].json[\"created_at\"]}}"
+            }
+          ]
+        },
+        "options": {},
+        "keepOnlySet": true
+      },
+      "typeVersion": 1,
+      "id": "d73bf3e1-3cb7-4de3-b015-28b5fe9c63a3"
+    },
+    {
+      "name": "Create an incident",
+      "type": "n8n-nodes-base.pagerDuty",
+      "position": [
+        450,
+        450
+      ],
+      "parameters": {
+        "title": "=Incident with {{$node[\"Data from factory sensors\"].json[\"body\"][\"machine_id\"][\"name\"]}}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "pagerDutyApi": ""
+      },
+      "typeVersion": 1,
+      "id": "3d16fc9f-6aa5-4e41-a93a-e87552347660"
+    },
+    {
+      "name": "Data enrichment (°C to °F)",
+      "type": "n8n-nodes-base.function",
+      "position": [
+        250,
+        850
+      ],
+      "parameters": {
+        "functionCode": "temp_fahrenheit = (items[0].json.body.temperature_celsius * 1.8) + 32;\nitems[0].json.temperature_fahrenheit = temp_fahrenheit;\nreturn items;"
+      },
+      "typeVersion": 1,
+      "alwaysOutputData": true,
+      "id": "06250e7c-6fda-402e-936d-275f7f5c95ea"
+    },
+    {
+      "name": "Do  nothing",
+      "type": "n8n-nodes-base.noOp",
+      "position": [
+        450,
+        640
+      ],
+      "parameters": {},
+      "typeVersion": 1,
+      "id": "b965c286-9da9-40e5-8fa4-7fb761a69d72"
+    }
+  ],
+  "connections": {
+    "Set sensor data": {
+      "main": [
+        [
+          {
+            "node": "Ingest machine data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set incident info": {
+      "main": [
+        [
+          {
+            "node": "Ingest incident data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create an incident": {
+      "main": [
+        [
+          {
+            "node": "Set incident info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Values higher than 50°C": {
+      "main": [
+        [
+          {
+            "node": "Create an incident",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Do  nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data from factory sensors": {
+      "main": [
+        [
+          {
+            "node": "Data enrichment (°C to °F)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Values higher than 50°C",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data enrichment (°C to °F)": {
+      "main": [
+        [
+          {
+            "node": "Set sensor data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "f523be58-8f90-44e0-a3c8-a9c0ec036cf8",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:23:32.801Z",
+      "createdAt": "2026-05-13T23:23:32.801Z",
+      "role": "workflow:owner",
+      "workflowId": "NM9wtG9tyLvqvU3h",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

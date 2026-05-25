@@ -1,0 +1,404 @@
+{
+  "updatedAt": "2026-05-13T23:15:25.237Z",
+  "createdAt": "2026-05-13T23:15:25.237Z",
+  "id": "RmedglqgHUOOBeXc",
+  "name": "Extract and save invoice data from Google Drive to Sheets with Dumpling AI",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "4cdec8f8-9e08-433f-832d-18a9af3f4531",
+      "name": "Google Drive Trigger – Watch Folder for New Files",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "position": [
+        -160,
+        -180
+      ],
+      "parameters": {
+        "event": "fileCreated",
+        "options": {},
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1Dquh3PguyBImKvHlbkp55NBvYoB8IKr5",
+          "cachedResultName": "invoice-n8n"
+        }
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "credential-id",
+          "name": "googleDriveOAuth2Api Credential"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "b67aea52-5f39-4fce-b476-d3b991b30519",
+      "name": "Download Invoice File",
+      "type": "n8n-nodes-base.googleDrive",
+      "position": [
+        60,
+        -180
+      ],
+      "parameters": {
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.id }}"
+        },
+        "options": {},
+        "operation": "download"
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "credential-id",
+          "name": "googleDriveOAuth2Api Credential"
+        }
+      },
+      "typeVersion": 3
+    },
+    {
+      "id": "94ccaf02-0070-4200-b778-139ea075949a",
+      "name": "Convert invoice File to Base64",
+      "type": "n8n-nodes-base.extractFromFile",
+      "position": [
+        280,
+        -180
+      ],
+      "parameters": {
+        "options": {},
+        "operation": "binaryToPropery"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "760f6b02-65b6-4a28-af70-53602f8e2724",
+      "name": "Send file to Dumpling AI for Data Extraction",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        500,
+        -180
+      ],
+      "parameters": {
+        "url": "https://app.dumplingai.com/api/v1/extract-document",
+        "method": "POST",
+        "options": {},
+        "jsonBody": "={\n  \"inputMethod\": \"base64\",\n  \"files\": [\"{{ $json.data }}\"], \n  \"prompt\": \"Extract the order number, document date, PO number, sold to name and address, ship to name and address, list of items with model, quantity, unit price, and total price, and the final total amount including tax.\", \n  \"jsonMode\": \"true\"\n}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "credential-id",
+          "name": "httpHeaderAuth Credential"
+        }
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "b5545cf6-8ebb-4c0e-903b-5a14af7de087",
+      "name": "Parse Dumpling AI JSON Response",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        720,
+        -180
+      ],
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.results;\nconst parsed = JSON.parse(raw);\nreturn [{ json: parsed }];\n"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "84318159-a0ce-4049-a7db-2ac0fa79b8d4",
+      "name": "Split line Items from Invoice",
+      "type": "n8n-nodes-base.splitOut",
+      "position": [
+        940,
+        -180
+      ],
+      "parameters": {
+        "options": {},
+        "fieldToSplitOut": "items"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "834d6b99-cd0e-4633-949d-40e53ba06324",
+      "name": "Save Data to Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "position": [
+        1140,
+        -180
+      ],
+      "parameters": {
+        "columns": {
+          "value": {
+            "Model": "={{ $json.model }}",
+            "Quantity": "={{ $json.quantity }}",
+            "Po_number": "={{ $('Parse Dumpling AI JSON Response').item.json.PO_number }}",
+            "Description": "={{ $json.description }}",
+            "Total price": "={{ $json.total_price }}",
+            "Unity price": "={{ $json.unit_price }}",
+            "Order number": "={{ $('Parse Dumpling AI JSON Response').item.json.order_number }}",
+            "Ship to name": "={{ $('Parse Dumpling AI JSON Response').item.json.ship_to_name }}",
+            "Sold to name": "={{ $('Parse Dumpling AI JSON Response').item.json.sold_to_name }}",
+            "Document Date": "={{ $('Parse Dumpling AI JSON Response').item.json.document_date }}",
+            "Ship to address": "={{ $('Parse Dumpling AI JSON Response').item.json.ship_to_address }}",
+            "Sold to address": "={{ $('Parse Dumpling AI JSON Response').item.json.sold_to_address }}"
+          },
+          "schema": [
+            {
+              "id": "Order number",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "Order number",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Document Date",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "Document Date",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Po_number",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "Po_number",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Sold to name",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "Sold to name",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Sold to address",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "Sold to address",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ship to name",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "Ship to name",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ship to address",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "Ship to address",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Model",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "Model",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Description",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "Description",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Quantity",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "Quantity",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Unity price",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "Unity price",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Total price",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "Total price",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ],
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {},
+        "operation": "append",
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/170eyZdmRUNXlpSZmcl5PiHTUKjukd-soDQq2cAe6FQo/edit#gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/170eyZdmRUNXlpSZmcl5PiHTUKjukd-soDQq2cAe6FQo/edit?usp=drivesdk",
+          "cachedResultName": "my invoice"
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "credential-id",
+          "name": "googleSheetsOAuth2Api Credential"
+        }
+      },
+      "typeVersion": 4.5
+    },
+    {
+      "id": "f98684d0-6c7b-4ba2-b820-4b30e9ff10c1",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -740,
+        -400
+      ],
+      "parameters": {
+        "width": 540,
+        "height": 500,
+        "content": "### 📌 **Workflow Overview: Extract & Save Invoice Data from Google Drive with Dumpling AI**\n\n#### This workflow monitors a Google Drive folder for new files (invoices), extracts structured invoice data using Dumpling AI, and appends it to a Google Sheet.\n---\n🔹 **Node Breakdown:**\n\n1. **Google Drive Trigger** – Watches a folder for new invoice files.  \n2. **Download Invoice File** – Retrieves the uploaded file from Drive.  \n3. **Extract Base64** – Converts the downloaded file to base64 format.  \n4. **Dumpling AI Extraction** – Sends the base64 file with a prompt to Dumpling AI for invoice parsing.  \n5. **Parse AI Response** – Converts the returned JSON string into readable structured data.  \n6. **Split Line Items** – Breaks the `items` array into individual invoice entries.  \n7. **Append to Google Sheet** – Saves the invoice data row by row into the target spreadsheet.\n\n✅ Make sure you have your Dumpling AI API key and correct Google Sheet ID in place before running the workflow.\n\n"
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Download Invoice File": {
+      "main": [
+        [
+          {
+            "node": "Convert invoice File to Base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split line Items from Invoice": {
+      "main": [
+        [
+          {
+            "node": "Save Data to Google Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert invoice File to Base64": {
+      "main": [
+        [
+          {
+            "node": "Send file to Dumpling AI for Data Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Dumpling AI JSON Response": {
+      "main": [
+        [
+          {
+            "node": "Split line Items from Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send file to Dumpling AI for Data Extraction": {
+      "main": [
+        [
+          {
+            "node": "Parse Dumpling AI JSON Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive Trigger – Watch Folder for New Files": {
+      "main": [
+        [
+          {
+            "node": "Download Invoice File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "68e5a762-32b1-4fe1-bf50-9f60f31f70df",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:15:25.237Z",
+      "createdAt": "2026-05-13T23:15:25.237Z",
+      "role": "workflow:owner",
+      "workflowId": "RmedglqgHUOOBeXc",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

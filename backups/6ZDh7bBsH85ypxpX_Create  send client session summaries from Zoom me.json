@@ -1,0 +1,221 @@
+{
+  "updatedAt": "2026-05-13T23:24:46.855Z",
+  "createdAt": "2026-05-13T23:24:46.855Z",
+  "id": "6ZDh7bBsH85ypxpX",
+  "name": "Create & send client session summaries from Zoom meetings via Gmail and Airtable",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "name": "Note: Gmail Creds",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        200,
+        100
+      ],
+      "parameters": {
+        "notesInFlow": "📒 Configure your Gmail OAuth2 credentials in n8n before activating this workflow."
+      },
+      "typeVersion": 1,
+      "id": "3ed4b95d-edc8-4130-9172-881ae85a3bd9"
+    },
+    {
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "position": [
+        200,
+        250
+      ],
+      "parameters": {
+        "filters": {
+          "string": [
+            {
+              "value1": "Meeting assets",
+              "operation": "contains"
+            }
+          ]
+        },
+        "triggerTimes": {
+          "item": [
+            {
+              "unit": "minutes",
+              "every": 1
+            }
+          ]
+        }
+      },
+      "typeVersion": 1,
+      "id": "73615416-2cf7-461b-8cfe-1a214cc6d89c"
+    },
+    {
+      "name": "Extract Fields",
+      "type": "n8n-nodes-base.function",
+      "position": [
+        400,
+        250
+      ],
+      "parameters": {
+        "functionCode": "// Extract fields from email\nconst html = item.json.text || '';\nconst match = (re) => { const m = html.match(re); return m ? m[1].trim() : '' };\nitem.json.clientName      = match(/Meeting assets for [\\s\\S]*?\\(([^)]+)\\)\\s+with/);\nitem.json.sessionType     = match(/\\b(\\d+\\s*hora(?:s)?|exploratory call)\\b/i);\nconst dt = html.match(/GMT(\\d{4})(\\d{2})(\\d{2})-(\\d{2})(\\d{2})(\\d{2})/);\nif (dt) {\n  item.json.dateTimeUTC = `${dt[1]}-${dt[2]}-${dt[3]}T${dt[4]}:${dt[5]}:${dt[6]}Z`;\n}\nitem.json.duration        = match(/Duration:\\s*([0-9]{1,2}:[0-9]{2}:[0-9]{2})/i);\nitem.json.recordingLink   = match(/(https:\\/\\/us02web\\.zoom\\.us\\/recording\\/detail\\?[^)\\s]+)/);\nitem.json.quickSummary    = match(/RESUMEN RÁPIDO[\\s\\S]*?\\n([\\s\\S]*?)\\nPRÓXIMOS PASOS/);\nitem.json.nextSteps       = match(/PRÓXIMOS PASOS[\\s\\S]*?\\n([\\s\\S]*?)\\nRESUMEN/);\nitem.json.detailedSummary = match(/RESUMEN(?!\\s*RÁPIDO)\\s*([\\s\\S]*?)(?=\\s*(?:PRÓXIMOS PASOS|AI can make mistakes))/i);\nreturn item;"
+      },
+      "typeVersion": 1,
+      "id": "33f732ab-64fe-48f0-967b-69e362756432"
+    },
+    {
+      "name": "If Exploratory",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        600,
+        250
+      ],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.sessionType }}",
+              "value2": "exploratory call",
+              "operation": "notContains"
+            }
+          ]
+        }
+      },
+      "typeVersion": 1,
+      "id": "7875c96d-19f7-4468-a41e-5f9c188789af"
+    },
+    {
+      "name": "Airtable: Search People",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        800,
+        200
+      ],
+      "parameters": {
+        "qs": {
+          "filterByFormula": "={Full Name} = '{{ $json.clientName }}'"
+        },
+        "url": "https://api.airtable.com/v0/{{$env.AIRTABLE_BASE_ID}}/People",
+        "headerAuth": {
+          "name": "Authorization",
+          "value": "Bearer {{$credentials.airtableApi.token}}"
+        },
+        "requestMethod": "GET",
+        "authentication": "headerAuth"
+      },
+      "typeVersion": 1,
+      "id": "f4077aa8-d737-4e2c-8ef0-5684e9a332d2"
+    },
+    {
+      "name": "Send Email",
+      "type": "n8n-nodes-base.gmail",
+      "position": [
+        1000,
+        200
+      ],
+      "parameters": {
+        "html": "<p>Hi {{$json.clientName}},</p>\n<p>Here’s your session details:</p>\n<ul>\n  <li>Type: {{$json.sessionType}}</li>\n  <li>Date & Time: {{$json.dateTimeUTC}}</li>\n  <li>Duration: {{$json.duration}}</li>\n  <li><a href=\"{{$json.recordingLink}}\">Watch Recording</a></li>\n</ul>\n<h3>Quick Summary</h3>\n<p>{{$json.quickSummary}}</p>\n<h3>Next Steps</h3>\n<p>{{$json.nextSteps}}</p>\n<h3>Detailed Summary</h3>\n<p>{{$json.detailedSummary}}</p>",
+        "subject": "Your Session Summary & Recording",
+        "toEmail": "={{ $node[\"Airtable: Search People\"].json.records[0].fields.Email }}"
+      },
+      "typeVersion": 1,
+      "id": "2f304be3-4ced-4cce-83c5-793151ae3cc7"
+    },
+    {
+      "name": "Airtable: Create Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        1200,
+        200
+      ],
+      "parameters": {
+        "url": "https://api.airtable.com/v0/{{$env.AIRTABLE_BASE_ID}}/Sessions",
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "{\n  \"fields\": {\n    \"Date & Time\": \"{{$json.dateTimeUTC}}\",\n    \"Duration\": \"{{$json.duration}}\",\n    \"Quick Summary\": \"{{$json.quickSummary}}\",\n    \"Detailed Summary\": \"{{$json.detailedSummary}}\",\n    \"Next Steps\": \"{{$json.nextSteps}}\",\n    \"Client\": [\"{{$node[\"Airtable: Search People\"].json.records[0].id}}\"]\n  }\n}",
+        "headerParametersJson": "{\"Authorization\":\"Bearer {{$credentials.airtableApi.token}}\",\"Content-Type\":\"application/json\"}"
+      },
+      "typeVersion": 1,
+      "id": "61b0aa79-95c2-48c1-8f9e-f880cac76ca6"
+    },
+    {
+      "name": "Note: Airtable Creds",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1000,
+        350
+      ],
+      "parameters": {
+        "notesInFlow": "🔐 Store your Airtable API token securely in n8n Credentials (airtableApi.token)."
+      },
+      "typeVersion": 1,
+      "id": "0acda04b-80c7-4510-a8e9-4435d254dce0"
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Fields": {
+      "main": [
+        [
+          {
+            "node": "If Exploratory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Exploratory": {
+      "main": [
+        [
+          {
+            "node": "Airtable: Search People",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable: Search People": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Airtable: Create Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "e924b1ce-34c9-4ba6-97f8-c673d5979132",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:24:46.855Z",
+      "createdAt": "2026-05-13T23:24:46.855Z",
+      "role": "workflow:owner",
+      "workflowId": "6ZDh7bBsH85ypxpX",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

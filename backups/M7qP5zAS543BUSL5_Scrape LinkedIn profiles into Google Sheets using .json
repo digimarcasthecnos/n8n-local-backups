@@ -1,0 +1,512 @@
+{
+  "updatedAt": "2026-05-13T22:54:05.811Z",
+  "createdAt": "2026-05-13T22:54:05.811Z",
+  "id": "M7qP5zAS543BUSL5",
+  "name": "Scrape LinkedIn profiles into Google Sheets using Google Custom Search",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "0ca38d2d-b43f-42ca-839a-829abbe95bc8",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        432,
+        -32
+      ],
+      "parameters": {
+        "url": "https://www.googleapis.com/customsearch/v1",
+        "options": {},
+        "sendQuery": true,
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "cx",
+              "value": "c0fa13214e7ee42a4"
+            },
+            {
+              "name": "q",
+              "value": "={{ $('On form submission').item.json.postion }} {{ $('On form submission').item.json.industry }} {{ $('On form submission').item.json.region }} site:linkedin.com/in"
+            },
+            {
+              "name": "start",
+              "value": "={{ $runIndex == 0 ? $json.currentStartIndex : $node[\"Pagination Check\"].json.startIndex }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "credential-id",
+          "name": "httpBasicAuth Credential"
+        }
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "238cb121-fac4-4257-a039-883db22bb6dd",
+      "name": "On form submission",
+      "type": "n8n-nodes-base.formTrigger",
+      "position": [
+        -16,
+        -32
+      ],
+      "webhookId": "9d4bc925-a4fe-4ab6-9896-bdf978e221e8",
+      "parameters": {
+        "options": {},
+        "formTitle": "form",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "postion",
+              "placeholder": "position",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "industry",
+              "placeholder": "industry",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "region",
+              "placeholder": "region",
+              "requiredField": true
+            }
+          ]
+        },
+        "formDescription": "add details like position, industry, place"
+      },
+      "typeVersion": 2.3
+    },
+    {
+      "id": "635aa4c7-a268-4117-9abe-7bc0761809e6",
+      "name": "Code in JavaScript",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        656,
+        -112
+      ],
+      "parameters": {
+        "jsCode": "// Get the response data\nconst response = $input.first().json;\nconst items = response.items || [];\n\n// Track pagination info\nlet nextStartIndex = 1;\nif (response.queries && response.queries.nextPage && response.queries.nextPage[0]) {\n  nextStartIndex = response.queries.nextPage[0].startIndex;\n}\n\n// Calculate if we should continue (Google only allows up to 100 results)\nconst hasMoreResults = nextStartIndex <= 100;\n\n// Process the items and include pagination info in each item\nconst results = items.map(item => {\n  const titleParts = item.title.split(\" - \");\n  const meta = item.pagemap?.metatags?.[0] || {};\n\n  // --- Added title cleaning logic ---\n  let rawTitle = meta[\"og:title\"] || item.title || \"\";\n  const name = titleParts[0] || \"\";\n\n  // Remove \"| LinkedIn\" at the end\n  let cleanedTitle = rawTitle.replace(/\\s*\\|\\s*LinkedIn\\s*$/i, \"\").trim();\n\n  // Remove name from start if present\n  if (name && cleanedTitle.toLowerCase().startsWith(name.toLowerCase())) {\n    cleanedTitle = cleanedTitle.replace(new RegExp(\"^\" + name + \"\\\\s*-\\\\s*\", \"i\"), \"\").trim();\n  }\n  // --- End of new logic ---\n\n  return {\n    name: name || null,\n    title: cleanedTitle || null, // <-- cleaned title applied here\n    link: item.link || null,\n    snippet: meta[\"og:description\"] || item.snippet || null,\n    image: item.pagemap?.cse_image?.[0]?.src || item.pagemap?.cse_thumbnail?.[0]?.src || null,\n    startIndex: nextStartIndex,\n    hasMoreResults: hasMoreResults,\n  };\n});\n\n// If there are no results, return at least one item with pagination info\nif (results.length === 0) {\n  return [{\n    json: {\n      name: null,\n      title: null,\n      link: null,\n      snippet: null,\n      image: null,\n      startIndex: nextStartIndex,\n      hasMoreResults: false,\n    },\n  }];\n}\n\n// Return the processed results\nreturn results.map(r => ({ json: r }));\n"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "77342f4f-b0f2-4692-a073-050612bd9597",
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "position": [
+        880,
+        -112
+      ],
+      "webhookId": "6bb6a09f-008b-4bae-a2d7-0fd440208df2",
+      "parameters": {
+        "amount": 3
+      },
+      "typeVersion": 1.1
+    },
+    {
+      "id": "e1331432-54a7-4049-bb59-8adb9276614b",
+      "name": "Code in JavaScript1",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        1552,
+        -112
+      ],
+      "parameters": {
+        "jsCode": "// Get all input items\nconst inputItems = $input.all();\nconsole.log(\"Input items count:\", inputItems.length);\n\nlet nextStartIndex = 2; // default\nlet hasMoreResults = false; // default\n\nif (inputItems && inputItems.length > 0) {\n  const firstItem = inputItems[0];\n\n  if (firstItem.json) {\n    console.log(\"First item JSON:\", JSON.stringify(firstItem.json));\n  }\n\n  // ✅ Corrected property names\n  if (firstItem.json.startIndex !== undefined) {\n    nextStartIndex = firstItem.json.startIndex;\n    console.log(\"Found startIndex:\", nextStartIndex);\n  }\n\n  if (firstItem.json.hasMoreResults !== undefined) {\n    hasMoreResults = firstItem.json.hasMoreResults;\n    console.log(\"Found hasMoreResults:\", hasMoreResults);\n  }\n}\n\n// ✅ Return pagination control info\nreturn [\n  {\n    json: {\n      continueLoop: hasMoreResults,\n      startIndex: nextStartIndex,\n    },\n  },\n];\n"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "08aac68e-3f3b-4215-9871-881415635eca",
+      "name": "Edit Fields",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        208,
+        -32
+      ],
+      "parameters": {
+        "options": {},
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b021fad7-82e9-4884-878a-f4672117203e",
+              "name": "currentStartIndex",
+              "type": "number",
+              "value": 1
+            },
+            {
+              "id": "cc6ebe1e-49c9-4020-b48c-f41dda365d09",
+              "name": "maxPages",
+              "type": "number",
+              "value": 10
+            }
+          ]
+        }
+      },
+      "typeVersion": 3.4
+    },
+    {
+      "id": "09eecf87-ccf0-4d87-bc4f-a7d52e6295e8",
+      "name": "Pagination Check",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        1776,
+        -32
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "a48fd2c5-c7e0-4da5-adcb-db2acf6972c3",
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.continueLoop }}",
+              "rightValue": true
+            }
+          ]
+        }
+      },
+      "typeVersion": 2.2
+    },
+    {
+      "id": "9fbc0fa8-5441-4fd3-be6d-6f0408e93720",
+      "name": "Append or update row in sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "position": [
+        1104,
+        -112
+      ],
+      "parameters": {
+        "columns": {
+          "value": {
+            "name": "={{ $json.name }}",
+            "img link": "={{ $json.image }}",
+            "position": "={{ $json.title }}",
+            "description": "={{ $json.snippet }}",
+            "profile links": "={{ $json.link }}",
+            "searched region": "={{ $('On form submission').item.json.region }}",
+            "searched industry": "={{ $('On form submission').item.json.industry }}",
+            "searched position": "={{ $('On form submission').item.json.postion }}"
+          },
+          "schema": [
+            {
+              "id": "name",
+              "type": "string",
+              "display": true,
+              "removed": false,
+              "required": false,
+              "displayName": "name",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "position",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "position",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "profile links",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "profile links",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "description",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "img link",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "img link",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "searched position",
+              "type": "string",
+              "display": true,
+              "removed": false,
+              "required": false,
+              "displayName": "searched position",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "searched industry",
+              "type": "string",
+              "display": true,
+              "removed": false,
+              "required": false,
+              "displayName": "searched industry",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "searched region",
+              "type": "string",
+              "display": true,
+              "removed": false,
+              "required": false,
+              "displayName": "searched region",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ],
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "name"
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {},
+        "operation": "appendOrUpdate",
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultUrl": "https://docs.google.YOUR_AWS_SECRET_KEY_HERE_JdBR0J2M3ydLhkwlnlChh4/edit#gid=0",
+          "cachedResultName": "Sheet1"
+        },
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "1MeQdveFXA4ihTc7FrFyl_JdBR0J2M3ydLhkwlnlChh4",
+          "cachedResultUrl": "https://docs.google.YOUR_AWS_SECRET_KEY_HERE_JdBR0J2M3ydLhkwlnlChh4/edit?usp=drivesdk",
+          "cachedResultName": "linkedin profiles"
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "credential-id",
+          "name": "googleSheetsOAuth2Api Credential"
+        }
+      },
+      "typeVersion": 4.7
+    },
+    {
+      "id": "7b0f0978-f1c4-43f0-acf4-0ea53da25c35",
+      "name": "Edit Fields1",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        1328,
+        -112
+      ],
+      "parameters": {
+        "options": {},
+        "assignments": {
+          "assignments": [
+            {
+              "id": "dc1488dc-8422-48e2-abf4-9d47a0551c95",
+              "name": "startIndex",
+              "type": "string",
+              "value": "={{ $('Code in JavaScript').item.json.startIndex }}"
+            },
+            {
+              "id": "b0fdc0e8-e780-4460-b710-c8bdd3f00c3e",
+              "name": "hasMoreResults",
+              "type": "boolean",
+              "value": "={{ $('Code in JavaScript').item.json.hasMoreResults }}"
+            }
+          ]
+        },
+        "includeOtherFields": true
+      },
+      "typeVersion": 3.4
+    },
+    {
+      "id": "ebc78822-5d95-4ade-8273-be9005093f3a",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -688,
+        -256
+      ],
+      "parameters": {
+        "width": 592,
+        "height": 528,
+        "content": "## Scrape LinkedIn Profiles to Google Sheets\n\n### How it works\\n1. You provide a position, industry, and region via a web form.\n2. The workflow performs a Google Custom Search for matching LinkedIn profiles.\n3. It extracts key profile information such as name, title, link, and description from the search results.\n4. All found profiles are appended or updated in your specified Google Sheet.\n5. The workflow automatically fetches multiple pages of results, stopping when no more are available or the Google Search API limit is reached.\n\n### Setup\n- [ ] Connect your Google Sheets account.\n- [ ] Add your Google Custom Search API Key and Search Engine ID (CX).\n- [ ] Select your Google Sheet document and the target sheet within the \\\"Append or update row in sheet\\\" node.\n- [ ] Ensure your Google Sheet has columns for: Name, Position, Profile Links, Description, Image Link, Searched Position, Searched Industry, and Searched Region.\n- [ ] Fill out the \\\"On form submission\\\" trigger form with your desired search criteria to initiate the workflow."
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "a767f679-5774-486e-9e83-24362be38268",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -64,
+        -112
+      ],
+      "parameters": {
+        "color": 7,
+        "width": 416,
+        "height": 272,
+        "content": "## get the search data "
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "3667733b-a530-44a1-810b-bcdf627faf84",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        368,
+        -192
+      ],
+      "parameters": {
+        "color": 7,
+        "width": 1616,
+        "height": 384,
+        "content": "## geather linkedin profile and update sheets\nsetup:\nadd custom search api key in http node"
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Append or update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pagination Check": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Pagination Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append or update row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "36d8105f-2a72-4c4d-bfca-f6c7651418ff",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T22:54:05.811Z",
+      "createdAt": "2026-05-13T22:54:05.811Z",
+      "role": "workflow:owner",
+      "workflowId": "M7qP5zAS543BUSL5",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

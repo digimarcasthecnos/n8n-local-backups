@@ -1,0 +1,547 @@
+{
+  "updatedAt": "2026-05-13T23:04:33.814Z",
+  "createdAt": "2026-05-13T23:04:33.814Z",
+  "id": "oP2vClItCr8W3QyI",
+  "name": "Analyze emails with S1EM",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "name": "IMAP Email",
+      "type": "n8n-nodes-base.emailReadImap",
+      "position": [
+        -300,
+        200
+      ],
+      "parameters": {
+        "format": "resolved",
+        "options": {}
+      },
+      "credentials": {
+        "imap": {
+          "id": "credential-id",
+          "name": "imap Credential"
+        }
+      },
+      "typeVersion": 1,
+      "id": "89f2d94c-461b-4c89-9024-ec0b3dd2e431"
+    },
+    {
+      "name": "TheHive",
+      "type": "n8n-nodes-base.theHive",
+      "position": [
+        -20,
+        200
+      ],
+      "parameters": {
+        "tags": "Email",
+        "type": "Email",
+        "title": "={{$node[\"IMAP Email\"].binary.attachment_0.fileName}}",
+        "source": "Outlook",
+        "sourceRef": "={{$node[\"IMAP Email\"].json[\"messageId\"]}}",
+        "artifactUi": {
+          "artifactValues": [
+            {
+              "dataType": "file",
+              "binaryProperty": "attachment_0"
+            }
+          ]
+        },
+        "description": "={{$node[\"IMAP Email\"].binary.attachment_0.fileName}}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "theHiveApi": {
+          "id": "credential-id",
+          "name": "theHiveApi Credential"
+        }
+      },
+      "typeVersion": 1,
+      "alwaysOutputData": true,
+      "id": "58619a59-18dd-4f2e-9419-d5b4f3cff446"
+    },
+    {
+      "name": "Create Case",
+      "type": "n8n-nodes-base.theHive",
+      "position": [
+        280,
+        200
+      ],
+      "parameters": {
+        "id": "={{$node[\"TheHive\"].json[\"_id\"]}}",
+        "operation": "promote",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "theHiveApi": {
+          "id": "credential-id",
+          "name": "theHiveApi Credential"
+        }
+      },
+      "typeVersion": 1,
+      "alwaysOutputData": true,
+      "id": "a12835be-9cca-49fe-b12b-b7f932d1ffea"
+    },
+    {
+      "name": "Case",
+      "type": "n8n-nodes-base.theHive",
+      "position": [
+        540,
+        200
+      ],
+      "parameters": {
+        "id": "={{$node[\"Create Case\"].json[\"_id\"]}}",
+        "resource": "case",
+        "operation": "get"
+      },
+      "credentials": {
+        "theHiveApi": {
+          "id": "credential-id",
+          "name": "theHiveApi Credential"
+        }
+      },
+      "typeVersion": 1,
+      "alwaysOutputData": true,
+      "id": "d4710e1d-92a5-4122-877a-c3efd2c714ca"
+    },
+    {
+      "name": "Observable",
+      "type": "n8n-nodes-base.theHive",
+      "position": [
+        1060,
+        200
+      ],
+      "parameters": {
+        "caseId": "={{$node[\"Case\"].json[\"_id\"]}}",
+        "options": {},
+        "resource": "observable",
+        "returnAll": true
+      },
+      "credentials": {
+        "theHiveApi": {
+          "id": "credential-id",
+          "name": "theHiveApi Credential"
+        }
+      },
+      "typeVersion": 1,
+      "alwaysOutputData": true,
+      "id": "4ebb65fa-fce2-4bca-aafd-7f4c373141fe"
+    },
+    {
+      "name": "Analyzer Email",
+      "type": "n8n-nodes-base.theHive",
+      "position": [
+        1340,
+        200
+      ],
+      "parameters": {
+        "id": "={{$node[\"Observable\"].json[\"_id\"]}}",
+        "dataType": "file",
+        "resource": "observable",
+        "analyzers": [
+          "24a64a086a410e1c7d7ace74003c4480::CORTEX"
+        ],
+        "operation": "executeAnalyzer"
+      },
+      "credentials": {
+        "theHiveApi": {
+          "id": "credential-id",
+          "name": "theHiveApi Credential"
+        }
+      },
+      "retryOnFail": true,
+      "typeVersion": 1,
+      "alwaysOutputData": true,
+      "id": "9285ad32-86e6-46f8-8e93-bbe2dd94635c"
+    },
+    {
+      "name": "Cortex",
+      "type": "n8n-nodes-base.cortex",
+      "position": [
+        1560,
+        200
+      ],
+      "parameters": {
+        "jobId": "={{$node[\"Analyzer Email\"].json[\"cortexJobId\"]}}",
+        "resource": "job",
+        "operation": "report"
+      },
+      "credentials": {
+        "cortexApi": {
+          "id": "credential-id",
+          "name": "cortexApi Credential"
+        }
+      },
+      "typeVersion": 1,
+      "id": "3881ad99-c6dd-49ba-900f-269bbf2051ad"
+    },
+    {
+      "name": "IF",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        -20,
+        600
+      ],
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$node[\"Cortex\"].json[\"report\"][\"full\"][\"iocs\"][\"domain\"].length}}",
+              "operation": "larger"
+            },
+            {
+              "value1": "={{$node[\"Cortex\"].json[\"report\"][\"full\"][\"iocs\"][\"email\"].length}}",
+              "operation": "larger"
+            },
+            {
+              "value1": "={{$node[\"Cortex\"].json[\"report\"][\"full\"][\"iocs\"][\"ip\"].length}}",
+              "operation": "larger"
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "typeVersion": 1,
+      "id": "2c506f37-2bd9-4685-ab16-b7f05f86c095"
+    },
+    {
+      "name": "Update Case Domain",
+      "type": "n8n-nodes-base.theHive",
+      "position": [
+        420,
+        480
+      ],
+      "parameters": {
+        "ioc": true,
+        "data": "={{$node[\"Cortex\"].json[\"report\"][\"full\"][\"iocs\"][\"domain\"]}}",
+        "caseId": "={{$node[\"Case\"].json[\"_id\"]}}",
+        "status": "Ok",
+        "message": "={{$node[\"Cortex\"].json[\"analyzerName\"]}}",
+        "options": {
+          "tags": "Domain"
+        },
+        "dataType": "domain",
+        "resource": "observable",
+        "operation": "create"
+      },
+      "credentials": {
+        "theHiveApi": {
+          "id": "credential-id",
+          "name": "theHiveApi Credential"
+        }
+      },
+      "typeVersion": 1,
+      "id": "db11e408-987e-4fed-8af1-7967d6cb5914"
+    },
+    {
+      "name": "Update Case Email",
+      "type": "n8n-nodes-base.theHive",
+      "position": [
+        420,
+        620
+      ],
+      "parameters": {
+        "ioc": true,
+        "data": "={{$node[\"Cortex\"].json[\"report\"][\"full\"][\"iocs\"][\"email\"]}}",
+        "caseId": "={{$node[\"Case\"].json[\"_id\"]}}",
+        "status": "Ok",
+        "message": "={{$node[\"Cortex\"].json[\"analyzerName\"]}}",
+        "options": {
+          "tags": "Domain"
+        },
+        "dataType": "mail",
+        "resource": "observable",
+        "operation": "create"
+      },
+      "credentials": {
+        "theHiveApi": {
+          "id": "credential-id",
+          "name": "theHiveApi Credential"
+        }
+      },
+      "typeVersion": 1,
+      "id": "04123195-cfe8-4da8-9a8a-aae7f23c8733"
+    },
+    {
+      "name": "Update Case Ip",
+      "type": "n8n-nodes-base.theHive",
+      "position": [
+        420,
+        760
+      ],
+      "parameters": {
+        "ioc": true,
+        "data": "={{$node[\"Cortex\"].json[\"report\"][\"full\"][\"iocs\"][\"ip\"]}}",
+        "caseId": "={{$node[\"Case\"].json[\"_id\"]}}",
+        "status": "Ok",
+        "message": "={{$node[\"Cortex\"].json[\"analyzerName\"]}}",
+        "options": {
+          "tags": "Domain"
+        },
+        "dataType": "ip",
+        "resource": "observable",
+        "operation": "create"
+      },
+      "credentials": {
+        "theHiveApi": {
+          "id": "credential-id",
+          "name": "theHiveApi Credential"
+        }
+      },
+      "typeVersion": 1,
+      "id": "047a3d08-ffbd-4b23-904b-2faa13649ebe"
+    },
+    {
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "position": [
+        800,
+        200
+      ],
+      "webhookId": "ecada1d5-a671-44fc-906e-c64c6f05e760",
+      "parameters": {
+        "unit": "seconds",
+        "amount": 5
+      },
+      "typeVersion": 1,
+      "id": "03e780a8-e01d-4772-89dd-a3be7cf423a9"
+    },
+    {
+      "name": "Email Reputation",
+      "type": "n8n-nodes-base.theHive",
+      "position": [
+        640,
+        620
+      ],
+      "parameters": {
+        "id": "={{$node[\"Update Case Email\"].json[\"id\"]}}",
+        "dataType": "mail",
+        "resource": "observable",
+        "analyzers": [
+          "9902b4e5c58015184b177de13f2151c7::CORTEX"
+        ],
+        "operation": "executeAnalyzer"
+      },
+      "credentials": {
+        "theHiveApi": {
+          "id": "credential-id",
+          "name": "theHiveApi Credential"
+        }
+      },
+      "typeVersion": 1,
+      "id": "050056a8-dbf0-44d6-91ce-ede48179f0ca"
+    },
+    {
+      "name": "OTX IP",
+      "type": "n8n-nodes-base.theHive",
+      "position": [
+        640,
+        760
+      ],
+      "parameters": {
+        "id": "={{$node[\"Update Case Ip\"].json[\"id\"]}}",
+        "dataType": "ip",
+        "resource": "observable",
+        "analyzers": [
+          "b084bf78d1aea92966b6ef6a4f6193a5::CORTEX"
+        ],
+        "operation": "executeAnalyzer"
+      },
+      "credentials": {
+        "theHiveApi": {
+          "id": "credential-id",
+          "name": "theHiveApi Credential"
+        }
+      },
+      "typeVersion": 1,
+      "id": "f97b38f7-6512-43b5-a7a7-f4cedbc4cb95"
+    },
+    {
+      "name": "OTX DOMAIN",
+      "type": "n8n-nodes-base.theHive",
+      "position": [
+        640,
+        480
+      ],
+      "parameters": {
+        "id": "={{$node[\"Update Case Domain\"].json[\"id\"]}}",
+        "dataType": "domain",
+        "resource": "observable",
+        "analyzers": [
+          "b084bf78d1aea92966b6ef6a4f6193a5::CORTEX"
+        ],
+        "operation": "executeAnalyzer"
+      },
+      "credentials": {
+        "theHiveApi": {
+          "id": "credential-id",
+          "name": "theHiveApi Credential"
+        }
+      },
+      "typeVersion": 1,
+      "id": "89ced071-0848-428a-b37c-cb1d669b1b94"
+    }
+  ],
+  "connections": {
+    "IF": {
+      "main": [
+        [
+          {
+            "node": "Update Case Domain",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Update Case Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Update Case Ip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Case": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Observable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cortex": {
+      "main": [
+        [
+          {
+            "node": "IF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TheHive": {
+      "main": [
+        [
+          {
+            "node": "Create Case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IMAP Email": {
+      "main": [
+        [
+          {
+            "node": "TheHive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Observable": {
+      "main": [
+        [
+          {
+            "node": "Analyzer Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Case": {
+      "main": [
+        [
+          {
+            "node": "Case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyzer Email": {
+      "main": [
+        [
+          {
+            "node": "Cortex",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Case Ip": {
+      "main": [
+        [
+          {
+            "node": "OTX IP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Case Email": {
+      "main": [
+        [
+          {
+            "node": "Email Reputation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Case Domain": {
+      "main": [
+        [
+          {
+            "node": "OTX DOMAIN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "977122c1-fca7-47d6-b578-c80b5a19e587",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:04:33.814Z",
+      "createdAt": "2026-05-13T23:04:33.814Z",
+      "role": "workflow:owner",
+      "workflowId": "oP2vClItCr8W3QyI",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

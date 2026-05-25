@@ -1,0 +1,316 @@
+{
+  "updatedAt": "2026-05-13T23:04:35.196Z",
+  "createdAt": "2026-05-13T23:04:35.196Z",
+  "id": "oCKbaBfV34bkcf93",
+  "name": "Markdown timesheet report generation",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "name": "On clicking 'execute'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "position": [
+        120,
+        560
+      ],
+      "parameters": {},
+      "typeVersion": 1,
+      "id": "b14e2a87-4ae6-4df2-8f82-90474b056faf"
+    },
+    {
+      "name": "SortElements",
+      "type": "n8n-nodes-base.itemLists",
+      "position": [
+        480,
+        560
+      ],
+      "parameters": {
+        "options": {},
+        "operation": "sort",
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "UserName"
+            },
+            {
+              "fieldName": "TaskTitle"
+            },
+            {
+              "fieldName": "date"
+            }
+          ]
+        }
+      },
+      "typeVersion": 1,
+      "id": "acfd532f-1091-40fa-9a01-e32c90c33b72"
+    },
+    {
+      "name": "Markdown",
+      "type": "n8n-nodes-base.markdown",
+      "position": [
+        1340,
+        580
+      ],
+      "parameters": {
+        "mode": "markdownToHtml",
+        "options": {
+          "tables": true,
+          "noHeaderId": true,
+          "rawHeaderId": false,
+          "simpleLineBreaks": true,
+          "customizedHeaderId": false,
+          "completeHTMLDocument": true
+        },
+        "markdown": "={{$json[\"mdreport\"]}}"
+      },
+      "typeVersion": 1,
+      "id": "e58064c2-eff3-48d2-85f6-b2cbfa9daf17"
+    },
+    {
+      "name": "CreateMDReport",
+      "type": "n8n-nodes-base.function",
+      "position": [
+        1160,
+        580
+      ],
+      "parameters": {
+        "functionCode": "// created report header and custom table style\nvar md_reporthead=\"#Timesheet report\\n\";\nvar md_style =  (`\n<style> table {border: 0.5px solid; border-spacing: 0px;}\n        table th {border-bottom: 0.5px solid;}\n        table thead {background: #D0E4F5;}\n        table tr:nth-child(even) { background: #D8D8D8;}\n</style>\\n\\n`);\n\nvar md_reportbody=md_style+md_reporthead;\n\n//declare several variables that are used for report generation\nvar tablehead = \"| Date | Hours | Task Description |\\n|:---|:---:|---|\\n\";\n\nvar cur_user=\"\";\nvar cur_usernum=0;\n\nvar cur_task=\"\";\nvar cur_tasktotal=0;\n\n\nfor (item of items) {\n  \n  // Check if new user\n  if (item.json.UserName != cur_user) {\n    // Close previous user's task\n    md_reportbody += (cur_tasktotal) ? \"\\n*\"+cur_tasktotal.toFixed(2)+\" - Total hours for this task*\\n\" : \"\";\n    cur_tasktotal = 0; cur_task=\"\";\n\n    // add new user and embed avatar as base64 image\n    cur_user = item.json.UserName;\n    md_reportbody += `\\n##![img](data:image/png;base64,${items[cur_usernum].binary.data.data}) ${cur_user}\\n`;\n    cur_usernum   += 1;\n  } // Check for new user - ENDIF\n\n\n  // Check if new task\n  if (item.json.TaskTitle != cur_task) {\n\n    // if not empty task - add total amount of hours for *previous* task\n    md_reportbody += (cur_tasktotal) ? `\\n*${cur_tasktotal.toFixed(2)} - Total hours for this task*\\n` : \"\";\n\n    // Add new task header and reset total hours counter\n    cur_task = item.json.TaskTitle;\n    md_reportbody += `\\n###${cur_task}\\n${tablehead}`;\n    cur_tasktotal = 0;\n  } // Check for new task - ENDIF\n\n  // Add current task + update total hours\n   md_reportbody += `| ${item.json.date.split('T',1)} | ${item.json.hours.toFixed(2)} | ${item.json.note} |\\n`;\n   cur_tasktotal += item.json.hours;\n}\n\n// Let's not forget the last task's total hours:\nmd_reportbody += (cur_tasktotal) ? `\\n*${cur_tasktotal.toFixed(2)} - Total hours for this task*\\n` : \"\";\n\n// Finalise the report\nmd_reportbody += `\\n*Timesheet report generated on: ${$now.toISODate()}*`;\nmd_reporthead += \"\\n\";\n\nreturn [{mdreport: md_reportbody}];"
+      },
+      "typeVersion": 1,
+      "id": "796f47e5-c495-40fb-8d90-1077c9698037"
+    },
+    {
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "disabled": true,
+      "position": [
+        1760,
+        580
+      ],
+      "parameters": {
+        "options": {
+          "allowUnauthorizedCerts": false
+        },
+        "subject": "TimeSheet report",
+        "attachments": "data"
+      },
+      "credentials": {
+        "smtp": {
+          "id": "credential-id",
+          "name": "smtp Credential"
+        }
+      },
+      "typeVersion": 1,
+      "id": "ee326591-0736-4173-a9c5-ae7189820e1d"
+    },
+    {
+      "name": "GetImg",
+      "type": "n8n-nodes-base.itemLists",
+      "position": [
+        640,
+        760
+      ],
+      "parameters": {
+        "compare": "selectedFields",
+        "options": {
+          "removeOtherFields": true
+        },
+        "operation": "removeDuplicates",
+        "fieldsToCompare": {
+          "fields": [
+            {
+              "fieldName": "UserAvatar"
+            }
+          ]
+        }
+      },
+      "typeVersion": 1,
+      "id": "74ff8ad4-f5ef-49bd-9867-0b9e2d70d0c3"
+    },
+    {
+      "name": "ImgBinary",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        820,
+        760
+      ],
+      "parameters": {
+        "url": "={{$json[\"UserAvatar\"]}}",
+        "options": {},
+        "responseFormat": "file"
+      },
+      "typeVersion": 2,
+      "id": "74da0c11-6444-48c7-af6a-ae9621491b49"
+    },
+    {
+      "name": "Merge2",
+      "type": "n8n-nodes-base.merge",
+      "position": [
+        980,
+        580
+      ],
+      "parameters": {
+        "join": "outer",
+        "mode": "mergeByIndex"
+      },
+      "typeVersion": 1,
+      "id": "0814b040-f5ad-4d17-ad9a-e575c67c6f16"
+    },
+    {
+      "name": "Move Binary Data1",
+      "type": "n8n-nodes-base.moveBinaryData",
+      "position": [
+        1520,
+        580
+      ],
+      "parameters": {
+        "mode": "jsonToBinary",
+        "options": {
+          "fileName": "report.html",
+          "mimeType": "text/html",
+          "useRawData": true
+        },
+        "convertAllData": false
+      },
+      "typeVersion": 1,
+      "id": "2c201c93-bf05-486a-94a8-db7cd8c12534"
+    },
+    {
+      "name": "GetTimesheetRecords",
+      "type": "n8n-nodes-base.function",
+      "position": [
+        300,
+        560
+      ],
+      "parameters": {
+        "functionCode": "return [{UserName: \"User 1 - Lead Programmer\",\n         UserAvatar: \"https://www.gravatar.com/avatar/?d=robohash&s=32\",\n         TaskTitle: \"Admin\",\n         date: \"2022-05-31T00:00:00.0000000+02:00\",\n         note: \"Creating invoices and submitting timesheets\",\n         hours: 0.5},\n         {UserName: \"User 1 - Lead Programmer\",\n         UserAvatar: \"https://www.gravatar.com/avatar/?d=robohash&s=32\",\n         TaskTitle: \"Admin\",\n         date: \"2022-05-02T00:00:00.0000000+02:00\",\n         note: \"Reporting last month's activity\",\n         hours: 0.5},\n         {UserName: \"User 2 - Designer\",\n         UserAvatar: \"https://www.gravatar.com/avatar/?d=identicon&s=32\",\n         TaskTitle: \"Admin\",\n         date: \"2022-05-30T00:00:00.0000000+02:00\",\n         note: \"Filling timesheets\",\n         hours: 0.5},\n         {UserName: \"User 2 - Designer\",\n         UserAvatar: \"https://www.gravatar.com/avatar/?d=identicon&s=32\",\n         TaskTitle: \"Admin\",\n         date: \"2022-05-03T00:00:00.0000000+02:00\",\n         note: \"Monthly retro meeting\",\n         hours: 0.5},\n         {UserName: \"User 1 - Lead Programmer\",\n         UserAvatar: \"https://www.gravatar.com/avatar/?d=robohash&s=32\",\n         TaskTitle: \"Client 1\",\n         date: \"2022-05-26T00:00:00.0000000+02:00\",\n         note: \"Weekly meeting\",\n         hours: 0.5},\n         {UserName: \"User 1 - Lead Programmer\",\n         UserAvatar: \"https://www.gravatar.com/avatar/?d=robohash&s=32\",\n         TaskTitle: \"Client 1\",\n         date: \"2022-05-05T00:00:00.0000000+02:00\",\n         note: \"Weekly meeting\",\n         hours: 0.5},\n         {UserName: \"User 1 - Lead Programmer\",\n         UserAvatar: \"https://www.gravatar.com/avatar/?d=robohash&s=32\",\n         TaskTitle: \"Client 1\",\n         date: \"2022-05-19T00:00:00.0000000+02:00\",\n         note: \"Weekly meeting\",\n         hours: 0.5},\n         {UserName: \"User 1 - Lead Programmer\",\n         UserAvatar: \"https://www.gravatar.com/avatar/?d=robohash&s=32\",\n         TaskTitle: \"Client 1\",\n         date: \"2022-05-12T00:00:00.0000000+02:00\",\n         note: \"Weekly meeting\",\n         hours: 0.5},\n         {UserName: \"User 1 - Lead Programmer\",\n         UserAvatar: \"https://www.gravatar.com/avatar/?d=robohash&s=32\",\n         TaskTitle: \"Client 1\",\n         date: \"2022-05-12T00:00:00.0000000+02:00\",\n         note: \"Programmed new feature\",\n         hours: 4.5},\n         {UserName: \"User 1 - Lead Programmer\",\n         UserAvatar: \"https://www.gravatar.com/avatar/?d=robohash&s=32\",\n         TaskTitle: \"Client 1\",\n         date: \"2022-05-02T00:00:00.0000000+02:00\",\n         note: \"Updated this and that\",\n         hours: 2.75},\n         {UserName: \"User 2 - Designer\",\n         UserAvatar: \"https://www.gravatar.com/avatar/?d=identicon&s=32\",\n         TaskTitle: \"Client 2\",\n         date: \"2022-05-13T00:00:00.0000000+02:00\",\n         note: \"Designed a new report template\",\n         hours: 6.5},\n         {UserName: \"User 2 - Designer\",\n         UserAvatar: \"https://www.gravatar.com/avatar/?d=identicon&s=32\",\n         TaskTitle: \"Client 2\",\n         date: \"2022-05-23T00:00:00.0000000+02:00\",\n         note: \"Presented the results\",\n         hours: 1.5}\n         ];"
+      },
+      "typeVersion": 1,
+      "id": "9840be56-48e0-42ce-9d9f-6e1af6912c3e"
+    }
+  ],
+  "connections": {
+    "GetImg": {
+      "main": [
+        [
+          {
+            "node": "ImgBinary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge2": {
+      "main": [
+        [
+          {
+            "node": "CreateMDReport",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Markdown": {
+      "main": [
+        [
+          {
+            "node": "Move Binary Data1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ImgBinary": {
+      "main": [
+        [
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "SortElements": {
+      "main": [
+        [
+          {
+            "node": "GetImg",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CreateMDReport": {
+      "main": [
+        [
+          {
+            "node": "Markdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move Binary Data1": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetTimesheetRecords": {
+      "main": [
+        [
+          {
+            "node": "SortElements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On clicking 'execute'": {
+      "main": [
+        [
+          {
+            "node": "GetTimesheetRecords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "00178d07-7b4a-4a9a-ad20-97a794f1e30c",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:04:35.196Z",
+      "createdAt": "2026-05-13T23:04:35.196Z",
+      "role": "workflow:owner",
+      "workflowId": "oCKbaBfV34bkcf93",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

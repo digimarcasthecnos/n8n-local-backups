@@ -1,0 +1,1053 @@
+{
+  "updatedAt": "2026-05-14T03:28:50.191Z",
+  "createdAt": "2026-05-14T03:28:50.191Z",
+  "id": "Xw2iEBCMkZYFdzrd",
+  "name": "Improve AI support email drafts with Gmail, OpenAI and PostgreSQL",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "5c7d4f79-b479-4c40-a092-0934e2e87169",
+      "name": "⏰ Schedule - Every 3 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [
+        -2352,
+        640
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 3
+            }
+          ]
+        }
+      },
+      "typeVersion": 1.2
+    },
+    {
+      "id": "fc095fb7-cdad-4f45-8384-d533101cbfe7",
+      "name": "🗄️ DB - Get Last Watermark",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        -2176,
+        640
+      ],
+      "parameters": {
+        "query": "SELECT last_processed_sent_at FROM feedback_run_log WHERE status = 'completed' ORDER BY run_completed_at DESC LIMIT 1;",
+        "options": {},
+        "operation": "executeQuery"
+      },
+      "credentials": {
+        "postgres": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 2.6
+    },
+    {
+      "id": "43c7801f-2e51-4970-a498-c90de6cb3283",
+      "name": "⚙️ Set Watermark",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1952,
+        640
+      ],
+      "parameters": {
+        "jsCode": "const rows = $input.all();\nlet watermark;\n\nif (rows && rows.length > 0 && rows[0].json && rows[0].json.last_processed_sent_at) {\n  watermark = rows[0].json.last_processed_sent_at;\n} else {\n  // First run ever — go back 7 days\n  const d = new Date();\n  d.setDate(d.getDate() - 7);\n  watermark = d.toISOString();\n}\n\n// Unix timestamp for Gmail query\nconst unixTs = Math.floor(new Date(watermark).getTime() / 1000);\n\nreturn [{ json: { watermark, unixTs } }];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "1fbc336f-2d9a-45ff-8448-11a585b2ed94",
+      "name": "🗄️ DB - Start Run Log",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        -1728,
+        640
+      ],
+      "parameters": {
+        "query": "INSERT INTO feedback_run_log (run_started_at, status) VALUES (NOW(), 'running') RETURNING id;",
+        "options": {},
+        "operation": "executeQuery"
+      },
+      "credentials": {
+        "postgres": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 2.6
+    },
+    {
+      "id": "424f2c18-4a90-414d-85af-00f6ec627dfa",
+      "name": "⚙️ Carry Run Context",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1504,
+        640
+      ],
+      "parameters": {
+        "jsCode": "// Carry run_log_id forward alongside watermark\nconst runLogId = $input.first().json.id;\nconst watermark = $('⚙️ Set Watermark').first().json.watermark;\nconst unixTs = $('⚙️ Set Watermark').first().json.unixTs;\n\nreturn [{ json: { runLogId, watermark, unixTs } }];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "08bf8015-b08f-42a2-9c58-4c5719fd0723",
+      "name": "📧 Gmail - Fetch Sent Emails",
+      "type": "n8n-nodes-base.gmail",
+      "position": [
+        -1280,
+        640
+      ],
+      "parameters": {
+        "filters": {
+          "q": "=in:sent after:{{ $json.unixTs }}"
+        },
+        "operation": "getAll",
+        "returnAll": true
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 2.2,
+      "alwaysOutputData": true,
+      "webhookId": "5725b94d-0bb6-4595-bc8e-d8b96610eaa4"
+    },
+    {
+      "id": "d21b20f9-d259-440f-a426-00b08189b29c",
+      "name": "🔄 Loop - Sent Emails",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [
+        -1056,
+        640
+      ],
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "typeVersion": 3
+    },
+    {
+      "id": "8d74b94a-7d0f-4575-8de6-883e8e72ce2c",
+      "name": "🗄️ DB - Match Thread ID",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        16,
+        912
+      ],
+      "parameters": {
+        "query": "SELECT id, gmail_thread_id, gmail_message_id, original_email_body, classification, ai_draft_text, feedback_processed_at, was_approved_as_is FROM ai_drafts WHERE gmail_thread_id = '{{ $json.threadId }}' LIMIT 1;",
+        "options": {},
+        "operation": "executeQuery"
+      },
+      "credentials": {
+        "postgres": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 2.6,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "4f9b5c5b-e2b2-48dc-9e22-794577d816da",
+      "name": "❓ IF - Draft Match Found?",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        224,
+        912
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 3,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "b1+1234567890-+1234567890",
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              },
+              "leftValue": "={{ $json.id }}",
+              "rightValue": ""
+            }
+          ]
+        }
+      },
+      "typeVersion": 2.3
+    },
+    {
+      "id": "fb1cd898-8b4c-4d4f-9945-7b03e1e489e2",
+      "name": "❓ IF - Already Processed?",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        -784,
+        288
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 3,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "b1+1234567890-+1234567890",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              },
+              "leftValue": "={{ $json.feedback_processed_at }}",
+              "rightValue": ""
+            }
+          ]
+        }
+      },
+      "typeVersion": 2.3
+    },
+    {
+      "id": "f982e930-4766-4015-b4e5-1f4882351e62",
+      "name": "🤖 AI - Compare Draft vs Sent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        -576,
+        272
+      ],
+      "parameters": {
+        "text": "=ORIGINAL CUSTOMER EMAIL:\n{{ $('🔄 Loop - Sent Emails').item.json.text || $('🔄 Loop - Sent Emails').item.json.body || '' }}\n\nAI DRAFT (what the system generated):\n{{ $('🗄️ DB - Match Thread ID').item.json.ai_draft_text }}\n\nHUMAN SENT (what was actually sent to the customer):\n{{ $json.text || $json.body || '' }}\n\nCLASSIFICATION: {{ $('🗄️ DB - Match Thread ID').item.json.classification }}\n\nAnalyze the difference between the AI draft and the human-sent email. Respond ONLY with this exact JSON, no markdown, no explanation:\n{\n  \"approved_as_is\": true or false,\n  \"edit_type\": \"none\" or \"minor_edits\" or \"major_rewrite\",\n  \"diff_summary\": \"Plain English description of what changed and why it likely changed. Be specific.\",\n  \"tone_shift\": \"more_formal\" or \"more_casual\" or \"same\" or \"n/a\",\n  \"info_added\": true or false,\n  \"info_removed\": true or false,\n  \"kb_update_needed\": true or false,\n  \"kb_update_reason\": \"Why the KB needs updating, or null if not needed\",\n  \"kb_category\": \"The category from the classification that should be updated, or null\",\n  \"kb_new_info\": \"The specific new information or correction to add to the KB, or null\"\n}",
+        "options": {
+          "maxIterations": 3
+        },
+        "promptType": "define"
+      },
+      "typeVersion": 3.1
+    },
+    {
+      "id": "421e6376-4c88-45c8-b1ea-3127e51682fd",
+      "name": "OpenAI Chat Model - Compare",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "position": [
+        -320,
+        144
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {
+          "maxTokens": 800,
+          "temperature": 0,
+          "presencePenalty": 0,
+          "frequencyPenalty": 0
+        },
+        "builtInTools": {}
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 1.3
+    },
+    {
+      "id": "6e4090dc-8610-45f7-af03-df16ba65a569",
+      "name": "⚙️ Parse AI Comparison",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -224,
+        272
+      ],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst rawOutput = item.output || '';\nconst cleaned = rawOutput\n  .replace(/```json/gi, '')\n  .replace(/```/g, '')\n  .trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch(e) {\n  parsed = {\n    approved_as_is: false,\n    edit_type: 'parse_error',\n    diff_summary: 'Failed to parse AI comparison response',\n    tone_shift: 'n/a',\n    info_added: false,\n    info_removed: false,\n    kb_update_needed: false,\n    kb_update_reason: null,\n    kb_category: null,\n    kb_new_info: null\n  };\n}\n\n// Carry through the sent email body and thread context\n// The loop item flows into DB - Match Thread ID as input\n// so reference the sent email body from the IF node before it\nconst sentBody = $('⚙️ Parse Full Message Body').item.json.sentBody || '';\nconst draftId = $('🗄️ DB - Match Thread ID').item.json.id;\nconst originalBody = $('🗄️ DB - Match Thread ID').item.json.original_email_body;\nconst classification = $('🗄️ DB - Match Thread ID').item.json.classification;\nconst aiDraftText = $('🗄️ DB - Match Thread ID').item.json.ai_draft_text;\n\nreturn [{\n  json: {\n    ...parsed,\n    sentBody,\n    draftId,\n    originalBody,\n    classification,\n    aiDraftText\n  }\n}];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "a287218e-4a5e-4dab-99ea-0e33da8b1873",
+      "name": "❓ IF - Approved As-Is?",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        0,
+        272
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 3,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "b1+1234567890-+1234567890",
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.approved_as_is }}",
+              "rightValue": true
+            }
+          ]
+        }
+      },
+      "typeVersion": 2.3
+    },
+    {
+      "id": "0155b7f2-bcd4-4819-a00e-e7d07b06485a",
+      "name": "🗄️ DB - Mark Approved As-Is",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        224,
+        256
+      ],
+      "parameters": {
+        "query": "UPDATE ai_drafts SET was_approved_as_is = TRUE, feedback_processed_at = NOW() WHERE id = {{ $json.draftId }};",
+        "options": {},
+        "operation": "executeQuery"
+      },
+      "credentials": {
+        "postgres": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 2.6
+    },
+    {
+      "id": "c8362985-ba49-4170-a9ae-bb10647966fd",
+      "name": "🔢 Generate Embedding - Human Sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        64,
+        528
+      ],
+      "parameters": {
+        "url": "https://api.openai.com/v1/embeddings",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "authentication": "predefinedCredentialType",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "text-embedding-3-small"
+            },
+            {
+              "name": "input",
+              "value": "={{ $json.sentBody }}"
+            }
+          ]
+        },
+        "nodeCredentialType": "openAiApi"
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 4.4
+    },
+    {
+      "id": "37c6deac-6deb-4b41-9270-3e817766f76b",
+      "name": "⚙️ Extract Embedding",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        288,
+        528
+      ],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst embeddingArray = item.data[0].embedding;\nconst vectorString = '[' + embeddingArray.join(',') + ']';\n\nconst prev = $('⚙️ Parse AI Comparison').first().json;\n\nreturn [{\n  json: {\n    embedding: vectorString,\n    sentBody: prev.sentBody,\n    draftId: prev.draftId,\n    originalBody: prev.originalBody,\n    classification: prev.classification,\n    aiDraftText: prev.aiDraftText,\n    diff_summary: prev.diff_summary,\n    kb_update_needed: prev.kb_update_needed,\n    kb_update_reason: prev.kb_update_reason,\n    kb_category: prev.kb_category,\n    kb_new_info: prev.kb_new_info\n  }\n}];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "2e318078-fee1-4729-a59b-1816a7db3188",
+      "name": "🗄️ DB - Save Correction",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        512,
+        528
+      ],
+      "parameters": {
+        "query": "INSERT INTO corrections (\n  ai_draft_id,\n  original_email_body,\n  classification,\n  ai_draft_text,\n  human_sent_text,\n  diff_summary,\n  embedding,\n  source,\n  kb_updated\n) VALUES (\n  {{ $json.draftId }},\n  $1,\n  $2,\n  $3,\n  $4,\n  $5,\n  $6::vector,\n  'feedback_loop',\n  FALSE\n) RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$json.originalBody, $json.classification, $json.aiDraftText, $json.sentBody, $json.diff_summary, $json.embedding] }}"
+        },
+        "operation": "executeQuery"
+      },
+      "credentials": {
+        "postgres": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 2.6
+    },
+    {
+      "id": "33d6c979-c122-4efc-9e54-21ece23e788e",
+      "name": "🗄️ DB - Mark Draft Processed",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        736,
+        528
+      ],
+      "parameters": {
+        "query": "UPDATE ai_drafts SET feedback_processed_at = NOW() WHERE id = {{ $('⚙️ Extract Embedding').item.json.draftId }};",
+        "options": {},
+        "operation": "executeQuery"
+      },
+      "credentials": {
+        "postgres": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 2.6
+    },
+    {
+      "id": "afffe5e1-9615-4342-939a-4202a3dc163f",
+      "name": "❓ IF - KB Update Needed?",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        944,
+        528
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 3,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "b1+1234567890-+1234567890",
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $('⚙️ Parse AI Comparison').item.json.kb_update_needed }}",
+              "rightValue": true
+            }
+          ]
+        }
+      },
+      "typeVersion": 2.3
+    },
+    {
+      "id": "ac859ee7-262e-4f49-897c-0b8ee107248e",
+      "name": "🗄️ DB - Fetch KB Entry to Update",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        1168,
+        512
+      ],
+      "parameters": {
+        "query": "SELECT id, category, question, answer FROM kb_data WHERE category = $1 ORDER BY updated_at DESC LIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ [$('⚙️ Parse AI Comparison').item.json.kb_category] }}"
+        },
+        "operation": "executeQuery"
+      },
+      "credentials": {
+        "postgres": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 2.6
+    },
+    {
+      "id": "87e04269-1321-4be0-9466-eb806f54b907",
+      "name": "🤖 AI - Rewrite KB Answer",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "position": [
+        1360,
+        512
+      ],
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {
+          "maxTokens": 500,
+          "temperature": 0.2
+        },
+        "simplify": false,
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are updating a knowledge base entry for a customer support system at InCred Money, a platform for trading unlisted pre-IPO shares. Rewrite the KB answer to incorporate new information while preserving all existing correct content. Respond with ONLY the new answer text. No preamble, no explanation, no markdown."
+            },
+            {
+              "content": "=EXISTING KB ENTRY:\nCategory: {{ $json.category }}\nQuestion: {{ $json.question }}\nCurrent Answer: {{ $json.answer }}\n\nNEW INFORMATION TO INCORPORATE:\n{{ $('⚙️ Parse AI Comparison').item.json.kb_new_info }}\n\nREASON FOR UPDATE:\n{{ $('⚙️ Parse AI Comparison').item.json.kb_update_reason }}\n\nRewrite the answer incorporating the new information."
+            }
+          ]
+        },
+        "builtInTools": {}
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 2.1
+    },
+    {
+      "id": "d3eb84c2-227a-466f-80f2-57dbf087e1cf",
+      "name": "🗄️ DB - Update KB Entry",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        1696,
+        512
+      ],
+      "parameters": {
+        "query": "UPDATE kb_data SET previous_answer = answer, answer = $1, updated_by = 'ai_feedback_loop', updated_at = NOW() WHERE id = {{ $('🗄️ DB - Fetch KB Entry to Update').item.json.id }};",
+        "options": {
+          "queryReplacement": "={{ [$json.message?.content?.[0]?.text || $json.output || ''] }}"
+        },
+        "operation": "executeQuery"
+      },
+      "credentials": {
+        "postgres": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 2.6
+    },
+    {
+      "id": "ca26d98e-853e-4d13-9dc0-4b8cfd229624",
+      "name": "🗄️ DB - Mark KB Updated",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        1888,
+        624
+      ],
+      "parameters": {
+        "query": "UPDATE corrections SET kb_updated = TRUE WHERE ai_draft_id = {{ $('⚙️ Extract Embedding').item.json.draftId }} AND source = 'feedback_loop' ORDER BY created_at DESC LIMIT 1;",
+        "options": {},
+        "operation": "executeQuery"
+      },
+      "credentials": {
+        "postgres": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 2.6
+    },
+    {
+      "id": "a3437287-ee6e-46bb-b8a4-f5f2bc4795c3",
+      "name": "🗄️ DB - Complete Run Log",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        -784,
+        560
+      ],
+      "parameters": {
+        "query": "UPDATE feedback_run_log SET run_completed_at = NOW(), last_processed_sent_at = NOW(), status = 'completed' WHERE id = {{ $('🗄️ DB - Start Run Log').first().json.id }};",
+        "options": {},
+        "operation": "executeQuery"
+      },
+      "credentials": {
+        "postgres": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 2.6
+    },
+    {
+      "id": "554c5627-7ed7-4234-864b-498f40054607",
+      "name": "📧 Gmail - Fetch Full Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -384,
+        912
+      ],
+      "parameters": {
+        "url": "=https://www.googleapis.com/gmail/v1/users/me/messages/{{ $json.id }}?format=full",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2"
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "credential-id",
+          "name": "Credential Name"
+        }
+      },
+      "typeVersion": 4.4
+    },
+    {
+      "id": "5bd58454-bc56-4850-9f90-e8c53cbeaeeb",
+      "name": "⚙️ Parse Full Message Body",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -192,
+        912
+      ],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nfunction decodeBase64url(str) {\n  if (!str) return '';\n  return Buffer.from(str.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8');\n}\n\nfunction extractTextPlain(payload) {\n  if (!payload) return '';\n\n  // CASE 1: Direct body.data on payload (text/plain, no parts) ← this email's structure\n  if (payload.mimeType === 'text/plain' && payload.body?.data) {\n    return decodeBase64url(payload.body.data);\n  }\n\n  // CASE 2: Nested parts (multipart/alternative, multipart/mixed etc.)\n  if (payload.parts && payload.parts.length > 0) {\n    for (const part of payload.parts) {\n      const result = extractTextPlain(part); // recursive\n      if (result) return result;\n    }\n  }\n\n  return '';\n}\n\nfunction stripQuotedReply(text) {\n  const lines = text.split('\\n');\n  const replyLines = [];\n  for (const line of lines) {\n    if (line.startsWith('>')) break;\n    if (/^On .+wrote:$/i.test(line.trim())) break;\n    if (line.includes('---------- Forwarded message')) break;\n    replyLines.push(line);\n  }\n  return replyLines.join('\\n').replace(/\\r/g, '').replace(/\\n{3,}/g, '\\n\\n').trim();\n}\n\nlet sentBody = extractTextPlain(item.payload);\nsentBody = stripQuotedReply(sentBody);\n\nif (!sentBody) sentBody = item.snippet || '';\n\nconst loopItem = $('🔄 Loop - Sent Emails').item.json;\n\nreturn [{\n  json: {\n    ...loopItem,\n    sentBody,\n    threadId: item.threadId,\n    messageId: item.id\n  }\n}];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "b47598a7-6bbd-4cb8-a30f-d6e3415949d6",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -3168,
+        32
+      ],
+      "parameters": {
+        "width": 656,
+        "height": 848,
+        "content": "## Self-learning feedback loop for AI email drafts\n\nThis workflow runs every 3 hours and checks which AI-generated \nemail drafts have been reviewed and sent by the support team. \nIt compares the AI draft against what was actually sent, learns \nfrom the differences, and stores human-approved responses as \ntraining examples for future drafts.\n\nOver time, the main email workflow surfaces increasingly relevant \npast responses via vector similarity search — no fine-tuning needed.\n\n## How it works\n\n1. Fetches watermark from last completed run — only new sent \n   emails are processed each time\n2. Gmail Sent folder is fetched since the watermark timestamp\n3. Each sent email is matched to an AI draft via thread ID\n4. Already-processed drafts are skipped automatically\n5. AI compares the draft vs actual sent email and classifies \n   the type of edit made\n6. If sent unchanged — marked approved-as-is, loop continues\n7. If edited — embedding generated, correction saved to DB \n   for future similarity search\n8. If edit reveals missing KB info — KB entry auto-updated\n\n## Setup steps\n\n1. Connect Gmail OAuth2 to the Gmail Fetch Sent node\n2. Connect PostgreSQL credential to all DB nodes\n3. Connect OpenAI API to the Chat Model and embedding nodes\n4. Run the DB migration SQL to add feedback columns and \n   create the feedback_run_log table\n5. Ensure Workflow 1 (email draft automation) is already \n   active and generating drafts\n6. Activate — runs automatically every 3 hours"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "2ca9131b-ae98-41be-ac18-2e94c02d6155",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2496,
+        480
+      ],
+      "parameters": {
+        "color": 7,
+        "width": 1360,
+        "height": 400,
+        "content": "## Schedule & Fetch Emails\n\nRuns every 3 hours. Fetches last_processed_sent_at from the \nmost recent completed run as a watermark — so only new sent \nemails are fetched each time. First-ever run defaults to 7 days ago."
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "4e9841ac-1ea9-4fae-a97e-8cca892f5771",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -864,
+        832
+      ],
+      "parameters": {
+        "color": 7,
+        "width": 1280,
+        "height": 336,
+        "content": "## Loop & thread matching\n\nProcesses one sent email at a time. Full message body is fetched \nvia Gmail API separately — the Sent folder list only returns a \nsnippet. Each email is matched to an AI draft by thread ID. \nNo match or already processed = skip."
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "2aebc058-79a7-4de6-9fd7-16593f15919a",
+      "name": "Sticky Note3",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -864,
+        -16
+      ],
+      "parameters": {
+        "color": 7,
+        "width": 1280,
+        "height": 480,
+        "content": "## AI comparison & branching\n\nGPT-4o-mini compares the AI draft vs human-sent email and returns \nedit type, a plain-English diff summary, and whether a KB update \nis needed.\n\nApproved as-is → mark draft, continue loop\nEdited/rewritten → generate embedding, save to corrections table"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "d41b364f-5010-4a01-95dd-564bf474b2e5",
+      "name": "Sticky Note4",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -464,
+        480
+      ],
+      "parameters": {
+        "color": 7,
+        "width": 2528,
+        "height": 336,
+        "content": "## Corrections & KB update\n\nHuman-edited pairs are embedded and saved to the corrections \ntable — this is what Workflow 1 queries for similarity search \nwhen drafting future replies.\n\nIf the edit contained new information, the matching KB entry \nis rewritten by AI. Previous answer is preserved for audit."
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "⚙️ Set Watermark": {
+      "main": [
+        [
+          {
+            "node": "🗄️ DB - Start Run Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Loop - Sent Emails": {
+      "main": [
+        [
+          {
+            "node": "🗄️ DB - Complete Run Log",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📧 Gmail - Fetch Full Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ Carry Run Context": {
+      "main": [
+        [
+          {
+            "node": "📧 Gmail - Fetch Sent Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ Extract Embedding": {
+      "main": [
+        [
+          {
+            "node": "🗄️ DB - Save Correction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ IF - Approved As-Is?": {
+      "main": [
+        [
+          {
+            "node": "🗄️ DB - Mark Approved As-Is",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🔢 Generate Embedding - Human Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ Parse AI Comparison": {
+      "main": [
+        [
+          {
+            "node": "❓ IF - Approved As-Is?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ IF - KB Update Needed?": {
+      "main": [
+        [
+          {
+            "node": "🗄️ DB - Fetch KB Entry to Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🔄 Loop - Sent Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗄️ DB - Start Run Log": {
+      "main": [
+        [
+          {
+            "node": "⚙️ Carry Run Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model - Compare": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "🤖 AI - Compare Draft vs Sent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ IF - Already Processed?": {
+      "main": [
+        [
+          {
+            "node": "🤖 AI - Compare Draft vs Sent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🔄 Loop - Sent Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ IF - Draft Match Found?": {
+      "main": [
+        [
+          {
+            "node": "❓ IF - Already Processed?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🔄 Loop - Sent Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 AI - Rewrite KB Answer": {
+      "main": [
+        [
+          {
+            "node": "🗄️ DB - Update KB Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏰ Schedule - Every 3 Hours": {
+      "main": [
+        [
+          {
+            "node": "🗄️ DB - Get Last Watermark",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗄️ DB - Mark KB Updated": {
+      "main": [
+        [
+          {
+            "node": "🔄 Loop - Sent Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗄️ DB - Match Thread ID": {
+      "main": [
+        [
+          {
+            "node": "❓ IF - Draft Match Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗄️ DB - Save Correction": {
+      "main": [
+        [
+          {
+            "node": "🗄️ DB - Mark Draft Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗄️ DB - Update KB Entry": {
+      "main": [
+        [
+          {
+            "node": "🗄️ DB - Mark KB Updated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ Parse Full Message Body": {
+      "main": [
+        [
+          {
+            "node": "🗄️ DB - Match Thread ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📧 Gmail - Fetch Sent Emails": {
+      "main": [
+        [
+          {
+            "node": "🔄 Loop - Sent Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📧 Gmail - Fetch Full Message": {
+      "main": [
+        [
+          {
+            "node": "⚙️ Parse Full Message Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗄️ DB - Get Last Watermark": {
+      "main": [
+        [
+          {
+            "node": "⚙️ Set Watermark",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 AI - Compare Draft vs Sent": {
+      "main": [
+        [
+          {
+            "node": "⚙️ Parse AI Comparison",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗄️ DB - Mark Approved As-Is": {
+      "main": [
+        [
+          {
+            "node": "🔄 Loop - Sent Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗄️ DB - Mark Draft Processed": {
+      "main": [
+        [
+          {
+            "node": "❓ IF - KB Update Needed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔢 Generate Embedding - Human Sent": {
+      "main": [
+        [
+          {
+            "node": "⚙️ Extract Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗄️ DB - Fetch KB Entry to Update": {
+      "main": [
+        [
+          {
+            "node": "🤖 AI - Rewrite KB Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "0c5b5101-d4bd-419a-8948-d796e6a9826b",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-14T03:28:50.191Z",
+      "createdAt": "2026-05-14T03:28:50.191Z",
+      "role": "workflow:owner",
+      "workflowId": "Xw2iEBCMkZYFdzrd",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

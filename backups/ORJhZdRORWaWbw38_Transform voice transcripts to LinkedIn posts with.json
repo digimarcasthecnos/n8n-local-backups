@@ -1,0 +1,452 @@
+{
+  "updatedAt": "2026-05-13T23:18:08.600Z",
+  "createdAt": "2026-05-13T23:18:08.600Z",
+  "id": "ORJhZdRORWaWbw38",
+  "name": "Transform voice transcripts to LinkedIn posts with Claude AI and email automation",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "77bcc9c1-0a33-4624-b974-c4e7953cf2b4",
+      "name": "Clean JSON",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        320,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b88347b0-de58-49dd-9ae8-901154d39a3d",
+              "name": "Content",
+              "type": "string",
+              "value": "={{ $json.textPlain }}"
+            },
+            {
+              "id": "45d1ce97-ace7-48a3-9426-58e68df495f5",
+              "name": "Date",
+              "type": "string",
+              "value": "={{ $json.date }}"
+            }
+          ]
+        }
+      },
+      "typeVersion": 3.4
+    },
+    {
+      "id": "4617a0fb-7ad4-4dd4-8da7-3d4d7ec572dd",
+      "name": "Basic LLM Chain",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "position": [
+        980,
+        100
+      ],
+      "parameters": {
+        "text": "=",
+        "batching": {},
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=You are a LinkedIn content expert helping create thought leadership posts. You will receive inspiration content and create engaging LinkedIn posts with accompanying image/video descriptions."
+            },
+            {
+              "type": "HumanMessagePromptTemplate",
+              "message": "=EXAMPLE POSTS FOR STYLE REFERENCE:\n{{ $json.data[0] }}\n\n---\n\nCREATE A NEW POST BASED ON THIS INSPIRATION:\n{{ $json.Content[0] }}\n\nRequirements:\n1. Match the style and tone of the example posts above\n2. Write an engaging LinkedIn post (150-300 words)\n3. Create a description for complementary visual content that will be used to provide creative direction to a graphic designer that has our brand guidelines\n\nYou must respond with ONLY valid JSON in this exact format. Use only standard ASCII characters, no special Unicode formatting:\n\n{\n  \"post_content\": \"Your LinkedIn post here\",\n  \"image_description\": \"Detailed description of visual content needed\"\n}\n\nDo not use any special Unicode characters, mathematical styling, or fancy formatting. Use plain text only."
+            }
+          ]
+        },
+        "promptType": "define"
+      },
+      "retryOnFail": true,
+      "typeVersion": 1.7
+    },
+    {
+      "id": "aca18d63-04e4-4071-8c53-888f72a09a6a",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "position": [
+        1080,
+        260
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-4-20250514",
+          "cachedResultName": "Claude 4 Sonnet"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "credential-id",
+          "name": "anthropicApi Credential"
+        }
+      },
+      "typeVersion": 1.3
+    },
+    {
+      "id": "0942f260-ee7b-475c-86bf-0d98bb4e2bc8",
+      "name": "Google Doc Post Inspiration",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        320,
+        200
+      ],
+      "parameters": {
+        "url": "https://docs.google.com/document/d/asdfsadfasdf",
+        "options": {}
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "eb46d848-9e8c-4df3-8867-048f04f2e9ce",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "position": [
+        540,
+        100
+      ],
+      "parameters": {},
+      "typeVersion": 3.2
+    },
+    {
+      "id": "2d5f2f7f-f868-4afe-9052-e6d293edec07",
+      "name": "Aggregate",
+      "type": "n8n-nodes-base.aggregate",
+      "position": [
+        760,
+        100
+      ],
+      "parameters": {
+        "options": {},
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "data"
+            },
+            {
+              "fieldToAggregate": "Content"
+            }
+          ]
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "25959bd6-ba58-4cd0-a7d7-2dc89acdaea5",
+      "name": "Clean JSON Response",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        1356,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Get the response from the LLM\nlet rawResponse = $json.text;\n\n// Always use regex extraction to avoid JSON parsing issues\nconsole.log(\"Using regex extraction method\");\n\n// Extract content using regex - handles both complete and truncated responses\nconst postMatch = rawResponse.match(/\"post_content\":\\s*\"((?:[^\"\\\\]|\\\\[\\s\\S])*)\"/);\nconst imageMatch = rawResponse.match(/\"image_description\":\\s*\"((?:[^\"\\\\]|\\\\[\\s\\S])*)\"/);\n\nif (postMatch) {\n // Clean up the extracted content\n let postContent = postMatch[1]\n   .replace(/\\\\n/g, '\\n')\n   .replace(/\\\\\"/g, '\"')\n   .replace(/\\\\t/g, '\\t');\n \n let imageDescription = imageMatch ? \n   imageMatch[1].replace(/\\\\n/g, '\\n').replace(/\\\\\"/g, '\"') : \n   \"Professional LinkedIn post visual\";\n \n return {\n   post_content: postContent,\n   image_description: imageDescription,\n   parsing_method: \"regex_extraction\",\n   was_truncated: !postMatch[1].endsWith('\"')\n };\n}\n\nreturn {\n error: \"Could not extract post content\",\n raw_response: rawResponse.substring(0, 500) + \"...\", // Show first 500 chars for debugging\n debug_info: \"No post_content found in response\"\n};"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "ad2078c7-0164-416d-b043-6171c2e155e9",
+      "name": "Email to Monitor",
+      "type": "n8n-nodes-base.emailReadImap",
+      "position": [
+        -120,
+        100
+      ],
+      "parameters": {
+        "options": {}
+      },
+      "credentials": {
+        "imap": {
+          "id": "credential-id",
+          "name": "imap Credential"
+        }
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "7a37253a-9b43-4be5-912c-670e585667dc",
+      "name": "Limit email sender",
+      "type": "n8n-nodes-base.filter",
+      "position": [
+        100,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "74316b3d-99ba-4116-b031-86e1f2493e8c",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              },
+              "leftValue": "={{ $json.from }}",
+              "rightValue": "user@example.com"
+            }
+          ]
+        }
+      },
+      "typeVersion": 2.2
+    },
+    {
+      "id": "3c3d9216-24fb-4965-851a-417afcbb2bc4",
+      "name": "Limit email sender1",
+      "type": "n8n-nodes-base.filter",
+      "position": [
+        100,
+        200
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "19ffe245-a195-4010-a765-838300d2e80e",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              },
+              "leftValue": "={{ $json.from }}",
+              "rightValue": "user@example.com"
+            }
+          ]
+        }
+      },
+      "typeVersion": 2.2
+    },
+    {
+      "id": "e67b6d77-026c-4cff-8907-eaabcf7be1b9",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -620,
+        -60
+      ],
+      "parameters": {
+        "width": 420,
+        "height": 600,
+        "content": "## Configure Email \nConfigure Email Monitoring\n\nSet up dedicated email address for receiving your voice transcriptions\n• Create a new email specifically for this workflow (e.g., linkedin@yourdomain.com)\n• This keeps your workflow organized and secure\n\n\nConfigure IMAP Email Node\n• Add your email credentials in the \"Email to Monitor\" node\n• Set up IMAP access in your email provider settings\n• Test the connection to ensure emails are being received\n\n\nSet Email Filters\n• Update the \"Limit email sender\" nodes with YOUR email address\n• Replace \"email@email.com\" with your sending email\n• This ensures only YOUR emails trigger the workflow\n\nEmail Usage Instructions\n• Record voice memo on your phone\n• Copy the auto-transcription from your voice recorder app\n• Email the transcription to your dedicated workflow email\n• The workflow will automatically trigger when your email is received"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "21026d75-ec99-462a-a64d-ce1413eb74fe",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -40,
+        420
+      ],
+      "parameters": {
+        "width": 640,
+        "height": 520,
+        "content": "## Data Processing Steps\n\nClean JSON Node\n• Extracts email content and metadata\nRemoves unnecessary email headers and formatting\n• Prepares clean text for AI processing\n\nGoogle Doc Inspiration Source\n• CRITICAL: Create your own google doc, and set its permissions to Public, so the URL is publicly accessible.\n• Replace with your own Google Doc URL containing example posts\n• Document should include posts you admire from other creators. Make sure you copy/paste the text here.\n• Keep this document updated with new inspiring content\n• This step will reformat your raw, unedited text into a structure similar to your inspiration posts.\n\n\nContent Merging\n• The workflow combines your raw transcription with inspiration examples\n• This ensures consistent brand voice and messaging structure\n\n\n\nSetting Up Your Inspiration Document\n• Create a Google Doc with 10-15 example LinkedIn posts\n• Include posts that match your desired tone and style\n• Make the document publicly viewable or shareable via link\n• Update the URL in the HTTP Request node"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "0af851b7-4430-4122-a896-5ff3e86f3f18",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        800,
+        400
+      ],
+      "parameters": {
+        "width": 620,
+        "height": 560,
+        "content": "## AI Configuration\n\nAnthropic API Setup\n• Sign up for Anthropic Claude API access\n• Add your API credentials to the \"Anthropic Chat Model\" node\nThe workflow uses Claude Sonnet 4 for content generation\n\nPrompt Engineering\n• The LLM Chain uses your inspiration posts as style examples\n• Generates two outputs: LinkedIn post content + image description\n• Maintains 150-300 word count for optimal LinkedIn engagement\n\n\nJSON Response Cleaning\n• Automated parsing extracts clean content from AI response\n• Handles formatting issues and ensures proper data structure\n• Error handling for incomplete or malformed responses\n\n\n\nAI Output Quality Tips\n• Keep your inspiration document updated with high-quality examples\n• The AI will match the tone and style of your example posts\n• More diverse examples = more varied but consistent output"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "12299288-a5fc-4d95-91c4-43ac4c4921df",
+      "name": "Sticky Note3",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1500,
+        400
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 400,
+        "content": "## Email yourself\n\nConnect your email, and email yourself the polished content. \n\nYou'll receive the post content + inspiration for any imagery.\n\n\nNote: You can also add these to a database like Airtable, supabase, or forward the messages thru slack. Just configure those nodes as needed."
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "b696f6b3-4739-4629-8059-78077612b4e0",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "position": [
+        1580,
+        100
+      ],
+      "webhookId": "3b07b45f-91da-4417-a901-99c22ed13114",
+      "parameters": {
+        "html": "=<h2>🎉 New LinkedIn Post Generated!</h2>\n<p><strong>Generated on:</strong> {{ new Date().toLocaleString() }}</p>\n\n<h3>📝 Post Content:</h3>\n<div style=\"background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;\">\n{{ $('Clean JSON Response').item.json.post_content }}\n</div>\n\n<h3>🖼️ Image Description:</h3>\n<div style=\"background: #e8f4f8; padding: 15px; border-radius: 5px; margin: 10px 0;\">\n{{ $('Clean JSON Response').item.json.image_description }}\n</div>\n\n<p><em>Copy the content above and paste it into LinkedIn when ready to post!</em></p>",
+        "options": {},
+        "subject": "LinkedIn Post Ready - {{ new Date().toLocaleDateString() }}"
+      },
+      "typeVersion": 2.1
+    }
+  ],
+  "connections": {
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean JSON": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Clean JSON Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email to Monitor": {
+      "main": [
+        [
+          {
+            "node": "Limit email sender",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Limit email sender1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit email sender": {
+      "main": [
+        [
+          {
+            "node": "Clean JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean JSON Response": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit email sender1": {
+      "main": [
+        [
+          {
+            "node": "Google Doc Post Inspiration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Doc Post Inspiration": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionOrder": "v1",
+    "timeSavedPerExecution": 60
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "c89e9b8f-de95-4413-96b3-f9782307012e",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:18:08.600Z",
+      "createdAt": "2026-05-13T23:18:08.600Z",
+      "role": "workflow:owner",
+      "workflowId": "ORJhZdRORWaWbw38",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

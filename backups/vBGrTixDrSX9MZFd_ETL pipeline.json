@@ -1,0 +1,287 @@
+{
+  "updatedAt": "2026-05-15T09:45:23.909Z",
+  "createdAt": "2026-05-15T09:45:23.909Z",
+  "id": "vBGrTixDrSX9MZFd",
+  "name": "ETL pipeline",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "name": "Twitter",
+      "type": "n8n-nodes-base.twitter",
+      "position": [
+        300,
+        300
+      ],
+      "parameters": {
+        "limit": 3,
+        "operation": "search",
+        "searchText": "=#OnThisDay",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "twitterOAuth1Api": "twitter_api"
+      },
+      "typeVersion": 1,
+      "id": "0de5f4ab-040a-47e5-8ad0-30a3d7f2268a"
+    },
+    {
+      "name": "Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "table": "tweets",
+        "columns": "text, score, magnitude",
+        "returnFields": "=*"
+      },
+      "credentials": {
+        "postgres": "postgres"
+      },
+      "typeVersion": 1,
+      "id": "c1accbe1-5ee8-416f-b60e-fdb9d84b6166"
+    },
+    {
+      "name": "MongoDB",
+      "type": "n8n-nodes-base.mongoDb",
+      "position": [
+        500,
+        300
+      ],
+      "parameters": {
+        "fields": "text",
+        "options": {},
+        "operation": "insert",
+        "collection": "tweets"
+      },
+      "credentials": {
+        "mongoDb": "mongodb"
+      },
+      "typeVersion": 1,
+      "id": "70ae84f1-9ec9-4ba9-88a8-d8141e9bdec7"
+    },
+    {
+      "name": "Slack",
+      "type": "n8n-nodes-base.slack",
+      "position": [
+        1500,
+        200
+      ],
+      "parameters": {
+        "text": "=🐦 NEW TWEET with sentiment score {{$json[\"score\"]}} and magnitude {{$json[\"magnitude\"]}} ⬇️\n{{$json[\"text\"]}}",
+        "channel": "tweets",
+        "attachments": [],
+        "otherOptions": {}
+      },
+      "credentials": {
+        "slackApi": "slack"
+      },
+      "typeVersion": 1,
+      "id": "9ef51999-c8a9-46c4-b235-3758742aee1e"
+    },
+    {
+      "name": "IF",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        1300,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json[\"score\"]}}",
+              "operation": "larger"
+            }
+          ]
+        }
+      },
+      "typeVersion": 1,
+      "id": "91b3dbb4-d745-4ada-9c94-4631d2990a94"
+    },
+    {
+      "name": "NoOp",
+      "type": "n8n-nodes-base.noOp",
+      "position": [
+        1500,
+        400
+      ],
+      "parameters": {},
+      "typeVersion": 1,
+      "id": "8f64950f-54f5-4097-9c90-d4d2dfa94892"
+    },
+    {
+      "name": "Google Cloud Natural Language",
+      "type": "n8n-nodes-base.googleCloudNaturalLanguage",
+      "position": [
+        700,
+        300
+      ],
+      "parameters": {
+        "content": "={{$node[\"MongoDB\"].json[\"text\"]}}",
+        "options": {}
+      },
+      "credentials": {
+        "googleCloudNaturalLanguageOAuth2Api": "google_nlp"
+      },
+      "typeVersion": 1,
+      "id": "578d9174-44b4-4121-b230-a4d91a8d692b"
+    },
+    {
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "values": {
+          "number": [
+            {
+              "name": "score",
+              "value": "={{$json[\"documentSentiment\"][\"score\"]}}"
+            },
+            {
+              "name": "magnitude",
+              "value": "={{$json[\"documentSentiment\"][\"magnitude\"]}}"
+            }
+          ],
+          "string": [
+            {
+              "name": "text",
+              "value": "={{$node[\"Twitter\"].json[\"text\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "typeVersion": 1,
+      "id": "c4bf22dc-95f1-4807-b0ec-df66bfa3ad65"
+    },
+    {
+      "name": "Cron",
+      "type": "n8n-nodes-base.cron",
+      "position": [
+        100,
+        300
+      ],
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "hour": 6
+            }
+          ]
+        }
+      },
+      "typeVersion": 1,
+      "id": "deb8cc0e-bb80-448c-a281-10473763a39e"
+    }
+  ],
+  "connections": {
+    "IF": {
+      "main": [
+        [
+          {
+            "node": "Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "NoOp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [
+        [
+          {
+            "node": "Postgres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cron": {
+      "main": [
+        [
+          {
+            "node": "Twitter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MongoDB": {
+      "main": [
+        [
+          {
+            "node": "Google Cloud Natural Language",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Twitter": {
+      "main": [
+        [
+          {
+            "node": "MongoDB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres": {
+      "main": [
+        [
+          {
+            "node": "IF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Cloud Natural Language": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "ebab353b-c75e-42f4-a15d-902712ce5dd5",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-15T09:45:23.909Z",
+      "createdAt": "2026-05-15T09:45:23.909Z",
+      "role": "workflow:owner",
+      "workflowId": "vBGrTixDrSX9MZFd",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

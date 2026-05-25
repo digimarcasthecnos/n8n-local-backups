@@ -1,0 +1,373 @@
+{
+  "updatedAt": "2026-05-13T23:05:12.350Z",
+  "createdAt": "2026-05-13T23:05:12.350Z",
+  "id": "y59C5XMbjrYNOAoW",
+  "name": "Receive and analyze emails with rules in Sublime Security",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "b1ad1c9a-ba5d-46d6-9ce1-b3bb9346c766",
+      "name": "Email Trigger (IMAP)",
+      "type": "n8n-nodes-base.emailReadImap",
+      "position": [
+        720,
+        1120
+      ],
+      "parameters": {
+        "format": "resolved",
+        "options": {}
+      },
+      "credentials": {
+        "imap": {
+          "id": "credential-id",
+          "name": "imap Credential"
+        }
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "e43b0257-0d83-4f7e-8824-3ca1d4cf6110",
+      "name": "Move Binary Data",
+      "type": "n8n-nodes-base.moveBinaryData",
+      "position": [
+        1240,
+        740
+      ],
+      "parameters": {
+        "options": {
+          "encoding": "base64"
+        },
+        "sourceKey": "attachment_0",
+        "setAllData": false
+      },
+      "typeVersion": 1,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "97359abc-7ca9-4599-9112-4416618d0c36",
+      "name": "IF email has attachment",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        1020,
+        900
+      ],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $binary.attachment_0 }}",
+              "operation": "isNotEmpty"
+            },
+            {
+              "value1": "={{ $binary.attachment_0.mimeType }}",
+              "value2": "message/rfc822"
+            }
+          ]
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "046f87e0-8759-4952-85be-78bf36a70994",
+      "name": "Split to matched and unmatched",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        1760,
+        740
+      ],
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field\n// called 'myNewField' to the JSON of each one\nmatched = []\nunmatched = []  \n\nfor (const item of $input.first().json.rule_results) {\n  if (item.matched) {\n    matched.push(item)\n  } else {\n    unmatched.push(item)    \n  }\n}\n\nreturn {\n  json: {\n    matched,\n    unmatched\n  }\n}"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "f88b852d-f2a4-4d78-aaef-40050c0efef8",
+      "name": "When clicking \"Execute Workflow\"",
+      "type": "n8n-nodes-base.manualTrigger",
+      "position": [
+        720,
+        920
+      ],
+      "parameters": {},
+      "typeVersion": 1
+    },
+    {
+      "id": "ce7288d4-61ec-4222-a29e-8a72ed2ee32e",
+      "name": "Slack",
+      "type": "n8n-nodes-base.slack",
+      "position": [
+        2260,
+        740
+      ],
+      "parameters": {
+        "text": "={{ $json.message }}",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "#test-matti-tomi"
+        },
+        "otherOptions": {}
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "credential-id",
+          "name": "slackApi Credential"
+        }
+      },
+      "typeVersion": 2.1,
+      "webhookId": "6faa2a39-6a78-4a3f-92a4-a7e674985276"
+    },
+    {
+      "id": "70c76c01-50ef-47a4-b552-bc6fea5079ed",
+      "name": "Format the message",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        2040,
+        740
+      ],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "message",
+              "value": "=No. of rules that matched {{ $json[\"matched\"].length }} / {{ $json[\"matched\"].length + $json[\"unmatched\"].length }}\n\nMatched rules:\n{{ $json[\"matched\"].pluck(\"rule\").pluck(\"name\").join('\\n') }}\n"
+            }
+          ]
+        },
+        "options": {},
+        "keepOnlySet": true
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "52af4700-0dc5-4f5f-8664-97d2aacdab76",
+      "name": "Notify about missing attachment",
+      "type": "n8n-nodes-base.slack",
+      "position": [
+        2260,
+        920
+      ],
+      "parameters": {
+        "text": "No attachment found in an email\n",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "#test-matti-tomi"
+        },
+        "otherOptions": {}
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "credential-id",
+          "name": "slackApi Credential"
+        }
+      },
+      "typeVersion": 2.1,
+      "webhookId": "e12f90e3-0a78-4737-8291-cd841c06d704"
+    },
+    {
+      "id": "19be16c9-3908-4a2d-87e4-f721c33dc124",
+      "name": "Analyze email with Sublime Security",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        1500,
+        740
+      ],
+      "parameters": {
+        "url": "https://api.platform.sublimesecurity.com/v0/messages/analyze",
+        "method": "POST",
+        "options": {},
+        "jsonBody": "={\n  \"raw_message\": \"{{ $json.data }}\",\n  \"run_active_detection_rules\": true,\n  \"run_all_detection_rules\": false\n}",
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "credential-id",
+          "name": "httpHeaderAuth Credential"
+        }
+      },
+      "typeVersion": 3
+    },
+    {
+      "id": "a39d52d6-26e0-485e-8d32-984e26f71f9b",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        240,
+        298.6458865911087
+      ],
+      "parameters": {
+        "width": 618.0312276650722,
+        "height": 963.8594737915395,
+        "content": "![imap](https://i.imgur.com/lVqCPYb.png)\n# Workflow Overview\nLeverage n8n's IMAP node to `seamlessly ingest emails as .eml attachments`, streamlining your security protocols and response strategies. \n\nThis setup is crucial for organizations utilizing platforms like Outlook, which offers a specialized security feature that designates specific inboxes for phishing attempts. \n\nWhen a phishing email is flagged through Outlook's interface, the system is designed to convert it into an .eml file and direct it to a dedicated phishing inbox. This process not only centralizes your phishing threat management but also ensures that each potential threat is queued for immediate and thorough analysis. \n\nBy integrating with n8n, you can automate the capture of these emails, transforming user-reported incidents into actionable data without manual intervention, enhancing your cybersecurity response and preserving your workflow's integrity.\n\n## Ingest emails as attachments as .eml file. \nSet your phishing email inbox here via your imap credentials. You can also replace this with any other node that retrieves emails as .eml attachments. "
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "3cb757ce-2083-44de-8508-89039c6bca9d",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1444,
+        361
+      ],
+      "parameters": {
+        "width": 503.7209302325584,
+        "height": 710.138909846923,
+        "content": "![Sublime Security](https://i.imgur.com/DfXJLIw.png)\n## Analyze Attachment and format output\nIf an attachment is detected, n8n facilitates its secure transfer to Sublime Security for detailed analysis. This automated process not only speeds up the threat detection mechanism but also formats the output for compatibility with other systems, such as Slack, ensuring a smooth and efficient workflow. \n\nThrough this automation, you're not just analyzing emails; you're fortifying your defense against cyber threats and enhancing operational efficiency with minimal user involvement."
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "83756b95-a3a8-4145-9d10-fc7e3b2121f8",
+      "name": "Sticky Note3",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1980,
+        354.9999999999999
+      ],
+      "parameters": {
+        "width": 476.0465116279074,
+        "height": 777.0757733319455,
+        "content": "![Slack](https://i.imgur.com/iKyMV0N.png)\n## Prep output for Slack Report\nn8n completes the cycle of threat analysis and communication by preparing and delivering comprehensive reports directly to your Slack channels. \n\nThis ensures that all stakeholders are immediately informed about potential threats, fostering a culture of transparency and prompt action. \n\nIn instances where no attachment is found, n8n proactively dispatches a notification to Slack, signaling your team to investigate further. "
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "a443e91b-6b0b-4fb8-b9d5-6f1d236da053",
+      "name": "Sticky Note4",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        880,
+        360.90897077923785
+      ],
+      "parameters": {
+        "width": 541.1627906976748,
+        "height": 715.8304363872012,
+        "content": "![n8n](https://i.imgur.com/lKnBNnH.png)\n## Check for attachments and send to sublime if any found \nUpon receiving an email via the IMAP node, n8n executes a meticulous inspection to detect the presence of attachments. This is more than a mere check; it's an essential layer of your security posture to identify and handle potentially malicious content proactively. \n\nIf an attachment is found, the binary file is converted to JSON for further analysis. "
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Move Binary Data": {
+      "main": [
+        [
+          {
+            "node": "Analyze email with Sublime Security",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format the message": {
+      "main": [
+        [
+          {
+            "node": "Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Trigger (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "IF email has attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF email has attachment": {
+      "main": [
+        [
+          {
+            "node": "Move Binary Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify about missing attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split to matched and unmatched": {
+      "main": [
+        [
+          {
+            "node": "Format the message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking \"Execute Workflow\"": {
+      "main": [
+        [
+          {
+            "node": "Move Binary Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze email with Sublime Security": {
+      "main": [
+        [
+          {
+            "node": "Split to matched and unmatched",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "2b3c9ba9-f9bf-4125-ab74-c5d49737f5fc",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:05:12.350Z",
+      "createdAt": "2026-05-13T23:05:12.350Z",
+      "role": "workflow:owner",
+      "workflowId": "y59C5XMbjrYNOAoW",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

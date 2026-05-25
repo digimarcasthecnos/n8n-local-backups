@@ -1,0 +1,210 @@
+{
+  "updatedAt": "2026-05-13T23:16:56.055Z",
+  "createdAt": "2026-05-13T23:16:56.055Z",
+  "id": "kgQFApVK0j09dnww",
+  "name": "Retrieve deadlock game match statistics and send to Telegram",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "name": "Send Telegram Message",
+      "type": "n8n-nodes-base.telegram",
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "updates": [
+          {
+            "text": "={{$node[\"Format Message\"].json[\"text\"]}}",
+            "chatId": "={{$json[\"message\"][\"chat\"][\"id\"]}}",
+            "resource": "message",
+            "operation": "send"
+          }
+        ]
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "credential-id",
+          "name": "telegramApi Credential"
+        }
+      },
+      "typeVersion": 1,
+      "id": "e4918261-4aa3-4598-8916-b27409403625",
+      "webhookId": "105ce567-ff1c-4871-8775-9934ec0b70d0"
+    },
+    {
+      "name": "Fetch Profile HTML",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        300,
+        100
+      ],
+      "parameters": {
+        "url": "https://deadlocktracker.gg/player/97170387",
+        "options": {},
+        "responseFormat": "string"
+      },
+      "typeVersion": 1,
+      "id": "fcf5b563-e211-42ac-add9-d52e5e9eb289"
+    },
+    {
+      "name": "Extract Match ID",
+      "type": "n8n-nodes-base.function",
+      "position": [
+        500,
+        100
+      ],
+      "parameters": {
+        "functionCode": "\nconst html = $json[\"body\"] || $json;\nconst matchIdMatch = html.match(/\\(#(\\d{8})\\)/g);\nif (!matchIdMatch) throw new Error(\"Матчи не найдены\");\nconst ids = matchIdMatch.map(m => m.match(/\\d+/)[0]);\nconst lastMatchId = ids[ids.length - 1];\nreturn [{ matchId: lastMatchId }];\n"
+      },
+      "typeVersion": 1,
+      "id": "17641a99-722e-4711-bdd5-4abf7a3a8003"
+    },
+    {
+      "name": "Fetch Match HTML",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        700,
+        100
+      ],
+      "parameters": {
+        "url": "={{\"https://deadlocktracker.gg/match/\" + $json[\"matchId\"]}}",
+        "options": {},
+        "responseFormat": "string"
+      },
+      "typeVersion": 1,
+      "id": "cdc22b98-ad98-452a-a93c-ff5dc929ecf1"
+    },
+    {
+      "name": "Parse Players",
+      "type": "n8n-nodes-base.function",
+      "position": [
+        700,
+        300
+      ],
+      "parameters": {
+        "functionCode": "\nconst cheerio = require('cheerio');\nconst $ = cheerio.load($json[\"body\"] || $json);\nconst players = [];\n\n$('.player-wrapper').each((i, el) => {\n  const nick = $(el).find('.player-name').text().trim();\n  const hero = $(el).find('.character-icon').attr('alt') || 'Неизвестно';\n  const rank = $(el).find('.rank-icon').attr('alt') || 'Без ранга';\n  players.push({ nick, hero, rank });\n});\n\nreturn players;\n"
+      },
+      "typeVersion": 1,
+      "id": "25139805-7c82-4950-9bc8-d09b2c659c2a"
+    },
+    {
+      "name": "Format Message",
+      "type": "n8n-nodes-base.function",
+      "position": [
+        900,
+        100
+      ],
+      "parameters": {
+        "functionCode": "\nconst lines = items.map(p =>\n  `🎮 ${p.nick}\\n🧙 Герой: ${p.hero}\\n🏆 Ранг: ${p.rank}\\n`\n);\nreturn [{ text: `📊 Игроки матча:\\n\\n` + lines.join('\\n') }];\n"
+      },
+      "typeVersion": 1,
+      "id": "32b020f2-7ccf-4dd9-8cd0-ba0c252e4f44"
+    },
+    {
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "position": [
+        100,
+        100
+      ],
+      "parameters": {},
+      "credentials": {
+        "telegramApi": {
+          "id": "credential-id",
+          "name": "telegramApi Credential"
+        }
+      },
+      "typeVersion": 1,
+      "id": "571b290c-692e-41cf-8b19-6b56d79e45c2",
+      "webhookId": "0004828e-051b-41e0-8b17-a078eeaa1b49"
+    }
+  ],
+  "connections": {
+    "Parse Players": {
+      "main": [
+        [
+          {
+            "node": "Format Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Message": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Match ID": {
+      "main": [
+        [
+          {
+            "node": "Fetch Match HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Match HTML": {
+      "main": [
+        [
+          {
+            "node": "Parse Players",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Profile HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Profile HTML": {
+      "main": [
+        [
+          {
+            "node": "Extract Match ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "a339476e-6580-459a-bd31-6af582a42b85",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:16:56.055Z",
+      "createdAt": "2026-05-13T23:16:56.055Z",
+      "role": "workflow:owner",
+      "workflowId": "kgQFApVK0j09dnww",
+      "projectId": "HkDrNvwtLnIGtiR1"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}
