@@ -557,3 +557,47 @@ Ao terminar todas as fases, confirme cada item:
 ---
 
 *Gerado por Claude Sonnet 4.6 — DigiMarcas Thecnos — 18/06/2026*
+
+---
+
+## STATUS DE EXECUÇÃO — atualizado 2026-06-20 (Claude Code, Opus 4.8)
+
+> Resultados reais da execução. O relatório detalhado, scripts e snapshots ficam em
+> `omniroute_audit/` (fora do git por conter token JWT e chaves).
+
+### Correções vs. plano original
+- **Porta:** OmniRoute está em **host 20129** → container 20128 (o plano dizia 20128 no host).
+- **Auth da API:** não é REST aberta — usa cookie JWT (`omniroute_audit/.omni_cookie`).
+- **Combo-dentro-de-combo É suportado** (o plano e o 1º relatório erraram ao dizer que não):
+  membros do tipo `kind:"combo-ref"`, profundidade máxima 3, com detecção de ciclo.
+
+### Auditoria de conectividade (testado 2x cada, 2026-06-20)
+**Funcionam:** `cc/claude-haiku-4-5`, `cc/claude-sonnet-4-6`, `antigravity/gemini-3.1-flash-lite`,
+`antigravity/gemini-3-flash-preview`, `gh/gpt-5-mini` (Copilot), `openrouter/openai/gpt-oss-120b:free`,
+`openrouter/google/gemma-4-31b-it:free`, `openrouter/moonshotai/kimi-k2` + `kimi-k2-0905`.
+**NÃO funcionam:** **MiniMax** (opencode timeout + OpenRouter 502 "empty content"), DeepSeek/GLM
+(timeout/502), AgentRouter (sem credencial/401), `gpt-5.3-codex`/`gpt-5.4-mini` (Copilot não suporta),
+codex-mini OpenRouter (400), qwen3-coder:free (429), llama-3.3-70b:free (timeout).
+
+> **MiniMax:** especificado no plano mas **indisponível** por qualquer rota atual — excluído dos
+> combos (modelo morto só adiciona latência de fallthrough).
+
+### Arquitetura final: subcombos dentro de combos centrais (ordenada por economia)
+```
+sub-gratis     → gemini-flash-lite → gemini-flash → gpt-oss-120b:free → gpt-oss-20b:free → gemma:free
+sub-barato     → kimi-k2-0905 → kimi-k2 → gpt-5-mini(Copilot) → claude-haiku
+sub-codex      → gpt-oss-120b:free → gpt-5-mini → gpt-oss-20b:free → claude-sonnet   (Codex econômico)
+sub-raciocinio → gpt-oss-120b:free → kimi-k2 → claude-sonnet → claude-haiku
+sub-premium    → claude-haiku → claude-sonnet
+
+n8n-smart-combo → sub-gratis → sub-barato → sub-premium
+reasoning-code  → sub-codex  → sub-raciocinio → sub-premium
+economy-volume  → sub-gratis → sub-barato
+```
+Validado: os 3 combos centrais lideram com modelos **grátis** (gemini-flash-lite / gpt-oss-120b:free).
+Ponta a ponta via n8n (`webhook/teste-omniroute`) roteou por `gemini-3.1-flash-lite` (custo $0).
+
+### Pendências
+- **AgentRouter:** aguardando nova chave do usuário para restaurar `deepseek-v3.2` (barato) e `glm-5.1`
+  e inseri-los nas camadas `sub-barato`/`sub-raciocinio`.
+- **Kimi nativo grátis:** requer assinatura Kimi Coding paga (402); hoje usamos Kimi via OpenRouter.
