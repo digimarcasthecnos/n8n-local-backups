@@ -601,3 +601,42 @@ Ponta a ponta via n8n (`webhook/teste-omniroute`) roteou por `gemini-3.1-flash-l
 - **AgentRouter:** aguardando nova chave do usuário para restaurar `deepseek-v3.2` (barato) e `glm-5.1`
   e inseri-los nas camadas `sub-barato`/`sub-raciocinio`.
 - **Kimi nativo grátis:** requer assinatura Kimi Coding paga (402); hoje usamos Kimi via OpenRouter.
+
+---
+
+## ATUALIZAÇÃO 2026-06-20 (rodada 2) — foco grátis/barato/codex/Claude
+
+### Provedores adicionados e auditados (2x cada)
+Adicionados 11 via API. **Funcionam:** `groq` (llama-3.3-70b, qwen3-32b — grátis), `gemini`
+(AI Studio, grátis 1500/dia), `cohere` (command-r, free dev), `mistral` (**codestral**/**devstral**
+para código — rápidos ~0.6s), `pollinations` (`pol/openai`→gpt-oss, grátis). **Mortos por conta
+(removidos):** `openai` (429 sem cota), `deepseek` (402 sem saldo), `moonshot`/Kimi direto (429),
+`xai` (403), `qoder` (401 PAT expirado, ambos os PATs), `agentrouter` (nova chave autentica mas
+serviço retorna "content-blocked").
+
+### Arquitetura final (combos centrais → subcombos → modelos)
+```
+sub-gratis  → gemini-3.1-flash-lite → cohere/command-r → groq/qwen3-32b → groq/llama-3.3-70b
+              → gpt-oss-120b:free → gemini-3-flash → gemini-2.0-flash → pol/openai
+sub-barato  → kimi-k2-0905 → kimi-k2 → mistral-small → gpt-5-mini (Copilot)
+sub-codex   → codestral → devstral → groq/qwen3-32b → gpt-oss-120b:free → gpt-5-mini → claude-sonnet
+sub-claude  → claude-haiku → claude-sonnet
+
+n8n-smart-combo → sub-gratis → sub-barato → sub-claude
+reasoning-code  → sub-codex  → sub-barato → sub-claude
+economy-volume  → sub-gratis → sub-barato
+```
+Validado (max_tokens realista): n8n-smart-combo→gemini-3.1-flash-lite 1.8s; reasoning-code→codestral
+0.6s; sub-claude→claude-haiku 1.3s; **n8n ponta a ponta → gemini-3.1-flash-lite 3.7s (custo $0)**.
+
+> **Nota técnica:** evitar liderar subcombo com modelo "thinking" (ex.: gemini-2.5-flash). Com
+> max_tokens baixo ele gasta tudo pensando e devolve conteúdo vazio → OmniRoute retorna 502 sem
+> cair pro próximo membro. Líderes são modelos rápidos não-thinking.
+
+### Para reativar os provedores pagos/grátis pendentes (ação do usuário)
+- **DeepSeek:** adicionar saldo em platform.deepseek.com (pré-pago). Depois é re-adicionar a chave.
+- **OpenAI:** configurar billing/créditos em platform.openai.com (habilita Codex real: o3/gpt-5.4).
+- **Moonshot/Kimi:** créditos em platform.moonshot.ai.
+- **Qoder:** gerar **novo** PAT em qoder.com/account/integrations (os 2 do arquivo expiraram).
+- **xAI:** créditos em console.x.ai. **AgentRouter:** suporte (content-blocked é política do serviço).
+- Nenhum é necessário: a camada grátis/barata/codex/Claude já está completa e funcional sem eles.
