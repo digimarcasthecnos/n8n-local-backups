@@ -1,0 +1,343 @@
+================================================================================
+ RELATORIO TECNICO COMPLETO - OMNIROUTE + n8n (ARQUITETURA MAX ECONOMIA)
+================================================================================
+ Projeto:    DigiMarcas Thecnos - Roteamento de IA economico via OmniRoute
+ Data:       2026-06-20
+ Executor:   Claude Code (Opus 4.8)
+ Maquina:    VXpro (Windows 11 Pro), usuario digim
+ Repositorio: github.com/digimarcasthecnos/n8n-local-backups (branch main)
+ Commit final: 10c3bd0ab
+================================================================================
+
+
+--------------------------------------------------------------------------------
+ 0. OBJETIVO
+--------------------------------------------------------------------------------
+Montar no OmniRoute (gateway de IA) uma cascata UNICA de roteamento com fallback
+automatico, abrangendo TODOS os modelos disponiveis (gratuitos, pagos baratos,
+Codex e Claude), ordenados para MAXIMA ECONOMIA, e integrada ao n8n via webhook.
+
+Regra de ouro definida:
+    GRATIS -> OpenRouter(barato) -> Codex/Copilot -> Claude(OAuth)
+
+Premissa-chave (correcao tecnica aplicada): "OpenRouter na frente de tudo" NAO e
+o mais economico. O correto e:
+  - Camada GRATIS ($0) vem SEMPRE antes - nenhuma rota paga ganha de zero.
+  - Claude e Codex ficam nas rotas NATIVAS baratas (Claude via OAuth = assinatura
+    Claude; Codex/GPT via Copilot) porque rotear esses pelo OpenRouter custa o
+    preco cheio de API + margem do OpenRouter.
+  - OpenRouter prevalece SO na faixa paga-barata (Kimi, MiniMax, DeepSeek-via-OR).
+
+
+--------------------------------------------------------------------------------
+ 1. AMBIENTE REAL (verificado)
+--------------------------------------------------------------------------------
+OmniRoute:  container Docker diegosouzapw/omniroute:latest v3.8.7
+            Porta: host 20129 -> container 20128
+            App Next.js; config em SQLite /app/data/storage.sqlite
+            Auth da API/dashboard: cookie JWT "auth_token" (valido ate 2026-07-19)
+            Cookie salvo em: omniroute_audit/.omni_cookie  (FORA do git)
+            Rede Docker: n8n-local_default (n8n e omniroute juntos)
+            n8n acessa internamente via http://omniroute:20128
+
+n8n:        container n8n_app, http://localhost:5678
+            Workflow de teste "Teste OmniRoute via n8n" id 2JyM1rFzQA6EzDM7 (ativo)
+            Webhook: POST http://localhost:5678/webhook/teste-omniroute
+                     body {"pergunta":"..."}
+
+Status no inicio da sessao: omniroute "Up 11h (healthy)", n8n "Up 22h".
+
+IMPORTANTE - localizacao dos arquivos:
+  - O repositorio git e a pasta n8n-local.
+  - A pasta omniroute_audit/ e IRMA do repo (um nivel acima), FORA do git de
+    proposito, porque contem o cookie JWT e chaves. Por isso os artefatos foram
+    sanitizados antes de commitar.
+
+
+--------------------------------------------------------------------------------
+ 2. CONTEXTO DE RETOMADA (o VS Code fechou sozinho)
+--------------------------------------------------------------------------------
+A sessao anterior foi interrompida por fechamento inesperado do VS Code (erro ao
+reabrir a aba omniroute_audit/workflow_id.txt - apenas uma aba, nada de config
+perdida).
+
+Reconstrucao do "ultimo foco" via evidencia em disco (timestamps de modificacao):
+  13:02  validate_final2.ps1      -> validacao da estrutura ANTIGA de combos
+  13:04  commit 8623a18          -> "rodada 2 - gratis/barato/codex/Claude"
+  13:59  build_final_combos.ps1  -> ULTIMO script editado: cascata barato->avancado
+  14:22  combos_depois.json / providers_depois.json / compression_depois.json
+                                  -> snapshots gravados APOS o build rodar
+  (depois) VS Code fechou.
+
+Conclusao da checagem: o ultimo foco era montar e COMECAR A TESTAR a cascata
+"barato -> avancado" (o bloco "sub-barato" dentro de build_final_combos.ps1). O
+build chegou a ser aplicado; faltava a VALIDACAO ao vivo da estrutura nova, que
+foi a primeira coisa retomada nesta sessao.
+
+Verificacao pos-reinicio: nada foi perdido - toda config persiste no SQLite do
+OmniRoute e no banco do n8n.
+
+
+--------------------------------------------------------------------------------
+ 3. PERGUNTAS CONCEITUAIS DO USUARIO (esclarecidas)
+--------------------------------------------------------------------------------
+P1: Se DeepSeek/Kimi/Qoder/Grok ja sao liberados pelo OpenRouter, por que logar e
+    por credito direto neles?
+R1: Nao precisa. Sao DOIS caminhos para o mesmo modelo. Via OpenRouter (1 conta, 1
+    saldo, pequena margem) ja resolve Kimi, MiniMax e Grok com o credito que voce
+    ja tem. Contas diretas so valem por preco nativo menor ou modelos exclusivos.
+
+P2: DeepSeek - valeu o credito direto?
+R2: Sim, foi o unico caso onde o nativo rende: deepseek-v4-flash responde ~1.6s e
+    e mais barato. Mantido como reserva atras do OpenRouter. Se o saldo acabar, o
+    fallback pula automatico para o DeepSeek via OpenRouter.
+
+P3: Qoder tem Community Edition gratis - por que plano pago?
+R3: Pegadinha: o Qoder gratis e BYOK (Bring Your Own Key) - nao da modelo gratis,
+    voce ainda precisa por sua propria chave. Nem o gratis nem o pago do Qoder
+    destravam Kimi de graca. Conclusao: descartar Qoder.
+
+P4: ChatGPT Plus (do print) habilita a API/Codex?
+R4: Nao. ChatGPT Plus (R$99,90/mes) e a assinatura do site/app, NAO da acesso a
+    API. Para GPT via API precisaria de credito separado em platform.openai.com.
+    Por isso o provider "openai" continua 429. Nao faz falta: usamos gh/gpt-5-mini
+    via Copilot.
+
+P5: Moonshot/Kimi e xAI/Grok - OpenRouter ja nao roteia?
+R5: Kimi sim (openrouter/moonshotai/kimi-k2*). Grok NAO neste OmniRoute - nao ha
+    rota OpenRouter para ele aqui; so pol/grok (Pollinations), que esta 404.
+
+
+--------------------------------------------------------------------------------
+ 4. ETAPA A ETAPA EXECUTADA NESTA SESSAO
+--------------------------------------------------------------------------------
+
+PASSO 1 - Reconstrucao de contexto
+  - Lida a memoria do projeto (omniroute-setup.md).
+  - Glob nao achou "barato*" nem omniroute_audit/ porque estao FORA dos working
+    dirs; listados via shell direto.
+  - Lidos: build_final_combos.ps1, validate_final2.ps1, relatorio_final.md.
+
+PASSO 2 - Verificacao do estado ao vivo
+  - docker ps: omniroute healthy (porta host 20129), n8n up.
+  - providers_depois.json: DeepSeek voltou ACTIVE (usuario adicionou credito).
+  - Listagem dos combos via GET /api/combos (cookie JWT em WebSession).
+
+PASSO 3 - Teste da estrutura "barato->avancado" (pendente do crash)
+  Chamadas POST /v1/chat/completions:
+    deepseek/deepseek-v4-flash      OK 1.6s -> deepseek-v4-flash
+    deepseek/deepseek-chat          OK 2.9s -> deepseek-v4-flash (alias)
+    openrouter/minimax/minimax-m2.5 OK 1.7s -> minimax-m2.5-20260211
+    sub-barato                      OK 1.4s -> deepseek-v4-flash
+    sub-codex                       OK 4.0s -> codestral-latest
+    sub-claude                      OK 3.3s -> claude-haiku-4-5
+    economy-volume                  OK 1.3s -> gemini-3.1-flash-lite
+    reasoning-code                  OK 0.4s -> codestral-latest
+    n8n-smart-combo                 OK 0.8s -> gemini-3.1-flash-lite
+    n8n webhook (ponta-a-ponta)     OK 1.8s -> gemini-3.1-flash-lite
+  Resultado: cascata barato->avancado 100% validada.
+
+PASSO 4 - Decisao do usuario: MAX ECONOMIA unificada
+  - OpenRouter liderando a faixa paga; incluir TODOS (gratis, pagos, Claude, Codex)
+    numa unica cascata comprimida, para projetos de larga escala.
+
+PASSO 5 - Levantamento do catalogo real (GET /v1/models)
+  Achados:
+    - Codex existe: gh/gpt-5.3-codex (+ gh/gpt-5.4, gh/gpt-5.5) via Copilot.
+    - Claude disponivel via cc/ (OAuth) e gh/ (Copilot).
+    - Grok: so pol/grok e pol/grok-large (Pollinations); SEM rota OpenRouter aqui.
+
+PASSO 6 - Construcao da arquitetura (script build_max_economia.ps1)
+  - Funcao New-Combo (POST /api/combos, strategy=priority).
+  - Helpers: M(modelo) e C(combo-ref) para combos aninhados (MAX_COMBO_DEPTH=3).
+  - Deletados os combos antigos e criados os novos (ver secao 5).
+
+PASSO 7 - 1a validacao -> 2 modelos mortos detectados
+    gh/gpt-5.3-codex   -> HTTP 400 "model not available for integrator vscode-chat"
+    cc/claude-opus-4-8 -> conexao fechada (indisponivel nesse plano)
+
+PASSO 8 - Sondagem de variantes para substituir os mortos
+    gh/gpt-5.4 / 5.4-mini / 5.5 / gh/claude-sonnet-4.6 -> HTTP 400 "not supported"
+    -> CONCLUSAO: token Copilot expoe SO gh/gpt-5-mini.
+    cc/claude-opus-4-6  OK 2.4s
+    cc/claude-opus-4-7  OK 1.7s   <- escolhido como topo
+    cc/claude-sonnet-4-6 OK 2.4s
+    cc/claude-haiku-4-5  OK 1.3s
+
+PASSO 9 - Correcao do build (tirar mortos, por vivos) e reaplicacao
+    - sub-codex: trocou gh/gpt-5.3-codex por gh/gpt-5-mini + cc/claude-sonnet-4-6.
+    - sub-premium: removeu codex e opus-4-8; topo passou a ser opus-4-7.
+
+PASSO 10 - Validacao final ao vivo (todos OK)
+    sub-gratis      OK 1.1s -> gemini-3.1-flash-lite
+    sub-barato      OK 2.4s -> moonshotai/kimi-k2-0905  (OpenRouter lidera)
+    sub-codex       OK 3.0s -> codestral-latest
+    sub-premium     OK 1.3s -> gpt-5-mini
+    n8n-smart-combo OK 0.9s -> gemini-3.1-flash-lite
+    reasoning-code  OK 0.5s -> codestral-latest
+    economy-volume  OK 1.2s -> gemini-3.1-flash-lite
+    n8n webhook     OK 1.3s -> gemini-3.1-flash-lite
+  Snapshot salvo em combos_depois.json.
+
+PASSO 11 - Documentacao + versionamento
+    - relatorio_final.md atualizado (adendos).
+    - Memoria do projeto atualizada.
+    - Artefatos sanitizados copiados para o repo (pasta omniroute/).
+    - OMNIROUTE_N8N_SETUP.md atualizado com a arquitetura final.
+    - Commit 10c3bd0ab + push para origin/main.
+
+
+--------------------------------------------------------------------------------
+ 5. ARQUITETURA FINAL (4 camadas + 3 combos centrais)
+--------------------------------------------------------------------------------
+Estrategia de todos os combos: priority (ordem do array = ordem de fallback).
+Compressao RTK -> Caveman (stacked) ligada GLOBALMENTE.
+
+SUBCOMBOS:
+
+  sub-gratis  (CUSTO ZERO - sempre lidera; nada ganha de $0)
+    1. antigravity/gemini-3.1-flash-lite
+    2. cohere/command-r-08-2024
+    3. groq/qwen/qwen3-32b
+    4. groq/llama-3.3-70b-versatile
+    5. openrouter/openai/gpt-oss-120b:free
+    6. antigravity/gemini-3-flash-preview
+    7. gemini/gemini-2.0-flash
+
+  sub-barato  (PAGO-BARATO, OpenRouter liderando)
+    1. openrouter/moonshotai/kimi-k2-0905
+    2. openrouter/minimax/minimax-m2.5
+    3. openrouter/deepseek/deepseek-v3.2-exp
+    4. openrouter/moonshotai/kimi-k2
+    5. deepseek/deepseek-v4-flash        (nativo, RESERVA - poupa apos OR falhar)
+    6. mistral/mistral-small-latest
+
+  sub-codex  (CODIGO economico)
+    1. mistral/codestral-latest
+    2. mistral/devstral-latest
+    3. openrouter/deepseek/deepseek-v3.2-exp
+    4. groq/qwen/qwen3-32b
+    5. openrouter/openai/gpt-oss-120b:free
+    6. gh/gpt-5-mini                     (Copilot)
+    7. cc/claude-sonnet-4-6              (OAuth)
+
+  sub-premium (PREMIUM PAGO - topo do fallback; rotas nativas baratas)
+    1. gh/gpt-5-mini                     (Copilot)
+    2. cc/claude-haiku-4-5-20251001      (OAuth)
+    3. cc/claude-sonnet-4-6              (OAuth)
+    4. cc/claude-opus-4-7                (OAuth, topo)
+
+COMBOS CENTRAIS (referenciam subcombos via combo-ref):
+
+  n8n-smart-combo (PRINCIPAL/COMPLETO):
+        sub-gratis -> sub-barato -> sub-codex -> sub-premium
+  reasoning-code (CODIGO):
+        sub-codex -> sub-barato -> sub-premium
+  economy-volume (VOLUME/custo minimo):
+        sub-gratis -> sub-barato -> sub-premium
+
+Efeito pratico: toda chamada tenta primeiro o GRATIS; so desce para pago (Kimi/
+MiniMax/DeepSeek via OpenRouter), depois Codex/Copilot, e por ultimo Claude, se as
+camadas anteriores falharem. Custo padrao = R$0.
+
+
+--------------------------------------------------------------------------------
+ 6. PROVEDORES - ESTADO (no momento da execucao)
+--------------------------------------------------------------------------------
+ATIVOS (apikey/oauth, testStatus=active):
+  gemini-cli, kimi-coding, agy, deepseek, github, antigravity, gemini, claude,
+  cohere, mistral, groq, openrouter.
+
+INDISPONIVEIS:
+  pollinations  -> 404 (afeta pol/openai e pol/grok)
+  ai21          -> 403 "Access denied"
+
+MORTOS POR CONTA / FORA:
+  openai      -> 429 sem cota (ChatGPT Plus != API)
+  moonshot    -> 429 direto (usar via OpenRouter)
+  qoder       -> Community Edition e BYOK (nao da Kimi gratis); PAT expirado
+  xai         -> sem rota OpenRouter aqui; Grok so via Pollinations (404)
+  agentrouter -> content-blocked (politica do servico)
+
+
+--------------------------------------------------------------------------------
+ 7. LIMITES DE ROTA DESCOBERTOS NO TESTE (importante)
+--------------------------------------------------------------------------------
+- Copilot (gh/): o token "vscode-chat" expoe SOMENTE gh/gpt-5-mini. Todos os
+  outros (gh/gpt-5.3-codex, gh/gpt-5.4, gh/gpt-5.5, gh/claude-*) retornam
+  HTTP 400 "model not supported". => Codex completo exige plano que libere o
+  modelo no Copilot/API.
+- Claude OAuth (cc/): haiku, sonnet-4-6, opus-4-6 e opus-4-7 funcionam.
+  opus-4-8 indisponivel nesse plano (conexao fechada). Topo viavel = opus-4-7.
+- Grok: sem rota OpenRouter neste OmniRoute; so pol/grok (Pollinations), 404.
+- DeepSeek nativo voltou ativo apos credito; deepseek-v4-flash e o modelo
+  (deepseek-chat e alias).
+- Quirk geral: NAO liderar subcombo com modelo "thinking" (ex. gemini-2.5-flash).
+  Com max_tokens baixo ele gasta tudo "pensando", devolve vazio e o OmniRoute
+  retorna 502 SEM cair pro proximo. Lideres = modelos rapidos nao-thinking.
+
+
+--------------------------------------------------------------------------------
+ 8. ARTEFATOS GERADOS
+--------------------------------------------------------------------------------
+NO REPO (versionados, sanitizados - github n8n-local-backups):
+  omniroute/build_max_economia.ps1   - build reproduzivel de todos os combos
+  omniroute/combos_max_economia.json - snapshot das definicoes dos combos
+  OMNIROUTE_N8N_SETUP.md             - doc com a arquitetura final (secao nova)
+
+FORA DO REPO (omniroute_audit/ - contem cookie/chaves, NAO versionado):
+  .omni_cookie                  - cookie JWT (NUNCA commitar)
+  build_max_economia.ps1        - script original
+  combos_depois.json            - snapshot pos-build
+  providers_depois.json         - estado dos provedores
+  compression_depois.json       - config de compressao
+  relatorio_final.md            - relatorio com todos os adendos
+  RELATORIO_TECNICO_COMPLETO.txt - este arquivo
+
+
+--------------------------------------------------------------------------------
+ 9. COMO REPRODUZIR / RECUPERAR (disaster recovery)
+--------------------------------------------------------------------------------
+Se o VS Code fechar de novo, a maquina pifar, ou os combos sumirem:
+
+  1. Garantir OmniRoute de pe:
+       docker ps --filter "name=omniroute"
+       (se preciso) docker compose -f C:\n8n-local\docker-compose.yml up -d
+
+  2. Garantir o cookie valido em omniroute_audit/.omni_cookie
+     (valido ate 2026-07-19; se expirar, re-logar no dashboard e re-extrair).
+
+  3. Recuperar o build do GitHub e rodar:
+       git pull
+       powershell -File omniroute\build_max_economia.ps1
+     -> isso deleta os combos atuais e recria os 7 combos do zero.
+
+  4. Validar:
+       - chamar POST http://localhost:20129/v1/chat/completions com
+         {"model":"n8n-smart-combo","messages":[{"role":"user","content":"OK"}],
+          "max_tokens":40,"stream":false}
+       - chamar o webhook n8n:
+         POST http://localhost:5678/webhook/teste-omniroute  {"pergunta":"..."}
+
+
+--------------------------------------------------------------------------------
+ 10. STATUS FINAL
+--------------------------------------------------------------------------------
+[x] OmniRoute v3.8.7 de pe (porta host 20129) e healthy
+[x] Compressao RTK -> Caveman (stacked) ativa globalmente
+[x] 4 subcombos criados (gratis, barato, codex, premium)
+[x] 3 combos centrais criados (n8n-smart-combo, reasoning-code, economy-volume)
+[x] Regra GRATIS -> OpenRouter -> Codex/Copilot -> Claude aplicada
+[x] Modelos mortos removidos do fallback (codex Copilot, opus-4-8)
+[x] Todos os 7 combos validados ao vivo
+[x] n8n ponta-a-ponta validado (custo $0, lidera gratis)
+[x] Artefatos sanitizados versionados e enviados ao GitHub (commit 10c3bd0ab)
+[x] Documentacao e memoria do projeto atualizadas
+
+RESULTADO: cascata de maxima economia funcional, testada e preservada na nuvem.
+Custo padrao R$0; escalona para pago automaticamente apenas sob falha das camadas
+gratuitas. Pronta para projetos de grande e larga escala.
+
+================================================================================
+ FIM DO RELATORIO
+================================================================================
