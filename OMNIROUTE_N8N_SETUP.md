@@ -640,3 +640,36 @@ Validado (max_tokens realista): n8n-smart-combo→gemini-3.1-flash-lite 1.8s; re
 - **Qoder:** gerar **novo** PAT em qoder.com/account/integrations (os 2 do arquivo expiraram).
 - **xAI:** créditos em console.x.ai. **AgentRouter:** suporte (content-blocked é política do serviço).
 - Nenhum é necessário: a camada grátis/barata/codex/Claude já está completa e funcional sem eles.
+
+---
+
+## Arquitetura MAX ECONOMIA unificada (2026-06-20)
+
+> Reproduzível via `omniroute/build_max_economia.ps1` (lê o cookie JWT de
+> `../omniroute_audit/.omni_cookie`, fora do repo). Snapshot das definições em
+> `omniroute/combos_max_economia.json`.
+
+**Regra de ouro:** `GRÁTIS → OpenRouter(barato) → Codex/Copilot → Claude(OAuth)`.
+OpenRouter lidera só a faixa **paga-barata** — grátis vem antes (nada ganha de $0) e
+Claude/Codex ficam nas rotas nativas baratas (OAuth/Copilot < OpenRouter+margem).
+
+```
+sub-gratis  → gemini-3.1-flash-lite → cohere → groq-qwen3 → groq-llama3.3 → gpt-oss:free → gemini-3-flash → gemini-2.0-flash   (R$0)
+sub-barato  → kimi-k2-0905(OR) → minimax-m2.5(OR) → deepseek-v3.2(OR) → kimi-k2(OR) → deepseek-v4-flash(nativo,reserva) → mistral-small
+sub-codex   → codestral → devstral → deepseek-v3.2(OR) → qwen3-32b → gpt-oss:free → gh/gpt-5-mini → claude-sonnet-4-6
+sub-premium → gh/gpt-5-mini → claude-haiku → claude-sonnet-4-6 → claude-opus-4-7
+
+n8n-smart-combo → sub-gratis → sub-barato → sub-codex → sub-premium   (cascata completa)
+reasoning-code  → sub-codex  → sub-barato → sub-premium
+economy-volume  → sub-gratis → sub-barato → sub-premium
+```
+
+Validado ao vivo: todos os 7 combos + n8n ponta-a-ponta OK; custo padrão **R$0**
+(lidera grátis). Compressão RTK→Caveman ligada globalmente.
+
+**Limites de rota descobertos no teste:**
+- Copilot `gh/` expõe só **`gh/gpt-5-mini`** (token `vscode-chat`); `gpt-5.3-codex`/`5.4`/`5.5`
+  e `gh/claude-*` → HTTP 400 "model not supported".
+- Claude OAuth `cc/`: haiku/sonnet-4-6/opus-4-6/opus-4-7 OK; **opus-4-8 indisponível** nesse plano.
+- **Grok** sem rota viável (sem OpenRouter aqui; só `pol/grok` que está 404).
+- DeepSeek nativo voltou com crédito (`deepseek-v4-flash`, alias de `deepseek-chat`).
