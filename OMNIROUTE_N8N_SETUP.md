@@ -568,6 +568,11 @@ Ao terminar todas as fases, confirme cada item:
 ### Correções vs. plano original
 - **Porta:** OmniRoute está em **host 20129** → container 20128 (o plano dizia 20128 no host).
 - **Auth da API:** não é REST aberta — usa cookie JWT (`omniroute_audit/.omni_cookie`).
+  Há **login programático** (confirmado 2026-06-20): `POST /api/auth/login` com
+  `{"password":"<senha-de-gestão>"}` retorna 200 e seta o cookie `auth_token` — dispensa
+  a extração manual via DevTools. Senha de gestão única (sem usuário); 401 se errada,
+  429 com rate-limit. Captura no PowerShell via `Invoke-WebRequest -SessionVariable sv`
+  + `$sv.Cookies.GetCookies(url)`.
 - **Combo-dentro-de-combo É suportado** (o plano e o 1º relatório erraram ao dizer que não):
   membros do tipo `kind:"combo-ref"`, profundidade máxima 3, com detecção de ciclo.
 
