@@ -1,8 +1,8 @@
-import requests, json, time
+import requests, json, os, time
 from collections import defaultdict
 
 BASE_URL = "http://localhost:5678"
-API_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1YjM0MGE3Yi04YzNiLTRlNzAtYTBjNC0xZmI0MzcyNDNjYmMiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiNTM4YjhjYTQtNzQ1My00ZGVlLTg5Y2MtNjI2NDYyNzBiOTQxIiwiaWF0IjoxNzc4NTI0MzcwfQ.B5rlQHXza_h6DliVLU6ifUYqQk9Vxdv0BHrgyPekDXU"
+API_KEY  = os.environ["N8N_API_KEY"]  # export N8N_API_KEY=... (ver chaves-n8n.txt / ~/.minhas_chaves.env)
 HEADERS  = {"X-N8N-API-KEY": API_KEY}
 
 print("=" * 55)
