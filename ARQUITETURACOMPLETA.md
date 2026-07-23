@@ -284,27 +284,28 @@ Seção **separada** — ideias de "última tecnologia" a avaliar **depois** que
 ## 13. Checklist final
 
 **Mesclagem v2**
-- [ ] Ação 1 — MiniMax no `sub-barato`
-- [ ] Ação 2 — sub-premium no `n8n-smart-combo`
+- [x] Ação 1 — MiniMax no `sub-barato` (via API, testado OK)
+- [x] Ação 2 — sub-premium no `n8n-smart-combo` (via API, testado OK)
 - [x] Ação 3 — decidido: `economy-volume` SEM premium (nenhuma edição)
-- [ ] `combos_max_economia_v2.json` gerado
+- [x] `combos_max_economia_v2.json` gerado (10 combos, commit bf348f548)
 
 **Espelhamento**
-- [ ] Windows (20128) atualizado p/ v2
-- [ ] Docker/n8n (20129) atualizado p/ v2
-- [ ] Paridade conferida nos 3 ambientes
+- [ ] Windows (20128) atualizado p/ v2 — **pendente** (instância não alcançável a partir do pendrive nesta sessão)
+- [ ] Docker/n8n (20129) atualizado p/ v2 — **pendente** (mesmo motivo)
+- [ ] Paridade conferida nos 3 ambientes — pendente da mesclagem acima
 
 **n8n / WhatsApp**
-- [ ] 16.494 workflows importados
-- [ ] Credencial OmniRoute criada
-- [ ] 1ª instância WhatsApp + QR Code
+- [x] Workflows importados: **16.153 / 16.494 (98%)** — 341 falhas remanescentes são defeitos reais nos templates de origem (nome de nó duplicado, referência a nó inexistente), não corrigíveis automaticamente sem revisão manual
+- [x] Credencial OmniRoute criada (`openAiApi`, base URL `http://omniroute:20128/v1` via rede Docker `ia-net`) + workflow de teste ponta-a-ponta validado
+- [x] 1ª instância WhatsApp (`digimarcas`) + QR Code — conectada (`state: open`)
+- [x] *(extra, não previsto no plano original)* Workflow autoresponder com menu de serviços — criado e ativo; texto do menu é placeholder, aguardando conteúdo real da DigiMarcas Thecnos
 
 **Segurança**
-- [ ] Rotação P1 / P2 / P3
+- [ ] Rotação P1 / P2 / P3 — **pendente**; achado durante a execução: `importar_templates.py` e `ativar_workflows.py` têm uma API key do n8n hardcoded (já commitada no histórico do repo) que **não é mais válida** neste n8n do pendrive — candidata a limpeza mesmo sem rotação (chave morta em texto puro no código)
 
 **Versionamento**
-- [ ] Commit + push via SSH concluído
+- [x] Commit + push via SSH concluído (`bf348f548`, main -> origin/main)
 
 ---
 
-*DigiMarcas Thecnos — Arquitetura Completa v2 — Confidencial. Gerado em 22/07/2026.*
+*DigiMarcas Thecnos — Arquitetura Completa v2 — Confidencial. Gerado em 22/07/2026. Auditoria de execução: 23/07/2026.*
